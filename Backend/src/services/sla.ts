@@ -97,7 +97,7 @@ export interface SlaTicket {
 
 /**
  * The ticket's overall SLA state for chips, sorting and the "Breached" view:
- *   breached  - either clock ran out (running or stopped late)
+ *   breached  - a running clock is past due, or (finished tickets) a clock stopped late
  *   met       - both clocks stopped in time (resolved / closed inside both targets)
  *   due_soon  - a running clock has under 25% of its target left
  *   on_track  - otherwise
@@ -107,7 +107,10 @@ export interface SlaTicket {
 export const slaState = (ticket: SlaTicket, now: Date = new Date()): SlaState => {
   if (ticket.ticket_status === "Cancelled") return "met";
   const resolvedAt = ticket.resolved_at ?? null;
-  const first = clockState(ticket.first_response_due_at, ticket.first_response_at ?? resolvedAt, ticket.created_at, now);
+  let first = clockState(ticket.first_response_due_at, ticket.first_response_at ?? resolvedAt, ticket.created_at, now);
+  // Live ticket: a late first reply that has happened is history, not a breach (SQL_IS_BREACHED)
+  const live = !resolvedAt && ticket.ticket_status !== "Closed";
+  if (live && first === "breached" && ticket.first_response_at) first = "met";
   const resolution = clockState(ticket.resolution_due_at, resolvedAt, ticket.created_at, now);
 
   if (first === "breached" || resolution === "breached") return "breached";
@@ -138,8 +141,19 @@ export const SQL_NEXT_DUE = `(CASE
   ELSE t.resolution_due_at
 END)`;
 
-export const SQL_IS_BREACHED = `(t.ticket_status <> 'Cancelled' AND COALESCE(
-  t.first_response_due_at < COALESCE(t.first_response_at, t.resolved_at, now())
-  OR t.resolution_due_at < COALESCE(t.resolved_at, now()),
-  false
-))`;
+/**
+ * Breached as SQL. A live ticket (not resolved, not Closed) is breached while a RUNNING clock is
+ * past due: no first response yet and first_response_due_at passed, or resolution_due_at passed
+ * (p.17). A first reply that came late but has happened no longer counts, so the number matches the
+ * row's SLA chip (the next unmet due time). A finished ticket is breached when a clock stopped late.
+ */
+export const SQL_IS_BREACHED = `(t.ticket_status <> 'Cancelled' AND CASE
+  WHEN t.resolved_at IS NULL AND t.ticket_status <> 'Closed' THEN COALESCE(
+    (t.first_response_at IS NULL AND t.first_response_due_at < now())
+    OR t.resolution_due_at < now(),
+    false)
+  ELSE COALESCE(
+    t.first_response_due_at < COALESCE(t.first_response_at, t.resolved_at)
+    OR t.resolution_due_at < t.resolved_at,
+    false)
+END)`;

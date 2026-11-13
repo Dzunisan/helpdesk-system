@@ -63,9 +63,9 @@ export const getReportSummary = async (departmentId: number | null, days: number
          EXTRACT(EPOCH FROM now() - MIN(t.created_at) FILTER (
            WHERE t.ticket_status::text = ANY($2) AND t.assignee_id IS NULL)) / 60 AS oldest_unassigned_mins,
          COUNT(*) FILTER (WHERE ${SQL_IS_BREACHED})::int AS breached,
-         COUNT(*) FILTER (WHERE t.first_response_due_at < COALESCE(t.first_response_at, t.resolved_at, now()))::int
+         COUNT(*) FILTER (WHERE t.first_response_at IS NULL AND t.first_response_due_at < now())::int
            AS breached_first_response,
-         COUNT(*) FILTER (WHERE t.resolution_due_at < COALESCE(t.resolved_at, now()))::int AS breached_resolution,
+         COUNT(*) FILTER (WHERE t.resolution_due_at < now())::int AS breached_resolution,
          COUNT(*) FILTER (WHERE t.ticket_status = 'Pending approval')::int AS pending_approvals,
          EXTRACT(EPOCH FROM now() - MIN(t.created_at) FILTER (WHERE t.ticket_status = 'Pending approval')) / 60
            AS oldest_pending_approval_mins
