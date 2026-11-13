@@ -7,7 +7,8 @@ import { getTicketFeedback, submitCsat } from "@/services/feedback";
 import { toApiError } from "@/services/apiClient";
 import { CSAT_TAGS, type CsatTag, type Ticket, type TicketFeedback } from "@/types/api";
 import { firstNameOf, formatDurationWords, formatSast, formatTicketRef } from "@/lib/format";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, type Role } from "@/context/AuthContext";
+import { homePathFor } from "@/lib/roles";
 import { useApiData } from "@/hooks/useApiData";
 import PageHeader from "@/components/app/PageHeader";
 import SectionCard from "@/components/app/SectionCard";
@@ -30,6 +31,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 const COMMENT_MAX = 2000;
+
+/** Where the requester's own pages live: /employee for employees, the staff home otherwise */
+function requesterLinks(role: Role | undefined) {
+  const base = role ? homePathFor(role) : "/employee";
+  const employee = base === "/employee";
+  return {
+    ticket: (ticketId: number) => `${base}/tickets/${ticketId}`,
+    list: employee ? "/employee/my-requests" : base,
+    listLabel: employee ? "My requests" : "Home",
+  };
+}
 const GRID = "grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]";
 
 /** "open for 5 h 41 min": from submitted to resolved (or closed) */
@@ -41,7 +53,8 @@ function openFor(ticket: Ticket): string | null {
 }
 
 /**
- * CSAT survey (S10, briefing p.19, p.43) at /employee/tickets/:id/feedback: reached from the
+ * CSAT survey (S10, briefing p.19, p.43) at <role home>/tickets/:id/feedback (an Agent or Lead can
+ * raise a request in another department too, so the survey lives under every requester's home): reached from the
  * "How did we do?" notification and email, or the stars on a closed request. Big stars with a word,
  * optional quick tags and a comment, the agent by name. One rating per request: opening the link
  * again shows the rating already given.
@@ -57,10 +70,11 @@ export default function CsatSurvey() {
   const leadName = useDepartmentLead(ticket?.ticket_department_id);
   const { user } = useAuth();
   const firstName = firstNameOf(user?.name);
+  const links = requesterLinks(user?.role);
 
   const back = {
-    to: valid ? `/employee/tickets/${ticketId}` : "/employee/my-requests",
-    label: valid ? formatTicketRef(ticketId) : "My requests",
+    to: valid ? links.ticket(ticketId) : links.list,
+    label: valid ? formatTicketRef(ticketId) : links.listLabel,
   };
 
   if (!valid || ticketQ.error?.isNotFound) {
@@ -72,7 +86,7 @@ export default function CsatSurvey() {
         description="It doesn't exist, or it isn't one of yours. Check the link in the email."
         action={
           <Button asChild>
-            <Link to="/employee/my-requests">Back to my requests</Link>
+            <Link to={links.list}>{links.listLabel === "Home" ? "Back to home" : "Back to my requests"}</Link>
           </Button>
         }
       />
@@ -317,6 +331,7 @@ function SurveyForm({
 
 /** Opening the link again (or just after sending): the rating already given, never a second form */
 function AlreadyRated({ ticket, feedback }: { ticket: Ticket; feedback: TicketFeedback }) {
+  const links = requesterLinks(useAuth().user?.role);
   const team = ticket.department_name ?? "the team";
   return (
     <div className="flex flex-col gap-6">
@@ -334,13 +349,13 @@ function AlreadyRated({ ticket, feedback }: { ticket: Ticket; feedback: TicketFe
         <StarsShown value={feedback.rating} size="lg" />
         <div className="flex w-full flex-col gap-3 pt-2 sm:w-auto sm:flex-row">
           <Button asChild variant="outline" className="h-11 sm:h-9">
-            <Link to={`/employee/tickets/${ticket.ticket_id}`}>
+            <Link to={links.ticket(ticket.ticket_id)}>
               <ArrowLeft data-icon="inline-start" />
               Back to the request
             </Link>
           </Button>
           <Button asChild className="h-11 sm:h-9">
-            <Link to="/employee/my-requests">My requests</Link>
+            <Link to={links.list}>{links.listLabel}</Link>
           </Button>
         </div>
       </SectionCard>
@@ -352,6 +367,7 @@ function AlreadyRated({ ticket, feedback }: { ticket: Ticket; feedback: TicketFe
 
 /** The survey opens once the request is closed: Resolved still needs "Yes, it's fixed" */
 function NotYet({ ticket }: { ticket: Ticket }) {
+  const links = requesterLinks(useAuth().user?.role);
   const resolved = ticket.ticket_status === "Resolved";
   const cancelled = ticket.ticket_status === "Cancelled";
   return (
@@ -368,7 +384,7 @@ function NotYet({ ticket }: { ticket: Ticket }) {
       }
       action={
         <Button asChild>
-          <Link to={`/employee/tickets/${ticket.ticket_id}`}>Open the request</Link>
+          <Link to={links.ticket(ticket.ticket_id)}>Open the request</Link>
         </Button>
       }
     />

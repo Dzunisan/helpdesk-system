@@ -3,7 +3,7 @@
 // notify(), lives in services/notify.ts and runs inside each change's transaction.
 import { pool } from "../config/database";
 import { HttpError } from "../utils/httpError";
-import { NOTIFICATION_TYPES, NOTIFICATION_TYPE_LABELS, ticketPathFor, type NotificationType } from "./notify";
+import { NOTIFICATION_TYPES, NOTIFICATION_TYPE_LABELS, notificationPathFor, type NotificationType } from "./notify";
 
 export interface AppNotification {
   notification_id: string;
@@ -54,8 +54,7 @@ const SELECT = `
 /** Where clicking the item goes for this user: the survey for csat_requested, else their ticket page */
 const pathFor = (row: NotificationRow, role: string): string | null => {
   if (row.ticket_id === null) return null;
-  if (row.type === "csat_requested") return `/employee/tickets/${row.ticket_id}/feedback`;
-  return ticketPathFor(role, row.ticket_id);
+  return notificationPathFor(role, row.type, row.ticket_id);
 };
 
 const toNotification = (row: NotificationRow, role: string): AppNotification => ({
@@ -184,6 +183,9 @@ export const savePrefs = async (
   viewer: Viewer,
   prefs: Array<{ type: NotificationType; email: boolean }>
 ): Promise<NotificationPref[]> => {
+  const allowed = typesForRole(viewer.role);
+  const foreign = prefs.find((p) => !allowed.includes(p.type));
+  if (foreign) throw new HttpError(400, `Your role doesn't get "${NOTIFICATION_TYPE_LABELS[foreign.type]}" notifications.`);
   if (prefs.length) {
     await pool.query(
       `INSERT INTO notification_pref (user_id, type, email)

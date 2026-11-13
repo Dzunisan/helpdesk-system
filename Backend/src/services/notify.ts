@@ -78,6 +78,11 @@ export const ticketPathFor = (role: string, ticketId: number): string => {
   return `/employee/tickets/${ticketId}`;
 };
 
+/** Where a notification leads its recipient: the survey for csat_requested (under the recipient's own
+ *  home, since staff can be requesters too: /agent/tickets/:id/feedback), else their ticket page */
+export const notificationPathFor = (role: string, type: NotificationType, ticketId: number): string =>
+  type === "csat_requested" ? `${ticketPathFor(role, ticketId)}/feedback` : ticketPathFor(role, ticketId);
+
 /** The email's HTML. Every interpolated value goes through escapeHtml (p.18: a <script> title shows as text). */
 export const renderNotificationEmail = (input: {
   recipientName: string;
@@ -151,7 +156,7 @@ export const notify = async (client: PoolClient, input: NotifyInput): Promise<No
     result.notificationIds.push(notificationId);
 
     if (!r.wants_email || !r.email) continue;
-    const path = input.path ?? (input.ticketId !== null ? ticketPathFor(r.role, input.ticketId) : null);
+    const path = input.path ?? (input.ticketId !== null ? notificationPathFor(r.role, input.type, input.ticketId) : null);
     const html = renderNotificationEmail({
       recipientName: r.name,
       title,
@@ -202,7 +207,6 @@ export const requestCsat = async (client: PoolClient, ticketId: number): Promise
     type: "csat_requested",
     title: `How did we do on ${ticketRef(ticketId)}?`,
     body: `${ticket.title}. Rate the help you got, it takes ten seconds.`,
-    path: `/employee/tickets/${ticketId}/feedback`,
   });
   return true;
 };

@@ -81,6 +81,8 @@ const AppRouter = () => {
             <Route path="assigned-tickets" element={<Navigate to={agentQueuePath("my-open")} replace />} />
             <Route path="resolved-tickets" element={<Navigate to={agentQueuePath("resolved")} replace />} />
             <Route path="tickets/:id" element={<TicketDetails />} />
+            {/* S10: staff can raise requests in other departments, so they rate them too */}
+            <Route path="tickets/:id/feedback" element={<CsatSurvey />} />
             <Route path="profile" element={<UserProfile />} />
           </Route>
         </Route>
@@ -98,6 +100,8 @@ const AppRouter = () => {
             {/* S7 macros manager (p.58) */}
             <Route path="macros" element={<MacrosManager />} />
             <Route path="tickets/:id" element={<TicketDetails />} />
+            {/* S10: staff can raise requests in other departments, so they rate them too */}
+            <Route path="tickets/:id/feedback" element={<CsatSurvey />} />
             <Route path="profile" element={<UserProfile />} />
           </Route>
         </Route>
