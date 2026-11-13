@@ -21,6 +21,7 @@ import notificationRoutes from "./src/routes/notificationRoutes";
 import meRoutes from "./src/routes/meRoutes";
 import adminRoutes from "./src/routes/adminRoutes";
 import csatRoutes from "./src/routes/csatRoutes";
+import feedbackRoutes from "./src/routes/feedbackRoutes";
 import attachmentRoutes from "./src/routes/attachmentRoutes";
 
 dotenv.config();
@@ -42,6 +43,7 @@ app.get("/", (req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/tickets", feedbackRoutes); // S10 /api/tickets/:id/feedback, before ticketRoutes
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/comments", commentRoutes);
 app.use("/api/departments", departmentRoutes);
