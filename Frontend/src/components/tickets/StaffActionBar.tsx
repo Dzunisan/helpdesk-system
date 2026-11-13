@@ -18,6 +18,8 @@ interface StaffActionBarProps {
   onRetry: () => void;
   /** The action that is running (its button shows a spinner; the rest are disabled) */
   pending: ActionKey | null;
+  /** Every button off, e.g. while the conversation failed to load (nobody resolves blind) */
+  disabled?: boolean;
   onClaim: () => void;
   onTransition: (to: TicketStatus, key: TicketAction) => void;
   /** Opens the resolution-note dialog */
@@ -43,6 +45,7 @@ export default function StaffActionBar({
   actionsError,
   onRetry,
   pending,
+  disabled = false,
   onClaim,
   onTransition,
   onResolve,
@@ -73,7 +76,7 @@ export default function StaffActionBar({
   }
 
   const has = (a: TicketAction) => actions.actions.includes(a);
-  const busy = pending !== null;
+  const busy = pending !== null || disabled;
   const icon = (key: ActionKey, Icon: typeof Check) =>
     pending === key ? <Spinner data-icon="inline-start" /> : <Icon data-icon="inline-start" />;
   // One default (indigo) button per view (p.32): the main move for this status

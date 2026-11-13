@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { ChevronDown, Hourglass, Lock, Mail, MessageSquare, Send } from "lucide-react";
+import { ChevronDown, CircleAlert, Hourglass, Lock, Mail, MessageSquare, Send } from "lucide-react";
 import type { Ticket } from "@/types/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,8 @@ import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { firstName, type TicketPermissions } from "./ticketDetail";
+import { type TicketPermissions } from "./ticketDetail";
+import { firstNameOf } from "@/lib/format";
 
 type Mode = "reply" | "note";
 
@@ -32,6 +33,8 @@ interface TicketComposerProps {
   allowNote?: boolean;
   /** Offer "Send and set Waiting on employee" in the send menu (GET /actions "wait") */
   allowSendAndWait?: boolean;
+  /** Why the composer is locked right now (e.g. the conversation didn't load); shown as the hint */
+  disabledReason?: string | null;
   className?: string;
 }
 
@@ -47,8 +50,10 @@ export default function TicketComposer({
   allowReply = true,
   allowNote = permissions.canAddInternal,
   allowSendAndWait = false,
+  disabledReason = null,
   className,
 }: TicketComposerProps) {
+  const locked = !!disabledReason;
   const [mode, setMode] = useState<Mode>(allowReply ? "reply" : "note");
   const [body, setBody] = useState("");
   const [sending, setSending] = useState<SendFollowUp | null>(null);
@@ -59,12 +64,14 @@ export default function TicketComposer({
   const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
   const replyTo = permissions.isStaff
-    ? firstName(ticket.requester_name, "the requester")
+    ? firstNameOf(ticket.requester_name, "the requester")
     : ticket.assignee_name
-      ? firstName(ticket.assignee_name)
+      ? firstNameOf(ticket.assignee_name, "them")
       : `${ticket.department_name ?? "the"} team`;
 
-  const hint = internal
+  const hint = locked
+    ? { icon: CircleAlert, text: disabledReason }
+    : internal
     ? { icon: Lock, text: "Only staff can see this" }
     : permissions.isStaff
       ? ticket.requester_email
@@ -76,7 +83,7 @@ export default function TicketComposer({
 
   const submit = async (followUp: SendFollowUp = "none") => {
     const text = body.trim();
-    if (!text || sending) return;
+    if (!text || sending || locked) return;
     setSending(followUp);
     const ok = await onSubmit(text, internal, internal ? "none" : followUp);
     setSending(null);
@@ -100,22 +107,22 @@ export default function TicketComposer({
       className={cn(
         "flex flex-col rounded-xl border transition-colors focus-within:ring-3",
         internal
-          ? "border-amber-300 bg-amber-50 focus-within:ring-amber-300/40 dark:border-amber-900/60 dark:bg-amber-950/40"
+          ? "border-warning-border bg-warning-muted focus-within:ring-warning-border/40"
           : "border-border bg-background focus-within:border-ring focus-within:ring-ring/20",
         className,
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 pt-3 sm:px-4">
         {tabs ? (
-          <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
+          <Tabs value={mode} onValueChange={(v) => !locked && setMode(v as Mode)}>
             <TabsList
               aria-label="Reply or internal note"
-              className={cn("group-data-horizontal/tabs:h-10 sm:group-data-horizontal/tabs:h-8", internal && "bg-amber-100")}
+              className={cn("group-data-horizontal/tabs:h-10 sm:group-data-horizontal/tabs:h-8", internal && "bg-warning-subtle")}
             >
               <TabsTrigger value="reply" className="px-3">
                 Public reply
               </TabsTrigger>
-              <TabsTrigger value="note" className="px-3 data-active:text-amber-800">
+              <TabsTrigger value="note" className="px-3 data-active:text-warning-strong">
                 <Lock aria-hidden />
                 Internal note
               </TabsTrigger>
@@ -123,11 +130,11 @@ export default function TicketComposer({
           </Tabs>
         ) : (
           <label htmlFor={id} className="flex items-center gap-1.5 px-1 text-sm font-medium text-foreground">
-            {internal && <Lock className="size-3.5 text-amber-800" aria-hidden />}
+            {internal && <Lock className="size-3.5 text-warning-strong" aria-hidden />}
             {internal ? "Internal note" : "Reply"}
           </label>
         )}
-        <span className={cn("flex items-center gap-1.5 px-1 text-xs", internal ? "font-medium text-amber-800" : "text-muted-foreground")}>
+        <span className={cn("flex items-center gap-1.5 px-1 text-xs", internal ? "font-medium text-warning-strong" : "text-muted-foreground")}>
           <hint.icon className="size-3.5" aria-hidden />
           {hint.text}
         </span>
@@ -145,6 +152,7 @@ export default function TicketComposer({
         }}
         rows={4}
         maxLength={5000}
+        disabled={locked}
         aria-label={tabs ? (internal ? "Internal note" : "Public reply") : undefined}
         placeholder={
           internal
@@ -164,7 +172,7 @@ export default function TicketComposer({
         </span>
         {splitSend ? (
           <ButtonGroup className="ml-auto">
-            <Button type="submit" disabled={!!sending || !body.trim()} className={height}>
+            <Button type="submit" disabled={locked || !!sending || !body.trim()} className={height}>
               {sending === "none" ? <Spinner data-icon="inline-start" /> : <Send data-icon="inline-start" />}
               {sendLabel}
             </Button>
@@ -173,7 +181,7 @@ export default function TicketComposer({
                 <Button
                   type="button"
                   size="icon"
-                  disabled={!!sending || !body.trim()}
+                  disabled={locked || !!sending || !body.trim()}
                   aria-label="More send options"
                   className={cn(height, "w-9 border-l border-l-primary-foreground/20")}
                 >
@@ -194,8 +202,8 @@ export default function TicketComposer({
         ) : (
           <Button
             type="submit"
-            disabled={!!sending || !body.trim()}
-            className={cn("ml-auto", height, internal && "bg-amber-600 text-white hover:bg-amber-700")}
+            disabled={locked || !!sending || !body.trim()}
+            className={cn("ml-auto", height, internal && "bg-warning-solid text-warning-foreground hover:bg-warning-solid/90")}
           >
             {sending ? <Spinner data-icon="inline-start" /> : internal ? <Lock data-icon="inline-start" /> : <Send data-icon="inline-start" />}
             {sendLabel}

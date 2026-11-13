@@ -15,7 +15,8 @@ import {
 import { listCategories } from "@/services/categories";
 import { toApiError } from "@/services/apiClient";
 import type { Ticket, TicketStatus } from "@/types/api";
-import { formatSast } from "@/lib/format";
+import { firstNameOf, formatSast } from "@/lib/format";
+import { useAuth } from "@/context/AuthContext";
 import PageHeader from "@/components/app/PageHeader";
 import SectionCard from "@/components/app/SectionCard";
 import KeyValueList, { type KeyValueItem } from "@/components/app/KeyValueList";
@@ -25,15 +26,14 @@ import TicketRef from "@/components/app/TicketRef";
 import UserAvatar from "@/components/app/UserAvatar";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { PriorityBadge } from "@/components/app/PriorityBadge";
-import { SlaChip } from "@/components/app/SlaChip";
-import { useApiData } from "@/components/portal/useApiData";
+import { useApiData } from "@/hooks/useApiData";
 import RequestProgress from "@/components/portal/RequestProgress";
-import PublicTimeline from "@/components/portal/PublicTimeline";
+import TicketTimeline from "@/components/tickets/TicketTimeline";
 import ReplyComposer from "@/components/portal/ReplyComposer";
 import ResolvedCheck from "@/components/portal/ResolvedCheck";
 import CancelRequestButton from "@/components/portal/CancelRequestButton";
 import { FeedbackForm, FeedbackSummary } from "@/components/tickets/TicketFeedback";
-import { IMPACT_LABEL, firstNameOf, nextDueAt } from "@/components/portal/portalText";
+import { IMPACT_LABEL, nextDueAt, promiseTime } from "@/components/portal/portalText";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,10 +44,11 @@ const REOPEN_DAYS = 5;
 function WhoHasIt({ ticket }: { ticket: Ticket }) {
   const team = ticket.department_name ?? "the team";
   const person = ticket.assignee_name;
+  // The avatar stays beside the sentence at 390px; the words wrap next to it
   const withPerson = (text: ReactNode) => (
-    <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-      <UserAvatar name={person} size="sm" />
-      <span>
+    <span className="mt-1 flex items-start gap-2">
+      <UserAvatar name={person} size="sm" className="mt-px shrink-0" />
+      <span className="min-w-0">
         <span className="font-medium text-foreground">{person}</span> from {team} {text}
       </span>
     </span>
@@ -84,11 +85,20 @@ function detailItems(ticket: Ticket, reopenUntil: string | null): KeyValueItem[]
   const status: TicketStatus = ticket.ticket_status;
   if (status === "Pending approval") {
     items.push({ label: "Next update by", value: <span className="text-muted-foreground">After approval</span> });
-  } else if (status === "New" || status === "Open" || status === "Waiting on employee") {
+  } else if (status === "Waiting on employee") {
+    items.push({ label: "Next update by", value: <span className="text-muted-foreground">After you reply</span> });
+  } else if (status === "New" || status === "Open") {
+    // The portal's promise words (p.37, p.41), never the staff SLA chip ("Breached 6h")
+    const due = nextDueAt(ticket);
+    const late = due !== null && new Date(due).getTime() < Date.now();
     items.push({
       label: "Next update by",
-      value: (
-        <SlaChip due={nextDueAt(ticket)} start={ticket.created_at} paused={status === "Waiting on employee"} />
+      value: !due ? (
+        <span className="text-muted-foreground">Soon</span>
+      ) : late ? (
+        <span className="font-medium text-destructive">Running late · was due {promiseTime(due)}</span>
+      ) : (
+        promiseTime(due)
       ),
     });
   } else if (status === "Resolved") {
@@ -118,6 +128,8 @@ export default function RequestDetail() {
   const ticketId = Number(id);
   const valid = Number.isInteger(ticketId) && ticketId > 0;
 
+  const { user } = useAuth();
+  const userId = String(user?.user_id ?? user?.id ?? "");
   const ticketQ = useApiData(() => getTicket(ticketId), `ticket-${ticketId}`);
   const timelineQ = useApiData(() => getTimeline(ticketId), `timeline-${ticketId}`);
   const actionsQ = useApiData(() => getTicketActions(ticketId), `actions-${ticketId}`);
@@ -237,16 +249,20 @@ export default function RequestDetail() {
   const finished = status === "Closed" || status === "Cancelled";
   const assigneeFirst = ticket.assignee_name ? firstNameOf(ticket.assignee_name) : null;
 
-  let timeline: ReactNode;
-  if (timelineQ.loading) {
-    timeline = <TimelineSkeleton />;
-  } else if (!timelineQ.data) {
-    timeline = <ErrorState title="Couldn't load the timeline" onRetry={timelineQ.reload} retrying={timelineQ.refreshing} />;
-  } else {
-    timeline = (
-      <PublicTimeline ticket={ticket} items={timelineQ.data.items} fields={fields} onEdit={saveEdit} onDelete={remove} />
-    );
-  }
+  const timeline = (
+    <TicketTimeline
+      ticket={ticket}
+      items={timelineQ.data?.items ?? null}
+      audience="requester"
+      error={!timelineQ.loading && !timelineQ.data ? (timelineQ.error?.message ?? "Something went wrong.") : null}
+      onRetry={timelineQ.reload}
+      retrying={timelineQ.refreshing}
+      userId={userId}
+      fields={fields}
+      onSaveEdit={saveEdit}
+      onDelete={remove}
+    />
+  );
 
   return (
     <div className="flex flex-col gap-8">

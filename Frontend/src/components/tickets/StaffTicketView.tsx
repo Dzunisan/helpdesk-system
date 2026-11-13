@@ -5,14 +5,15 @@ import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import {
   addComment,
+  approveTicket,
   assignTicket,
   changePriority,
   claimTicket,
   deleteComment,
   editComment,
+  rejectTicket,
   transitionTicket,
 } from "@/services/tickets";
-import { approveTicket, rejectTicket } from "@/services/ticketService";
 import { toApiError } from "@/services/apiClient";
 import type { Ticket, TicketAction, TicketPriority, TicketStatus } from "@/types/api";
 import { formatTicketRef } from "@/lib/format";
@@ -25,16 +26,6 @@ import { StatusBadge } from "@/components/app/StatusBadge";
 import TicketRef from "@/components/app/TicketRef";
 import { useNavHighlight } from "@/components/app/navHighlight";
 import NotFoundPanel from "@/components/auth/NotFoundPanel";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -130,7 +121,6 @@ export default function StaffTicketView() {
   const [resolveOpen, setResolveOpen] = useState(false);
   const [approveOpen, setApproveOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const ref = ticket ? formatTicketRef(ticket.ticket_id) : id ? formatTicketRef(id) : "This ticket";
 
@@ -252,7 +242,6 @@ export default function StaffTicketView() {
   };
 
   const handleDelete = async (commentId: number) => {
-    setDeleteId(null);
     try {
       await deleteComment(commentId);
       settle();
@@ -308,6 +297,8 @@ export default function StaffTicketView() {
   const has = (a: TicketAction) => !!actions?.actions.includes(a);
   const permissions = permissionsFor(user, ticket);
   const busy = pending !== null;
+  // Nobody replies or resolves without seeing the conversation (until GET /timeline loads)
+  const blind = !timeline;
 
   const actionBar = (
     <StaffActionBar
@@ -316,6 +307,7 @@ export default function StaffTicketView() {
       actionsError={actionsError}
       onRetry={() => void reload()}
       pending={pending}
+      disabled={blind}
       onClaim={() => void handleClaim()}
       onTransition={(to, key) => void handleTransition(to, key)}
       onResolve={() => setResolveOpen(true)}
@@ -331,11 +323,12 @@ export default function StaffTicketView() {
     <TicketTimeline
       ticket={ticket}
       items={timeline}
+      audience="staff"
       error={timelineError}
       onRetry={() => void reload()}
       userId={userId}
       onSaveEdit={handleSaveEdit}
-      onRequestDelete={setDeleteId}
+      onDelete={handleDelete}
     />
   );
 
@@ -350,6 +343,7 @@ export default function StaffTicketView() {
         allowReply={has("reply")}
         allowNote={has("internal_note")}
         allowSendAndWait={has("wait")}
+        disabledReason={timelineError ? "Load the conversation above before you reply" : blind ? "Loading the conversation…" : null}
       />
     ) : actions && final ? (
       <p className="flex items-center gap-2 rounded-xl border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
@@ -365,7 +359,7 @@ export default function StaffTicketView() {
       canChangePriority={has("change_priority")}
       canAssign={has("assign")}
       pending={pending === "change_priority" || pending === "assign" ? pending : null}
-      disabled={busy}
+      disabled={busy || blind}
       onPriorityChange={(p) => void handlePriority(p)}
       team={team}
       onAssign={(a) => void handleAssign(a)}
@@ -412,22 +406,6 @@ export default function StaffTicketView() {
         busy={pending === "reject"}
         onConfirm={(reason) => void handleReject(reason)}
       />
-      <AlertDialog open={deleteId !== null} onOpenChange={(open) => !open && setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this message?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The timeline keeps a "Message removed" marker in its place. This can't be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep it</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={() => deleteId !== null && void handleDelete(deleteId)}>
-              Delete message
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 

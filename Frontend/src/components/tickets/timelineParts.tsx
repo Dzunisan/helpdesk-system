@@ -15,7 +15,7 @@ export function MessageBody({ children }: { children: ReactNode }) {
   return <p className="text-sm leading-relaxed break-words whitespace-pre-wrap text-foreground">{children}</p>;
 }
 
-/** "Today, 09:02" with the full SAST date on hover */
+/** "Tue 10 Nov, 09:02" (the house format, p.13) with the year on hover; the same in every view */
 export function TimeStamp({ value, className }: { value: string; className?: string }) {
   return (
     <time
@@ -23,7 +23,7 @@ export function TimeStamp({ value, className }: { value: string; className?: str
       title={formatSast(value, "full")}
       className={cn("shrink-0 text-xs text-muted-foreground tabular-nums", className)}
     >
-      {formatSast(value, "smart")}
+      {formatSast(value)}
     </time>
   );
 }
@@ -52,7 +52,7 @@ export function MessageCard({
     <li
       className={cn(
         "rounded-xl border p-4 sm:p-5",
-        internal ? "border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/40" : "border-border bg-background",
+        internal ? "border-warning-border bg-warning-muted" : "border-border bg-background",
         className,
       )}
     >
@@ -64,7 +64,7 @@ export function MessageCard({
               <span className="truncate text-sm font-medium text-foreground">{name}</span>
               {meta && <span className="text-xs text-muted-foreground">{meta}</span>}
               {internal && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                <span className="inline-flex items-center gap-1 rounded-full border border-warning-border bg-warning-subtle px-2 py-0.5 text-xs font-medium text-warning-strong">
                   <Lock className="size-3" aria-hidden />
                   Internal note
                 </span>
@@ -120,23 +120,26 @@ export function EventLine({
               tone === "danger"
                 ? "bg-destructive/10 text-destructive"
                 : tone === "success"
-                  ? "bg-emerald-50 text-emerald-700"
+                  ? "bg-success-muted text-success"
                   : "bg-muted text-muted-foreground",
             )}
           >
             <Icon className="size-3.5" aria-hidden />
           </span>
         </span>
-        <div className={cn("min-w-0 flex-1 pt-1 text-xs", tone === "danger" ? "text-destructive" : "text-muted-foreground")}>
-          {children}
-          {staffOnly && (
-            <span className="ml-1.5 inline-flex items-center gap-1 text-amber-700">
-              <Lock className="size-3" aria-hidden />
-              Staff only
-            </span>
-          )}
+        {/* Phones: the time goes under the words so the line keeps its width; from sm it sits on the right */}
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5 pt-1 sm:flex-row sm:items-start sm:gap-3">
+          <div className={cn("min-w-0 flex-1 text-xs", tone === "danger" ? "text-destructive" : "text-muted-foreground")}>
+            {children}
+            {staffOnly && (
+              <span className="ml-1.5 inline-flex items-center gap-1 text-warning">
+                <Lock className="size-3" aria-hidden />
+                Staff only
+              </span>
+            )}
+          </div>
+          <TimeStamp value={time} className={cn("text-[11px] sm:text-xs", tone === "danger" && "text-destructive")} />
         </div>
-        <TimeStamp value={time} className={cn("pt-1", tone === "danger" && "text-destructive")} />
       </div>
       {note && (
         <blockquote className="ml-11 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm break-words whitespace-pre-wrap text-foreground">

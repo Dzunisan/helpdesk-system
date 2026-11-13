@@ -242,7 +242,11 @@ export type TicketEventType =
   | "approved"
   | "rejected"
   | "reopened"
-  | "comment_deleted";
+  | "comment_deleted"
+  /** The author edited a message (the card shows "edited"; no separate line) */
+  | "comment_edited"
+  /** The requester rated the request: from = previous rating or null, to = 1-5, note = comment */
+  | "feedback_given";
 
 export interface TimelinePerson {
   user_id: string;
@@ -360,9 +364,17 @@ export interface CreateUserRequest {
   must_change_password?: boolean;
 }
 
+/** The welcome email the server would have sent, when no email service is configured (shown once) */
+export interface SimulatedWelcomeEmail {
+  to: string;
+  temporary_password: string;
+}
+
 /** POST /api/users answers 201 with the user and whether the welcome email went out */
 export interface CreateUserResponse extends UserResponse {
   welcome_email_sent: boolean;
+  /** Present when welcome_email_sent is false: the admin passes the temporary password on */
+  simulated_welcome_email?: SimulatedWelcomeEmail;
 }
 
 /** PATCH /api/users/:id */
