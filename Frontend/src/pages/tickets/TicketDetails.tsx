@@ -46,7 +46,8 @@ import TicketDetailSkeleton from "@/components/tickets/TicketDetailSkeleton";
 import { TICKET_ASIDE, TICKET_GRID, asideTop } from "@/components/tickets/layout";
 import { useNavHighlight } from "@/components/app/navHighlight";
 import NotFoundPanel from "@/components/auth/NotFoundPanel";
-import { backLinkFor, displayStatus, firstName, permissionsFor } from "@/components/tickets/ticketDetail";
+import { backLinkFor, displayStatus, firstName, normalizeRole, permissionsFor } from "@/components/tickets/ticketDetail";
+import StaffTicketView from "@/components/tickets/StaffTicketView";
 
 const errorMessage = (err: unknown, fallback: string) =>
   (err as { message?: string } | null)?.message || fallback;
@@ -80,8 +81,20 @@ async function loadTicket(id: string | undefined, withAgents: boolean): Promise<
   }
 }
 
-/** Ticket detail for every role: employee view (briefing p.41) and staff view (p.48-49) */
+/**
+ * Ticket detail. Agents and leads get the three-pane inbox (briefing p.48-49, S2-S4:
+ * components/tickets/StaffTicketView); employees keep the request view below (p.41) until
+ * pages/employee/RequestDetail.tsx is rebuilt on GET /timeline and GET /actions.
+ */
 export default function TicketDetails() {
+  const { user } = useAuth();
+  const role = normalizeRole(user?.role);
+  if (role === "Agent" || role === "Department Lead") return <StaffTicketView />;
+  return <EmployeeTicketDetails />;
+}
+
+/** The employee's view of their own request (briefing p.41) */
+function EmployeeTicketDetails() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
 
