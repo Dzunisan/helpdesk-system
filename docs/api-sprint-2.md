@@ -23,7 +23,7 @@ server together.
 | --- | --- | --- |
 | `ticket_approval (approval_id, ticket_id, approver_id, decision, reason, decided_at)` | S6 | One row **per decision**. Pending requests are tickets in `Pending approval` (no row yet). `decision` is `approved` or `rejected`; a rejection must have a reason (CHECK). |
 | `category.needs_approval` / `active` | S6 | Approval categories (New hardware, Software purchase, Access to a system or folder) are **active** now. |
-| `canned_response (id, department_id, title, body, set_status, is_internal, created_by, updated_by, use_count, active, created_at, updated_at)` | S7 | UNIQUE `(department_id, title)`. Never deleted: `active = false`. `set_status` is a `ticket_status` or NULL (reply only). |
+| `canned_response (id, department_id, title, body, set_status, is_internal, created_by, updated_by, use_count, active, created_at, updated_at)` | S7 | UNIQUE `(department_id, title)`, and since migration 005 also case-insensitive (`lower(title)`; the service answers 409 first). Never deleted: `active = false`. `set_status` is a `ticket_status` or NULL (reply only). |
 | `notification (notification_id, user_id, ticket_id, actor_id, type, title, body, read_at, created_at)` | S9 | Index `(user_id, read_at)` and `(user_id, created_at DESC)`. `actor_id` NULL = the system. |
 | `notification_pref (user_id, type, email)` | S9 | PK `(user_id, type)`. **No row = email on.** In-app is always on. |
 | `outbox (id, channel, recipient, user_id, notification_id, ticket_id, subject, body, status, error, attempts, created_at, sent_at)` | S9 | `channel` email/sms/whatsapp/push; `status` `QUEUED`, `SENT`, `FAILED`, `SIMULATED`. `body` is HTML with every value escaped. |
@@ -64,7 +64,7 @@ Notification types (DB CHECK, `NotificationType` in both apps): `reply_added`, `
 | Internal note | `reply_added` "... added an internal note ..." | owner only. **Never the employee.** |
 | New request in an approval category | `approval_waiting` | the department's lead |
 | Approve / reject | `approval_decided` (body = note / reason) | requester |
-| Ticket Closed (confirmed or 5-day auto-close) | `csat_requested` "How did we do on HD-1048?" (path `/employee/tickets/:id/feedback`) | requester |
+| Ticket Closed (confirmed or 5-day auto-close) | `csat_requested` "How did we do on HD-1048?" (path `<requester's home>/tickets/:id/feedback`: `/employee/...` for an Employee, `/agent/...` or `/department-lead/...` for staff who raised a request) | requester |
 | `runJobs` breach alert | `sla_breached` "First response breached on HD-1050" | department lead + owner, once per ticket |
 | To wire by their owners | `low_csat` (S10: rating 1-2 -> lead), `department_changed` (S12: requester + new department's lead) | |
 
@@ -86,7 +86,7 @@ with the temporary password / reset link replaced by `(hidden)`), so they show i
 | --- | --- |
 | `attachment_ids` | Optional, at most 5. Each must be the caller's own **unsent** upload on this ticket (`POST /tickets/:id/attachments`), else 400 "One of the files can't be attached. Upload it again." A file becomes internal when the comment is internal **or** it was uploaded with `is_internal=true` (an Internal file stays internal on a public reply). |
 | `macro_id` | Optional. Staff of the ticket's department only (403). The macro must be active and in the ticket's department, else 404 "Macro not found." (IT agents never use HR macros). `use_count + 1`. The **body is what the agent sends** (render first, edit, then send). |
-| `set_status` | Optional. Omitted = the macro's `set_status` (if any); `null` = reply only; a status = that move. Staff only (403 for the requester). Applied with the normal arrows **only when allowed for this person**; otherwise the reply is still saved and the response says why. `Resolved` uses the reply as the resolution note. A public reply with `set_status` sends one `reply_added`, not a second `status_changed`. |
+| `set_status` | Optional. Omitted = the macro's `set_status` (if any); `null` = reply only; a status = that move. Staff only (403 for the requester). Applied with the normal arrows **only when allowed for this person**; otherwise the reply is still saved and the response says why. `Resolved` uses the reply as the resolution note; an **internal note never resolves** (`applied: false`, "Resolve with a public reply so the employee sees what was done."), so internal text can't reach the requester as a resolution, notification, email or public event. A public reply with `set_status` sends one `reply_added`, not a second `status_changed`. |
 
 Response `201`:
 
@@ -110,7 +110,7 @@ files only for staff; `[]` for a deleted comment).
 | ready | GET | `/api/approvals?status=pending` | Department Lead (403 others) | `page`, `limit` | `200 { approvals: ApprovalItem[], pagination }`. Own led department(s) only, oldest first. |
 | ready | GET | `/api/approvals?decided_by=me` | Department Lead | `page`, `limit` | `200 { approvals, pagination }`: the History tab, newest decision first, from `ticket_approval`. |
 | ready | GET | `/api/approvals/count` | Department Lead | | `200 { pending }` for the sidebar "Approvals (3)" |
-| ready | POST | `/api/tickets/:id/approve` | the ticket department's lead | `{ note? }` | `200 { message, ticket }`. -> `New` (or `Open` if owned), SLA clocks start **now**, `approved` public event, `ticket_approval` row, `approval_decided` to the requester. 404 other department (e.g. Finance lead on an IT ticket), 403 an agent, 409 not Pending approval. |
+| ready | POST | `/api/tickets/:id/approve` | the ticket department's lead | `{ note? }` | `200 { message, ticket }`. -> `New` (or `Open` if owned), SLA clocks start **now**, `approved` public event, `ticket_approval` row, `approval_decided` to the requester. 404 other department (e.g. Finance lead on an IT ticket), 403 an agent, **403 "You can't approve your own request."** for a lead who raised it (their own requests are also left out of the Approvals queue and count; `/transition` to New is refused too), 409 not Pending approval. |
 | ready | POST | `/api/tickets/:id/reject` | the ticket department's lead | `{ reason }` | `200 { message, ticket }`. -> `Cancelled`, `rejected` public event with the reason, `ticket_approval` row, `approval_decided`. **400 without a reason.** 404/403/409 as approve. |
 
 `ApprovalItem`: `{ ticket: Ticket, decision: "approved"|"rejected"|null, reason, decided_at, approver_id, approver_name, waiting_mins }`.
@@ -127,8 +127,8 @@ public `approved` / `rejected` event (timeline) and `ticket.ticket_status`.
 | --- | --- | --- | --- | --- | --- |
 | ready | GET | `/api/macros?q=vpn` | Agent, Lead (403 others) | `q` (title/body search), `include_inactive=true` (lead only) | `200 { macros: Macro[] }`: own department(s) only, most used first |
 | ready | GET | `/api/macros/:id/render?ticket=1048` | Agent, Lead of the macro's **and** the ticket's department | | `200 RenderedMacro { macro_id, ticket_id, body, set_status, is_internal }` with `{{requester.first_name}}`, `{{ticket.ref}}`, `{{ticket.title}}`, `{{agent.first_name}}` filled. 404 macro or ticket not visible. |
-| ready | POST | `/api/macros` | Department Lead (department = the one they lead) | `{ title, body, set_status?, is_internal? }` | `201 { macro }`. 400 empty title/body, unknown status; 409 same title in the department. |
-| ready | PATCH | `/api/macros/:id` | that department's lead | any of `{ title, body, set_status, is_internal, active }` | `200 { macro }`. 404 another department's macro. |
+| ready | POST | `/api/macros` | Department Lead (department = the one they lead) | `{ title, body, set_status?, is_internal? }` | `201 { macro }`. 400 empty title/body, unknown status, or `is_internal: true` with `set_status: "Resolved"`; 409 same title in the department (any letter case). |
+| ready | PATCH | `/api/macros/:id` | that department's lead | any of `{ title, body, set_status, is_internal, active }` | `200 { macro }`. 404 another department's macro; 400 / 409 as POST (checked on the macro as it would be after the change). |
 | ready | POST | `/api/tickets/:id/comments` | staff | `{ body, macro_id, set_status }` | see "Comments with Sprint 2 extras" |
 
 Leads' `?include_inactive=true` and create/edit cover only the departments they lead. `set_status`
@@ -167,7 +167,7 @@ window; avg resolution = `AVG(resolved_at - created_at)`; reopen rate = resolved
 | ready | PATCH | `/api/notifications/:id/read` | the notification's user (404 anyone else) | | `200 { notification }` |
 | ready | POST | `/api/notifications/read-all` | everyone | | `200 { updated }` |
 | ready | GET | `/api/me/notification-prefs` | everyone | | `200 { prefs: [{ type, label, email }] }` one per type relevant to the role |
-| ready | PUT | `/api/me/notification-prefs` | everyone | `{ prefs: [{ type, email }] }` | `200 { prefs }`. 400 unknown type. Turning email off keeps the in-app item. |
+| ready | PUT | `/api/me/notification-prefs` | everyone | `{ prefs: [{ type, email }] }` | `200 { prefs }`. 400 unknown type, or a type the role never gets (e.g. an Employee sending `sla_breached`). Turning email off keeps the in-app item. |
 | ready | GET | `/api/admin/outbox` | System Admin | `status`, `channel`, `date` (YYYY-MM-DD SAST), `page`, `limit` | `200 { messages: OutboxMessage[], pagination, counts }` (no HTML body) |
 | ready | POST | `/api/admin/jobs/run` | System Admin (403 others) | | `200 { message: "Jobs ran.", result: { closed, breach_alerts, emails: { sent, failed, simulated }, ran_at } }`. Running it again adds no second breach alert. |
 
@@ -187,7 +187,7 @@ sidebar, the staff phone bar and the portal top bar). Replace its body; keep its
 | Status | Method | Path | Who | Body | Response |
 | --- | --- | --- | --- | --- | --- |
 | ready | GET | `/api/tickets/:id/feedback` | requester, or staff of the department (404 others) | | `200 { feedback: TicketFeedback \| null }` (+ `tags`, `agent_id`, `department_id`) |
-| ready | POST | `/api/tickets/:id/feedback` | the requester only (**403** staff, e.g. Thabo on a ticket he worked) | `{ rating 1-5, tags?: CsatTag[], comment? }` | `201 { feedback }`. **409** when already rated ("Thanks, you already rated this") or the ticket isn't Closed. Stores `agent_id` / `department_id` from the ticket now. `feedback_given` event. Rating 1-2 -> `notify` `low_csat` to the department lead. |
+| ready | POST | `/api/tickets/:id/feedback` | the requester only (**403** staff, e.g. Thabo on a ticket he worked) | `{ rating 1-5 (a JSON number: "5" is 400), tags?: CsatTag[], comment? }` | `201 { feedback }`. **409** when already rated ("Thanks, you already rated this") or the ticket isn't Closed. Stores `agent_id` / `department_id` from the ticket now. `feedback_given` event. Rating 1-2 -> `notify` `low_csat` to the department lead. |
 | ready | GET | `/api/reports/csat?days=30` | Lead (own department forced), System Admin (`department_id?`) | | `200 CsatReport { responses, csat_pct, avg_rating, distribution[5], by_agent[], recent[] }` |
 
 `POST` answers `201 { message: "Thanks for the feedback.", feedback }`; a not-Closed ticket gets 409
@@ -204,7 +204,7 @@ Route file for the report: `routes/csatRoutes.ts` (mounted on `/api/reports` nex
 
 | Status | Method | Path | Who | Body | Response |
 | --- | --- | --- | --- | --- | --- |
-| ready | PATCH | `/api/tickets/:id/department` | any agent of the current department, or its lead (404 others) | `{ department_id, category_id, reason, message? }` | `200 { message, ticket }`. One transaction: department + category change, status `New`, assignee cleared, **due times kept**, `moved_count + 1`, a public `department_changed` event ("Moved from IT Support to Facilities", note = the public message) and an internal one (note = the reason), `notify` `department_changed` to the requester and the new department's lead. 400 missing reason / category not in that department / same department; 409 Pending approval or final status. Afterwards the old department gets 404. |
+| ready | PATCH | `/api/tickets/:id/department` | any agent of the current department, or its lead (404 others) | `{ department_id, category_id, reason, message? }` | `200 { message, ticket }`. One transaction: department + category change, status `New`, assignee cleared, **due times kept**, `moved_count + 1`, a public `department_changed` event ("Moved from IT Support to Facilities", note = the public message) and an internal one (note = the reason), `notify` `department_changed` to the requester and the new department's lead, and (without a link, they lose access) to the previous owner when someone else moved it. Checks run in this order: 404 can't see it, 403 the requester, 409 status, then 400 for the body: missing reason / category not in that department / same department; 409 Pending approval or final status. Afterwards the old department gets 404. |
 | ready | GET | `/api/departments/:id/categories` | Agent, Lead (403 others) | | `200 { categories: Category[] }` active categories of that active department |
 
 The move answers `{ message: "Moved to Facilities.", ticket }` (public comments only, since the mover
@@ -216,7 +216,7 @@ else outside the department 404. Tickets carry `moved_count`.
 
 | Status | Method | Path | Who | Body | Response |
 | --- | --- | --- | --- | --- | --- |
-| ready | POST | `/api/tickets/:id/attachments` | anyone who can comment on the ticket (404 others) | multipart `files` (1-5), optional `is_internal=true` (staff only) | `201 { attachments: AttachmentSummary[] }` (unsent, `comment_id` null) + an `attached` event per file. **413** "Too large (max 5 MB)"; 400 type not allowed (checked from the **first bytes**, so a renamed .exe is refused), more than 5 files, final ticket. |
+| ready | POST | `/api/tickets/:id/attachments` | anyone who can comment on the ticket (404 others) | multipart `files` (1-5), optional `is_internal=true` (staff only) | `201 { attachments: AttachmentSummary[] }` (unsent, `comment_id` null) + an `attached` event per file. **413** "Too large (max 5 MB)"; 400 type not allowed (checked from the **first bytes**, so a renamed .exe is refused, and the name's extension must match what the bytes are: `.png`, `.jpg/.jpeg`, `.gif`, `.webp`, `.pdf`, `.txt`, `.csv`, `.docx`, `.xlsx`; a plain-text `fix.bat`, `.hta`, `.js` or `.svg` is refused), more than 5 files, final ticket. |
 | ready | GET | `/api/attachments/:id` | `canView` on the ticket; internal files staff only (404 otherwise) | | the bytes, `Content-Type` = stored type, `Content-Disposition: attachment; filename*=` (names are data, never HTML), `X-Content-Type-Options: nosniff` |
 | ready | GET | `/api/attachments/:id/thumb` | as above | | small image preview (`thumb` or the image itself) |
 | ready | DELETE | `/api/attachments/:id` | the uploader within 15 minutes | | `200 { message }` soft delete (`deleted_at`); 403 someone else / too late |
@@ -243,7 +243,7 @@ with multer **memory storage** into `attachment_blob`. Send the ids with the com
 | `/department-lead/macros` | Macros manager (S7, p.58) | ready |
 | `/agent/queue/resolved` | Resolved by me with ratings (S10, p.53) | ready |
 | `/system-admin/outbox` | Sent messages + Run jobs now (S9) | ready |
-| `/employee/tickets/:id/feedback` | CSAT survey (S10, p.43) | ready |
+| `/employee/tickets/:id/feedback` | CSAT survey (S10, p.43); also `/agent/tickets/:id/feedback` and `/department-lead/tickets/:id/feedback` for staff who raised a request elsewhere | ready |
 | `<role>/profile#notifications` | Email switches per notification type (S9, p.68) | ready |
 | bell | `components/notifications/NotificationBell.tsx` (S9, p.51) | ready: count polled every 30 s, Today / Earlier panel |
 
@@ -257,8 +257,8 @@ System Admin **Sent messages**. New shadcn components: `chart` (Recharts, S8), `
 | --- | --- |
 | Approvals (3) for Thandi | HD-1052 Ayesha's Adobe Acrobat Pro (R3 960/yr), HD-1047 Nomvula's laptop for Sizwe, HD-1040 Pieter's Finance reporting folder access. History: HD-1036 approved, HD-1026 rejected with a reason. |
 | Macros | 6 IT (VPN: switch to TCP profile -> Waiting, Sage re-sync, Password reset link, Laptop on order, Resolved: please confirm -> Resolved, Printer jam) and 3 HR, with use counts |
-| Misfiled ticket | HD-1037 Zanele "Aircon dripping onto my desk" in IT (move it to Facilities, Bongani's queue) |
-| Run jobs now | HD-1050 is just past its first-response time and **not** alerted: one `sla_breached` for Thandi; running again adds nothing. HD-1041 (already breached) was alerted at seed time. |
+| Misfiled ticket | HD-1037 Zanele "Aircon dripping onto my desk" in IT (move it to Facilities: Bongani Zulu is the Facilities lead, so he is notified; Kagiso Molefe is its agent) |
+| Run jobs now | HD-1050 is just past its first-response time and **not** alerted: one `sla_breached` for Thandi; running again adds nothing. HD-1041 (already breached) was alerted at seed time. The seed sets `app_setting.hold_breach_alerts_for_demo` (migration 006), so queue and dashboard loads don't raise that alert first; the first Run jobs now lifts the hold. Every other live ticket has about 3.5 hours before a clock runs out, so reset on the morning of the demo. |
 | CSAT history | HD-1001..HD-1025 closed and rated over the last 30 days (IT about 91%, two 2-star comments last week: HD-1019, HD-1020); HD-1048 and HD-1027 rated 5 |
 | Notifications | Lerato: unread "Thabo Nkosi replied on HD-1041"; Thandi: 3 unread approvals waiting; read breach and low-rating items; each with a SIMULATED outbox row. Pieter has email off for status changes. |
 
@@ -269,3 +269,12 @@ The next request made in the demo is still **HD-1054**.
 Start test servers with `EMAIL_PASS=` (empty): `isEmailConfigured()` is false, so every outbox row
 becomes `SIMULATED` and nothing reaches Mailtrap. Never point a test at `helpdesk_dev`; use your own
 database with `DB_DATABASE=...`.
+
+### Demo script notes (p.30)
+
+- Step 3 "Bell shows the new ticket": p.18 sends agents no notification for a new unassigned ticket,
+  so Thabo's bell stays quiet; point at the **Unassigned** count in his sidebar instead.
+- Breached means a clock that is **still running** is past due (p.17): no first response yet and
+  `first_response_due_at` passed, or `resolution_due_at` passed. A late first reply that has happened
+  stops counting, so the tiles, the Breached tab and each row's SLA chip agree. Finished tickets are
+  breached when a clock stopped late (history, Resolved by me).
