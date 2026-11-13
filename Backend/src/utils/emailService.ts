@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import { clientUrl, fromAddress, getTransport } from './smtp';
 import { escapeHtml } from './escapeHtml';
 
 export interface TicketAssignedEmailData {
@@ -32,27 +32,19 @@ export interface TicketStatusEmailData {
 }
 
 export const sendTempPasswordEmail = async (email: string, tempPassword: string) => {
-    const transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_HOST,
-        port: parseInt(process.env.EMAIL_PORT || '587'),
-        secure: process.env.EMAIL_SECURE === 'true', 
-        auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-        },
-    });
+    const transporter = getTransport();
 
     const mailOptions = {
-        from: `"Helpdesk System" <${process.env.EMAIL_USER}>`,
+        from: fromAddress(),
         to: email,
-        subject: 'Your Temporary Password',
-        text: `Welcome to the Helpdesk System! Your temporary password is: ${tempPassword}\nPlease log in and update your password immediately.`,
+        subject: 'Your Helpdesk account is ready',
+        text: `Welcome to the Mzansi Freight Helpdesk!\n\nSign in at ${clientUrl()} with this email address and your temporary password: ${tempPassword}\n\nYou'll choose your own password the first time you sign in.`,
         html: `
             <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
                 <h2>Welcome to the Helpdesk System!</h2>
                 <p>Your account has been created successfully.</p>
                 <p>Your temporary password is: <strong>${escapeHtml(tempPassword)}</strong></p>
-                <p>Please log in and update your password immediately.</p>
+                <p>Sign in at <a href="${escapeHtml(clientUrl())}">${escapeHtml(clientUrl())}</a> with this email address. You'll choose your own password the first time you sign in.</p>
                 <p>Best regards,<br/>The Helpdesk Team</p>
             </div>
         `,
@@ -76,18 +68,10 @@ export const sendTicketAssignedEmail = async (data: TicketAssignedEmailData) => 
         return;
     }
 
-    const transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_HOST,
-        port: parseInt(process.env.EMAIL_PORT || '587'),
-        secure: process.env.EMAIL_SECURE === 'true',
-        auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-        },
-    });
+    const transporter = getTransport();
 
     const mailOptions = {
-        from: `"Helpdesk System" <${process.env.EMAIL_USER}>`,
+        from: fromAddress(),
         to: recipientEmail,
         subject: `[Ticket #${ticketId}] Ticket Assigned: ${ticketTitle}`,
         text: `Hello ${recipientName || 'User'},\n\nYour support ticket #${ticketId} ("${ticketTitle}") has been assigned to support agent ${assigneeName}.\n\nTicket Status: ${status}\n\nOur team is working on your request and will follow up shortly.\n\nBest regards,\nThe Helpdesk Team`,
@@ -125,21 +109,13 @@ export const sendTicketCommentEmail = async (data: TicketCommentEmailData) => {
         return;
     }
 
-    const transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_HOST,
-        port: parseInt(process.env.EMAIL_PORT || '587'),
-        secure: process.env.EMAIL_SECURE === 'true',
-        auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-        },
-    });
+    const transporter = getTransport();
 
     const commentTypeLabel = isInternal ? "Internal Note" : "Comment";
     const subject = `[Ticket #${ticketId}] New ${commentTypeLabel}: ${ticketTitle}`;
 
     const mailOptions = {
-        from: `"Helpdesk System" <${process.env.EMAIL_USER}>`,
+        from: fromAddress(),
         to: recipientEmail,
         subject,
         text: `Hello ${recipientName || 'User'},\n\nA new ${commentTypeLabel.toLowerCase()} has been posted on ticket #${ticketId} ("${ticketTitle}") by ${authorName} (${authorRole}):\n\n"${commentBody}"\n\nLog in to the Helpdesk portal to respond or view details.\n\nBest regards,\nThe Helpdesk Team`,
@@ -176,18 +152,10 @@ export const sendTicketStatusEmail = async (data: TicketStatusEmailData) => {
         return;
     }
 
-    const transporter = nodemailer.createTransport({
-        host: process.env.EMAIL_HOST,
-        port: parseInt(process.env.EMAIL_PORT || '587'),
-        secure: process.env.EMAIL_SECURE === 'true',
-        auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-        },
-    });
+    const transporter = getTransport();
 
     const mailOptions = {
-        from: `"Helpdesk System" <${process.env.EMAIL_USER}>`,
+        from: fromAddress(),
         to: recipientEmail,
         subject: `[Ticket #${ticketId}] Status Changed to ${newStatus}: ${ticketTitle}`,
         text: `Hello ${recipientName || 'User'},\n\nThe status of ticket #${ticketId} ("${ticketTitle}") has been changed from "${oldStatus}" to "${newStatus}" by ${updatedByName}.\n\nBest regards,\nThe Helpdesk Team`,

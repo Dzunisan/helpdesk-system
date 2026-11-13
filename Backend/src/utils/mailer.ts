@@ -1,22 +1,13 @@
 
-import nodemailer from "nodemailer";
+import { clientUrl, fromAddress, getTransport } from "./smtp";
 import { escapeHtml } from "./escapeHtml";
 
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: Number(process.env.EMAIL_PORT) || 587,
-  secure: false, 
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
 
 export const sendPasswordResetEmail = async (to: string, token: string) => {
-  const resetLink = `${process.env.CLIENT_URL || "http://localhost:5173"}/reset-password?token=${encodeURIComponent(token)}`;
+  const resetLink = `${clientUrl()}/reset-password?token=${encodeURIComponent(token)}`;
 
- return await transporter.sendMail({
-    from: `"Help Desk" <${process.env.EMAIL_USER}>`,
+ return await getTransport().sendMail({
+    from: fromAddress(),
     to,
     subject: "Reset your Help Desk password",
     text: `Hi,

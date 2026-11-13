@@ -7,6 +7,7 @@ import crypto from "crypto";
 import * as userServices from "../services/userService";
 import { DEPARTMENT_ROLES, ALL_ROLES } from "../services/userService";
 import { sendTempPasswordEmail } from "../utils/emailService";
+import { isEmailConfigured } from "../utils/smtp";
 
 /** The roles a signed-in admin may see, create and manage */
 const getAllowedTargetRoles = (adminRole: string): string[] => {
@@ -90,7 +91,7 @@ const makeTemporaryPassword = (): string => {
  * simulated email, so the new person can still sign in. The password never goes to the log.
  */
 const sendWelcomeEmail = async (email: string, tempPassword: string): Promise<boolean> => {
-    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER) {
+    if (!isEmailConfigured()) {
         console.warn(`[users] Email is not configured: the welcome email for ${email} is simulated in the response.`);
         return false;
     }
