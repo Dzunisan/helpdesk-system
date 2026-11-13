@@ -22,18 +22,27 @@ export function attachmentProblem(files: File[]): string | null {
   return null;
 }
 
+/** Upload options: staff mark a file internal (only department staff see it); signal cancels */
+export interface UploadAttachmentOptions {
+  isInternal?: boolean;
+  signal?: AbortSignal;
+}
+
 /** POST /api/tickets/:id/attachments (multipart "files"): 413 "Too large (max 5 MB)", 400 wrong type */
 export const uploadAttachments = async (
   ticketId: number,
   files: File[],
   onProgress?: (percent: number) => void,
+  options: UploadAttachmentOptions = {},
 ): Promise<AttachmentSummary[]> => {
   const form = new FormData();
   for (const file of files) form.append("files", file);
+  if (options.isInternal) form.append("is_internal", "true");
   return (
     await call(
       () =>
         api.post<UploadAttachmentsResponse>(`/tickets/${ticketId}/attachments`, form, {
+          signal: options.signal,
           onUploadProgress: (e) => onProgress?.(e.total ? Math.round((e.loaded / e.total) * 100) : 0),
         }),
       "Couldn't upload the file.",

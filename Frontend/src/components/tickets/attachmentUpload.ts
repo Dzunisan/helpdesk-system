@@ -1,11 +1,5 @@
-import { api, call } from "@/services/apiClient";
-import {
-  ATTACHMENT_ACCEPT,
-  ATTACHMENT_MAX_BYTES,
-  ATTACHMENT_MAX_FILES,
-  type AttachmentSummary,
-  type UploadAttachmentsResponse,
-} from "@/types/api";
+import { uploadAttachments } from "@/services/attachments";
+import { ATTACHMENT_ACCEPT, ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_FILES, type AttachmentSummary } from "@/types/api";
 
 /*
  * S14 in the composer (briefing p.21, p.42, p.49): every file uploads on its own, so each one gets
@@ -73,17 +67,7 @@ export async function uploadOne(
   onProgress: (percent: number) => void,
   signal?: AbortSignal,
 ): Promise<AttachmentSummary> {
-  const form = new FormData();
-  form.append("files", file);
-  if (internal) form.append("is_internal", "true");
-  const { attachments } = await call(
-    () =>
-      api.post<UploadAttachmentsResponse>(`/tickets/${ticketId}/attachments`, form, {
-        signal,
-        onUploadProgress: (e) => onProgress(e.total ? Math.round((e.loaded / e.total) * 100) : 0),
-      }),
-    "Couldn't upload the file.",
-  );
-  if (!attachments[0]) throw new Error("The server didn't keep the file.");
-  return attachments[0];
+  const [attachment] = await uploadAttachments(ticketId, [file], onProgress, { isInternal: internal, signal });
+  if (!attachment) throw new Error("The server didn't keep the file.");
+  return attachment;
 }

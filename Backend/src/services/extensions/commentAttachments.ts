@@ -6,7 +6,8 @@
 //   loadCommentAttachments()   from getTimeline, to put `attachments` on every comment item
 //
 // Files are uploaded first (POST /api/tickets/:id/attachments -> ids, comment_id NULL), then sent
-// with the comment. An attachment inherits the comment's is_internal; employees never receive
+// with the comment. A file sent with an internal note becomes internal, and a file uploaded as
+// internal (staff, is_internal=true) stays internal even on a public reply; employees never receive
 // internal attachments (the timeline filter below and canView on download).
 import { pool } from "../../config/database";
 import { HttpError } from "../../utils/httpError";
@@ -40,7 +41,7 @@ export const linkAttachments = async (ctx: CommentContext, commentId: number, at
   }
   const result = await ctx.client.query(
     `UPDATE attachment
-     SET comment_id = $1, is_internal = $2
+     SET comment_id = $1, is_internal = (is_internal OR $2)
      WHERE attachment_id = ANY($3::int[])
        AND ticket_id = $4 AND uploader_id = $5
        AND comment_id IS NULL AND deleted_at IS NULL`,

@@ -301,11 +301,29 @@ export const deleteAttachment = async (attachmentId: number, user: User): Promis
   if (Date.now() - new Date(row.created_at).getTime() > ATTACHMENT_DELETE_WINDOW_MINUTES * 60_000) {
     throw new HttpError(403, `Files can only be removed within ${ATTACHMENT_DELETE_WINDOW_MINUTES} minutes of attaching them.`);
   }
-  const result = await pool.query(
-    `UPDATE attachment SET deleted_at = now()
-     WHERE attachment_id = $1 AND deleted_at IS NULL AND uploader_id = $2
-       AND created_at > now() - make_interval(mins => $3::int)`,
-    [attachmentId, user.user_id, ATTACHMENT_DELETE_WINDOW_MINUTES]
-  );
-  if (!result.rowCount) throw new HttpError(403, "This file can't be removed any more.");
+  await withTransaction(async (client) => {
+    const result = await client.query(
+      `UPDATE attachment SET deleted_at = now()
+       WHERE attachment_id = $1 AND deleted_at IS NULL AND uploader_id = $2
+         AND created_at > now() - make_interval(mins => $3::int)`,
+      [attachmentId, user.user_id, ATTACHMENT_DELETE_WINDOW_MINUTES]
+    );
+    if (!result.rowCount) throw new HttpError(403, "This file can't be removed any more.");
+    // Same audience as the file's `attached` event, so an internal file's name never leaks
+    const attached = await client.query<{ is_internal: boolean }>(
+      `SELECT is_internal FROM ticket_event
+       WHERE ticket_id = $1 AND type = 'attached' AND to_value = $2
+       ORDER BY created_at DESC LIMIT 1`,
+      [row.ticket_id, String(attachmentId)]
+    );
+    await logEvent(client, {
+      ticketId: row.ticket_id,
+      actorId: user.user_id,
+      type: "attachment_removed",
+      to: String(attachmentId),
+      note: row.file_name,
+      isInternal: row.is_internal || (attached.rows[0]?.is_internal ?? true),
+    });
+    await client.query(`UPDATE ticket SET updated_at = now() WHERE ticket_id = $1`, [row.ticket_id]);
+  });
 };

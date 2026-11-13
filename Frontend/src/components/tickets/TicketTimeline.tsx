@@ -15,6 +15,7 @@ import {
   UserCheck,
   UserRoundPlus,
   Building2,
+  FileX,
   Paperclip,
 } from "lucide-react";
 import type { CategoryField, Ticket, TimelineComment, TimelineEvent, TimelineItem } from "@/types/api";
@@ -247,7 +248,7 @@ export default function TicketTimeline({
             const { event, folded } = row;
             const line = audience === "staff" ? staffLine(event, who(event.actor), ticket) : requesterLine(event, who(event.actor), ticket);
             return (
-              <EventLine key={event.id} icon={line.icon} time={event.at} staffOnly={event.is_internal} note={event.type === "attached" ? null : event.note}>
+              <EventLine key={event.id} icon={line.icon} time={event.at} staffOnly={event.is_internal} note={event.type === "attached" || event.type === "attachment_removed" ? null : event.note}>
                 <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
                   {line.text}
                   {folded && audience === "staff" && (
@@ -505,6 +506,15 @@ function staffLine(event: TimelineEvent, who: string, ticket: Ticket): Line {
           </span>
         ),
       };
+    case "attachment_removed":
+      return {
+        icon: FileX,
+        text: (
+          <span>
+            {actor} removed <Name>{event.note ?? "a file"}</Name>
+          </span>
+        ),
+      };
     default:
       return { icon: CircleDot, text: <span>{actor} updated this</span> };
   }
@@ -598,6 +608,15 @@ function requesterLine(event: TimelineEvent, who: string, ticket: Ticket): Line 
         text: (
           <span>
             {actor} attached <Name>{event.note ?? "a file"}</Name>
+          </span>
+        ),
+      };
+    case "attachment_removed":
+      return {
+        icon: FileX,
+        text: (
+          <span>
+            {actor} removed <Name>{event.note ?? "a file"}</Name>
           </span>
         ),
       };

@@ -26,10 +26,14 @@ export function filesOf(items: TimelineItem[] | null): RequestFile[] {
       }
     }
   }
+  // S14: a file its uploader removed again (attachment_removed event) is gone
+  const removed = new Set(
+    items.flatMap((i) => (i.kind === "event" && i.type === "attachment_removed" ? [Number(i.to_value)] : [])),
+  );
   for (const item of items) {
     if (item.kind !== "event" || item.type !== "attached" || item.is_internal) continue;
     const id = Number(item.to_value);
-    if (!Number.isInteger(id) || files.has(id)) continue;
+    if (!Number.isInteger(id) || files.has(id) || removed.has(id)) continue;
     const name = item.note ?? "File";
     files.set(id, { id, name, size: null, isImage: IMAGE_NAME.test(name) });
   }
