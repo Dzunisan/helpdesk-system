@@ -35,13 +35,16 @@ export interface UpdateDepartmentPayload {
   lead_id?: string | number | null;
 }
 
-interface UseDepartmentsOptions {
-  autoPolling?: boolean;
-  pollInterval?: number;
-}
+/** The server's message when there is one, else the network error, else `fallback` */
+const errorMessage = (err: unknown, fallback: string): string => {
+  if (axios.isAxiosError<{ message?: string }>(err)) return err.response?.data?.message || err.message || fallback;
+  return err instanceof Error ? err.message || fallback : fallback;
+};
 
-export const useDepartments = (_options: UseDepartmentsOptions = {}) => {
-  // const { autoPolling = true, pollInterval = 10000 } = options;
+/** A department row as some endpoints return it (with `id` rather than `department_id`) */
+type DepartmentRow = Department & { id?: string | number };
+
+export const useDepartments = () => {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [isRefetching, setIsRefetching] = useState<boolean>(false);
@@ -69,8 +72,8 @@ export const useDepartments = (_options: UseDepartmentsOptions = {}) => {
       setDepartments(fetchedDepartments);
       initialFetchDone.current = true;
       return fetchedDepartments;
-    } catch (err: any) {
-      const message = err.response?.data?.message || err.message || "Failed to fetch departments";
+    } catch (err) {
+      const message = errorMessage(err, "Failed to fetch departments");
       console.error("Failed to fetch departments:", err);
       // Only set UI-blocking error on initial failure
       if (!initialFetchDone.current) {
@@ -115,10 +118,10 @@ export const useDepartments = (_options: UseDepartmentsOptions = {}) => {
       fetchAll(true);
 
       return created;
-    } catch (err: any) {
-      const message = err.response?.data?.message || err.message || "Failed to create department";
+    } catch (err) {
+      const message = errorMessage(err, "Failed to create department");
       setError(message);
-      throw new Error(message);
+      throw new Error(message, { cause: err });
     } finally {
       setActionLoading(false);
     }
@@ -133,7 +136,7 @@ export const useDepartments = (_options: UseDepartmentsOptions = {}) => {
       const status = data.status;
       const leadId = data.leadId ?? data.lead_id;
 
-      const payload: any = {};
+      const payload: { name?: string; description?: string | null; status?: string; leadId?: string | null } = {};
       if (name !== undefined) payload.name = name.trim();
       if (description !== undefined) payload.description = description !== null ? description.trim() : null;
       if (status !== undefined) payload.status = status;
@@ -153,7 +156,7 @@ export const useDepartments = (_options: UseDepartmentsOptions = {}) => {
       if (updated) {
         setDepartments((prev) =>
           prev.map((d) =>
-            String(d.department_id) === String(id) || String((d as any).id) === String(id)
+            String(d.department_id) === String(id) || String((d as DepartmentRow).id) === String(id)
               ? { ...d, ...updated }
               : d
           )
@@ -164,10 +167,10 @@ export const useDepartments = (_options: UseDepartmentsOptions = {}) => {
       fetchAll(true);
 
       return updated;
-    } catch (err: any) {
-      const message = err.response?.data?.message || err.message || "Failed to update department";
+    } catch (err) {
+      const message = errorMessage(err, "Failed to update department");
       setError(message);
-      throw new Error(message);
+      throw new Error(message, { cause: err });
     } finally {
       setActionLoading(false);
     }
@@ -181,17 +184,17 @@ export const useDepartments = (_options: UseDepartmentsOptions = {}) => {
 
       // Optimistic removal from active departments
       setDepartments((prev) =>
-        prev.filter((d) => String(d.department_id) !== String(id) && String((d as any).id) !== String(id))
+        prev.filter((d) => String(d.department_id) !== String(id) && String((d as DepartmentRow).id) !== String(id))
       );
 
       // Immediate background refetch to reflect department updates in real time
       fetchAll(true);
 
       return res.data;
-    } catch (err: any) {
-      const message = err.response?.data?.message || err.message || "Failed to delete department";
+    } catch (err) {
+      const message = errorMessage(err, "Failed to delete department");
       setError(message);
-      throw new Error(message);
+      throw new Error(message, { cause: err });
     } finally {
       setActionLoading(false);
     }
