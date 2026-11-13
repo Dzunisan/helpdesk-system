@@ -82,7 +82,8 @@ export const getFeedback = async (ticketId: number, user: User): Promise<TicketF
 /** Checks { rating, tags, comment }; 400 with a sentence the survey can show */
 export const parseFeedbackInput = (body: unknown): { rating: number; tags: CsatTag[]; comment: string | null } => {
   const input = (body ?? {}) as { rating?: unknown; tags?: unknown; comment?: unknown; feedback?: unknown };
-  const rating = Number(input.rating);
+  // A JSON number only: "5" (a string) is a 400 like 3.5, 0 and 6
+  const rating = typeof input.rating === "number" ? input.rating : NaN;
   if (input.rating === undefined || input.rating === null || input.rating === "") {
     throw new HttpError(400, "Choose a rating from 1 to 5 stars.");
   }
