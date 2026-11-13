@@ -218,6 +218,8 @@ export interface Ticket {
   resolved_at: Date | null;
   closed_at: Date | null;
   reopen_count: number;
+  /** S12: +1 per department move */
+  moved_count?: number;
   resolution_note: string | null;
   first_response_due_at: Date | null;
   resolution_due_at: Date | null;
@@ -264,7 +266,9 @@ export type TicketEventType =
   | "feedback_given"
   // Sprint 2 (db/migrations/003_sprint2.sql)
   | "department_changed"
-  | "attached";
+  | "attached"
+  // db/migrations/004_attachment_removed.sql
+  | "attachment_removed";
 
 export interface TicketEvent {
   event_id: string; // bigserial comes back from pg as a string
@@ -289,6 +293,11 @@ export interface TicketFeedback {
   updated_at?: Date;
   user_name?: string;
   user_email?: string;
+  /** S10: quick tags, and the owner and department when the ticket closed */
+  tags?: string[];
+  agent_id?: string | null;
+  agent_name?: string | null;
+  department_id?: number | null;
 }
 
 export interface TicketDetail extends Ticket {

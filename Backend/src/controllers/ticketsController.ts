@@ -347,75 +347,8 @@ export const deleteComment = async (req: Request, res: Response) => {
 };
 
 // ---------------------------------------------------------------------------------------------
-// Feedback (S10 in Sprint 2) and the agent picker
+// The agent picker (feedback is S10: controllers/feedbackController.ts)
 // ---------------------------------------------------------------------------------------------
-
-// POST /api/tickets/:ticket_id/feedback
-export const submitFeedback = async (req: Request, res: Response) => {
-  const user = req.user;
-  if (!user) {
-    return res.status(401).json({ message: "Not authenticated" });
-  }
-
-  const ticketIdParam = req.params.ticket_id || req.params.id;
-  if (!ticketIdParam || !isIntId(String(ticketIdParam).trim())) {
-    return res.status(400).json({ message: "Invalid ticket ID. Must be an integer." });
-  }
-
-  const ticketId = Number(String(ticketIdParam).trim());
-  const { rating, comment, feedback } = req.body;
-
-  if (rating === undefined || rating === null) {
-    return res.status(400).json({ message: "Rating is required." });
-  }
-
-  const ratingNum = Number(rating);
-  if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 5) {
-    return res.status(400).json({ message: "Rating must be an integer between 1 and 5." });
-  }
-
-  const feedbackComment = comment !== undefined ? comment : feedback;
-
-  try {
-    const result = await ticketService.submitTicketFeedback(ticketId, user, ratingNum, feedbackComment);
-    if (!result.success) {
-      return res.status(result.statusCode).json({ message: result.message });
-    }
-    return res.status(result.statusCode).json({
-      message: result.message,
-      feedback: result.feedback
-    });
-  } catch (error) {
-    return handleError(res, error);
-  }
-};
-
-// GET /api/tickets/:ticket_id/feedback
-export const getFeedback = async (req: Request, res: Response) => {
-  const user = req.user;
-  if (!user) {
-    return res.status(401).json({ message: "Not authenticated" });
-  }
-
-  const ticketIdParam = req.params.ticket_id || req.params.id;
-  if (!ticketIdParam || !isIntId(String(ticketIdParam).trim())) {
-    return res.status(400).json({ message: "Invalid ticket ID. Must be an integer." });
-  }
-
-  const ticketId = Number(String(ticketIdParam).trim());
-
-  try {
-    const result = await ticketService.getTicketFeedback(ticketId, user);
-    if (!result.success) {
-      return res.status(result.statusCode).json({ message: result.message });
-    }
-    return res.status(result.statusCode).json({
-      feedback: result.feedback
-    });
-  } catch (error) {
-    return handleError(res, error);
-  }
-};
 
 // GET /api/tickets/agents
 export const getAgents = async (req: Request, res: Response) => {

@@ -224,10 +224,13 @@ export const getTicketById = async (
   // Fetch resolution feedback if any
   const feedbackResult = await pool.query(
     `SELECT fb.feedback_id, fb.ticket_id, fb.user_id, fb.rating, fb.comment, fb.created_at, fb.updated_at,
+            fb.tags, fb.agent_id::text AS agent_id, fb.department_id,
             TRIM(CONCAT(u.name, ' ', u.surname)) AS user_name,
-            u.email AS user_email
+            u.email AS user_email,
+            NULLIF(TRIM(CONCAT(ag.name, ' ', ag.surname)), '') AS agent_name
      FROM ticket_feedback fb
      LEFT JOIN users u ON fb.user_id = u.user_id
+     LEFT JOIN users ag ON fb.agent_id = ag.user_id
      WHERE fb.ticket_id = $1`,
     [ticketId]
   );
@@ -273,128 +276,6 @@ export const resolveTicketAccess = async (
     access,
     canWork: canWork(access, ticket),
     isRequester: isRequester(access, ticket)
-  };
-};
-
-export const submitTicketFeedback = async (
-  ticketId: number,
-  currentUser: User,
-  rating: number,
-  comment?: string | null
-): Promise<{ success: boolean; statusCode: number; message: string; feedback?: TicketFeedback }> => {
-  const ticketRes = await pool.query(
-    "SELECT ticket_id, requester_id, ticket_status, title FROM ticket WHERE ticket_id = $1 AND deleted_at IS NULL",
-    [ticketId]
-  );
-
-  if (ticketRes.rowCount === 0) {
-    return { success: false, statusCode: 404, message: "Ticket not found." };
-  }
-
-  const ticket = ticketRes.rows[0];
-
-  // ticketAccess: 404 for anyone who can't view the ticket
-  const resolved = await resolveTicketAccess(ticketId, currentUser);
-  if (!resolved) {
-    return { success: false, statusCode: 404, message: "Ticket not found." };
-  }
-
-  // RBAC: Only ticket requester can submit resolution feedback
-  if (!resolved.isRequester) {
-    return {
-      success: false,
-      statusCode: 403,
-      message: "Forbidden: Only the ticket requester can submit resolution feedback."
-    };
-  }
-
-  // Resolution feedback requirement: Requester can post rating/feedback only after a ticket is marked as Resolved or Closed.
-  const normalizedStatus = String(ticket.ticket_status).trim().toLowerCase();
-  if (normalizedStatus !== "resolved" && normalizedStatus !== "closed") {
-    return {
-      success: false,
-      statusCode: 400,
-      message: `Feedback can only be submitted for tickets that are Resolved or Closed. Current status is ${ticket.ticket_status}.`
-    };
-  }
-
-  const ratingNum = Number(rating);
-  if (!Number.isInteger(ratingNum) || ratingNum < 1 || ratingNum > 5) {
-    return {
-      success: false,
-      statusCode: 400,
-      message: "Rating must be an integer between 1 and 5."
-    };
-  }
-
-  // No comment sent keeps the one already there; an empty string clears it
-  const trimmedComment = comment !== undefined && comment !== null ? String(comment).trim().slice(0, 2000) : null;
-  const keepComment = comment === undefined || comment === null;
-
-  // The rating and its `feedback_given` event commit together (page 28: every change is a fact)
-  const result = await withTransaction(async (client) => {
-    const previous = await client.query(
-      "SELECT rating FROM ticket_feedback WHERE ticket_id = $1 FOR UPDATE",
-      [ticketId]
-    );
-    const saved = await client.query(
-      `INSERT INTO ticket_feedback (ticket_id, user_id, rating, comment, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, NOW(), NOW())
-       ON CONFLICT (ticket_id) DO UPDATE
-       SET rating = EXCLUDED.rating,
-           comment = CASE WHEN $5::boolean THEN ticket_feedback.comment ELSE EXCLUDED.comment END,
-           updated_at = NOW()
-       RETURNING feedback_id, ticket_id, user_id, rating, comment, created_at, updated_at`,
-      [ticketId, currentUser.user_id, ratingNum, trimmedComment || null, keepComment]
-    );
-    await logEvent(client, {
-      ticketId,
-      actorId: currentUser.user_id,
-      type: "feedback_given",
-      from: previous.rows[0] ? String(previous.rows[0].rating) : null,
-      to: String(ratingNum),
-      note: saved.rows[0].comment ?? null,
-    });
-    return saved;
-  });
-
-  const fb = result.rows[0] as TicketFeedback;
-  fb.user_name = `${currentUser.name} ${currentUser.surname || ""}`.trim();
-  fb.user_email = currentUser.email;
-
-  return {
-    success: true,
-    statusCode: 201,
-    message: "Feedback submitted successfully.",
-    feedback: fb
-  };
-};
-
-export const getTicketFeedback = async (
-  ticketId: number,
-  currentUser: User
-): Promise<{ success: boolean; statusCode: number; message: string; feedback?: TicketFeedback | null }> => {
-  // ticketAccess: feedback is readable only by the requester or staff of the ticket's department
-  const resolved = await resolveTicketAccess(ticketId, currentUser);
-  if (!resolved) {
-    return { success: false, statusCode: 404, message: "Ticket not found." };
-  }
-
-  const result = await pool.query(
-    `SELECT fb.feedback_id, fb.ticket_id, fb.user_id, fb.rating, fb.comment, fb.created_at, fb.updated_at,
-            TRIM(CONCAT(u.name, ' ', u.surname)) AS user_name,
-            u.email AS user_email
-     FROM ticket_feedback fb
-     LEFT JOIN users u ON fb.user_id = u.user_id
-     WHERE fb.ticket_id = $1`,
-    [ticketId]
-  );
-
-  return {
-    success: true,
-    statusCode: 200,
-    message: "Feedback retrieved successfully",
-    feedback: result.rows[0] ? (result.rows[0] as TicketFeedback) : null
   };
 };
 

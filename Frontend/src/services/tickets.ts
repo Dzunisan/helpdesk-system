@@ -13,8 +13,6 @@ import type {
   CommentResponse,
   CreateTicketRequest,
   CreateTicketResponse,
-  FeedbackResponse,
-  SubmitFeedbackRequest,
   Ticket,
   TicketActionsResponse,
   TicketListParams,
@@ -23,7 +21,6 @@ import type {
   TimelineResponse,
   TransitionRequest,
   Comment,
-  TicketFeedback,
 } from "@/types/api";
 
 /** Query params for GET /api/tickets: status lists go comma-separated */
@@ -116,10 +113,6 @@ export const editComment = async (commentId: number, body: string): Promise<Comm
 /** DELETE /api/comments/:id (S4): soft delete, the timeline keeps a "Message removed" marker */
 export const deleteComment = async (commentId: number): Promise<Comment> =>
   (await call(() => api.delete<CommentResponse>(`/comments/${commentId}`), "Couldn't delete the message.")).comment;
-
-/** POST /api/tickets/:id/feedback: the requester rates a Resolved or Closed ticket once */
-export const submitFeedback = async (ticketId: number, body: SubmitFeedbackRequest): Promise<TicketFeedback> =>
-  (await call(() => api.post<FeedbackResponse>(`/tickets/${ticketId}/feedback`, body), "Couldn't send your rating.")).feedback;
 
 /**
  * Every ticket the caller may see, 100 per page, up to 10 pages (the lead's dashboard and team

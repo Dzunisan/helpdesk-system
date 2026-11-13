@@ -7,8 +7,6 @@ import {
   getComments,
   editComment,
   deleteComment,
-  submitFeedback,
-  getFeedback,
   updateStatus,
   approveTicket,
   rejectTicket,
@@ -77,9 +75,7 @@ router.get("/:ticket_id/comments", getComments);
 router.patch("/:ticket_id/comments/:id", editComment);
 router.delete("/:ticket_id/comments/:id", deleteComment);
 
-// Feedback endpoints
-router.post("/:ticket_id/feedback", submitFeedback);
-router.get("/:ticket_id/feedback", getFeedback);
+// Feedback (S10): GET/POST /:id/feedback live in routes/feedbackRoutes.ts (mounted first in index.ts)
 
 // Retrieve details of a specific ticket
 router.get("/:id", getTicketById);
