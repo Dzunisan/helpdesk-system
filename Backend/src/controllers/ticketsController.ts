@@ -9,8 +9,7 @@ import {
 import {
   TicketStatus,
   VALID_PRIORITIES,
-  VALID_STATUSES,
-  UpdateTicketDto
+  VALID_STATUSES
 } from "../types/ticket.types";
 import * as lifecycle from "../services/ticketLifecycle";
 import * as timeline from "../services/ticketTimeline";
@@ -94,6 +93,9 @@ export const fetchTickets = async (req: Request, res: Response) => {
     const sort = sortRaw ? parseList(sortRaw, LIST_SORTS, "sort")[0] : "created";
     const slaRaw = queryText(q.sla);
     const sla = slaRaw ? parseList(slaRaw, LIST_SLA, "sla")[0] : null;
+    // "Breached" and "due soon" are about work still owed: without a status list they mean the
+    // live statuses, so a ticket closed late long ago never shows as overdue (send status to widen)
+    if (sla && statuses.length === 0) statuses.push("New", "Open", "Waiting on employee");
 
     const deptRaw = queryText(q.department_id ?? q.department);
     if (deptRaw && !isIntId(deptRaw)) throw new HttpError(400, "department_id must be a valid integer.");
@@ -168,152 +170,6 @@ export const getTicketById = async (req: Request, res: Response) => {
     return res.status(200).json({ ticket });
   } catch (error) {
     return error instanceof HttpError ? sendError(res, error) : handleError(res, error);
-  }
-};
-
-// ---------------------------------------------------------------------------------------------
-// Editing ticket details (title / description; staff: department / category). Status, priority
-// and owner have their own endpoints with their own rules and timeline events.
-// ---------------------------------------------------------------------------------------------
-
-export const updateTicket = async (req: Request, res: Response) => {
-  const user = req.user;
-  if (!user) {
-    return res.status(401).json({ message: "Not authenticated" });
-  }
-
-  // Support /:id parameter, or id in body for legacy /update endpoint
-  const idParam = req.params.id || req.body.ticket_id || req.body.id;
-  if (!idParam || !isIntId(String(idParam))) {
-    return res.status(400).json({ message: "Invalid or missing ticket ID." });
-  }
-
-  const ticketId = Number(idParam);
-
-  try {
-    // ticketAccess: 404 for anyone who can't view the ticket
-    const resolved = await ticketService.resolveTicketAccess(ticketId, user);
-    if (!resolved) {
-      return res.status(404).json({ message: "Ticket not found." });
-    }
-
-    const {
-      title,
-      description,
-      priority,
-      status,
-      ticket_status,
-      ticket_priority,
-      department_id,
-      ticket_department_id,
-      category_id,
-      ticket_category_id,
-      assignee_id
-    } = req.body;
-
-    // The free status / priority / owner paths are gone (S2, S3): every move goes through the
-    // endpoint that enforces its rules and writes the timeline event
-    if (status !== undefined || ticket_status !== undefined) {
-      return res.status(400).json({ message: "Use POST /api/tickets/:id/transition to change the status." });
-    }
-    if (priority !== undefined || ticket_priority !== undefined) {
-      return res.status(400).json({ message: "Use PATCH /api/tickets/:id/priority to change the priority." });
-    }
-    if (assignee_id !== undefined) {
-      return res.status(400).json({ message: "Use POST /api/tickets/:id/claim or PATCH /api/tickets/:id/assign." });
-    }
-
-    const errors: string[] = [];
-    const updateData: UpdateTicketDto = {};
-
-    // Anyone who can't work the ticket (the requester) may only edit its title and description
-    if (!resolved.canWork) {
-      const restrictedFields = [department_id, ticket_department_id, category_id, ticket_category_id];
-      if (restrictedFields.some((value) => value !== undefined)) {
-        return res.status(403).json({
-          message: "Forbidden: You can only edit the title and description of your own tickets."
-        });
-      }
-    }
-
-    if (title !== undefined) {
-      if (typeof title !== "string" || title.trim().length === 0) {
-        errors.push("Title cannot be empty.");
-      } else if (title.trim().length > 255) {
-        errors.push("Title must be 255 characters or fewer.");
-      } else {
-        updateData.title = title.trim();
-      }
-    }
-
-    if (description !== undefined) {
-      if (description !== null && typeof description !== "string") {
-        errors.push("Description must be a string.");
-      } else {
-        updateData.description = description ? description.trim() : null;
-      }
-    }
-
-    const targetDeptId = department_id !== undefined ? department_id : ticket_department_id;
-    if (targetDeptId !== undefined) {
-      if (targetDeptId === null || String(targetDeptId).trim() === "") {
-        errors.push("A ticket always belongs to a department.");
-      } else if (!isIntId(String(targetDeptId))) {
-        errors.push("Department ID must be a valid integer.");
-      } else {
-        const deptIdNum = Number(targetDeptId);
-        const exists = await ticketService.checkDepartmentExists(deptIdNum);
-        if (!exists) {
-          errors.push("Department does not exist.");
-        } else {
-          updateData.department_id = deptIdNum;
-        }
-      }
-    }
-
-    const targetCatId = category_id !== undefined ? category_id : ticket_category_id;
-    if (targetCatId !== undefined) {
-      if (targetCatId === null || String(targetCatId).trim() === "") {
-        errors.push("A ticket always has a category.");
-      } else if (!isIntId(String(targetCatId))) {
-        errors.push("Category ID must be a valid integer.");
-      } else {
-        const catIdNum = Number(targetCatId);
-        const exists = await ticketService.checkCategoryExists(catIdNum);
-        if (!exists) {
-          errors.push("Category does not exist.");
-        } else {
-          updateData.category_id = catIdNum;
-        }
-      }
-    }
-
-    if (errors.length > 0) {
-      return res.status(400).json({ message: "Validation failed", errors });
-    }
-
-    const updatedTicket = await ticketService.updateTicket(ticketId, updateData, resolved.canWork);
-    return res.status(200).json({ message: "Ticket updated successfully", ticket: updatedTicket });
-  } catch (error) {
-    return handleError(res, error);
-  }
-};
-
-/**
- * DELETE /api/tickets/:id (older screens): nothing is ever deleted any more. It is the requester's
- * Cancel, with the same rules as POST /:id/transition { to: "Cancelled" } (New / Pending approval).
- */
-export const deleteTicket = async (req: Request, res: Response) => {
-  const user = req.user;
-  if (!user) {
-    return res.status(401).json({ message: "Not authenticated" });
-  }
-  try {
-    const ticketId = parseIntId(req.params.id || req.body?.ticket_id || req.body?.id);
-    const ticket = await lifecycle.transitionTicket(ticketId, user, "Cancelled", req.body?.note);
-    return res.status(200).json({ message: "Request cancelled.", ticket });
-  } catch (error) {
-    return sendError(res, error);
   }
 };
 

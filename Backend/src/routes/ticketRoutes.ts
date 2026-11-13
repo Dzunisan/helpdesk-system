@@ -2,8 +2,6 @@ import { Router } from "express";
 import {
   fetchTickets,
   getTicketById,
-  updateTicket,
-  deleteTicket,
   assignTicket,
   addComment,
   getComments,
@@ -30,9 +28,8 @@ router.use(requireAuth);
 // List available agents for reassignment (must be declared before /:id)
 router.get("/agents", getAgents);
 
-// Create a new ticket (POST /api/tickets is the Sprint 1 contract; /create is kept for old callers)
+// Create a new ticket (S5): the category decides the department and the priority
 router.post("/", createTicket);
-router.post("/create", createTicket);
 
 // Retrieve list of tickets with filtering & pagination
 router.get("/", fetchTickets);
@@ -78,13 +75,8 @@ router.get("/:ticket_id/feedback", getFeedback);
 // Retrieve details of a specific ticket
 router.get("/:id", getTicketById);
 
-// Update ticket details (title, description; staff: department, category). Status, priority and
-// owner are refused here (400): they go through /transition, /priority and /claim or /assign.
-router.put("/update/:id", updateTicket);
-router.patch("/update/:id", updateTicket);
-
-// Nothing is deleted: DELETE is the requester's Cancel (same rules as /transition to Cancelled)
-router.delete("/delete/:id", deleteTicket);
-router.delete("/:id", deleteTicket);
+// There is no free edit or delete: title and description belong to the requester's original
+// message, a department move is a Sprint 2 lead action, and a requester withdraws a request with
+// POST /:id/transition { to: "Cancelled" }.
 
 export default router;

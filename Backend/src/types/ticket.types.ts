@@ -2,6 +2,7 @@ import {
   TicketAccessTicket,
   TicketAccessUser,
   canWork,
+  isDepartmentLead,
   isRequester,
 } from "../services/ticketAccess";
 
@@ -116,7 +117,7 @@ export const transitionRolesOf = (user: TicketAccessUser | null, ticket: Transit
   if (isRequester(user, ticket)) roles.add("requester");
   if (canWork(user, ticket)) {
     roles.add("agent");
-    if (user.role === "Department Lead") roles.add("lead");
+    if (isDepartmentLead(user, ticket)) roles.add("lead");
     if (sameId(ticket.assignee_id, user.user_id)) roles.add("assignee");
   }
   return roles;
@@ -258,7 +259,9 @@ export type TicketEventType =
   | "approved"
   | "rejected"
   | "reopened"
-  | "comment_deleted";
+  | "comment_deleted"
+  | "comment_edited"
+  | "feedback_given";
 
 export interface TicketEvent {
   event_id: string; // bigserial comes back from pg as a string
@@ -290,14 +293,6 @@ export interface TicketDetail extends Ticket {
   feedback?: TicketFeedback | null;
 }
 
-export interface UpdateTicketDto {
-  title?: string;
-  description?: string | null;
-  priority?: TicketPriority;
-  status?: TicketStatus;
-  department_id?: number;
-  category_id?: number;
-}
 
 export interface TicketFilters {
   status?: string | null;

@@ -192,7 +192,9 @@ export const getTimeline = async (ticketId: number, user: User): Promise<Timelin
         to_value: e.to_value,
         from_label: label(e.type, e.from_value),
         to_label: label(e.type, e.to_value),
-        note: e.note,
+        // A lead's reassignment reason ("Thabo is overloaded") is a staff matter (page 13): the
+        // requester sees who has the ticket, not why it moved
+        note: !staff && e.type === "assigned" ? null : e.note,
         is_internal: e.is_internal,
       })
     ),
@@ -367,17 +369,26 @@ const authorChecks = async (commentId: number, user: User, verb: "edit" | "delet
   return comment;
 };
 
-/** PATCH /api/comments/:id { body }: the author, within 15 minutes. Sets edited_at. */
+/** PATCH /api/comments/:id { body }: the author, within 15 minutes. Sets edited_at, one `comment_edited` event. */
 export const editComment = async (commentId: number, user: User, rawBody: unknown): Promise<CommentDto> => {
   const body = cleanBody(rawBody);
-  await authorChecks(commentId, user, "edit");
-  const result = await pool.query(
-    `UPDATE comment SET body = $1, edited_at = now(), updated_at = now()
-     WHERE comment_id = $2 AND deleted_at IS NULL
-       AND created_at > now() - make_interval(mins => $3::int)`,
-    [body, commentId, COMMENT_EDIT_WINDOW_MINUTES]
-  );
-  if (!result.rowCount) throw new HttpError(409, "This message can't be edited any more.");
+  const comment = await authorChecks(commentId, user, "edit");
+  await withTransaction(async (client) => {
+    const result = await client.query(
+      `UPDATE comment SET body = $1, edited_at = now(), updated_at = now()
+       WHERE comment_id = $2 AND deleted_at IS NULL
+         AND created_at > now() - make_interval(mins => $3::int)`,
+      [body, commentId, COMMENT_EDIT_WINDOW_MINUTES]
+    );
+    if (!result.rowCount) throw new HttpError(409, "This message can't be edited any more.");
+    await logEvent(client, {
+      ticketId: comment.ticket_id,
+      actorId: user.user_id,
+      type: "comment_edited",
+      to: String(commentId),
+      isInternal: comment.is_internal,
+    });
+  });
   return (await loadComment(commentId))!;
 };
 

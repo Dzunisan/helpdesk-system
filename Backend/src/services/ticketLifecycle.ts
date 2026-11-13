@@ -64,6 +64,17 @@ const ASSIGNABLE_STATUSES: TicketStatus[] = ["New", "Open", "Waiting on employee
 
 const MAX_NOTE_LENGTH = 5000;
 
+/**
+ * Page 4: "only the owner (or the lead) may change an Open ticket". Any agent of the department
+ * triages a ticket nobody owns yet (New, Pending approval); once someone owns it (Open, Waiting on
+ * employee) only they or the department's lead change its priority. Null when allowed.
+ */
+const priorityProblem = (access: TicketAccessUser, ticket: LifecycleTicket): string | null => {
+  if (!canWork(access, ticket)) return "Only agents and leads of this ticket's department can change its priority.";
+  if (!ticket.assignee_id || isDepartmentLead(access, ticket) || sameId(ticket.assignee_id, access.user_id)) return null;
+  return `Only ${ticket.assignee_first_name || "the owner"} or the department lead can change this ticket's priority.`;
+};
+
 const sameId = (a: unknown, b: unknown) =>
   a !== null && a !== undefined && b !== null && b !== undefined && String(a) === String(b);
 
@@ -188,11 +199,12 @@ const claimLocked = async (client: PoolClient, ticket: LifecycleTicket, access: 
   if (!canWork(access, ticket)) {
     throw new HttpError(403, "Only agents and leads of this ticket's department can claim it.");
   }
-  if (ticket.assignee_id) {
+  // The status decides first: a Closed ticket you once owned is "Closed", not "you already own it".
+  // Only a live claim (New or Open with an owner) gets the "who has it" wording.
+  const live = ticket.ticket_status === "New" || ticket.ticket_status === "Open";
+  if (live && ticket.assignee_id) {
     if (sameId(ticket.assignee_id, user.user_id)) throw new HttpError(409, "You already own this ticket.");
-    if (ticket.ticket_status === "New" || ticket.ticket_status === "Open") {
-      throw new HttpError(409, `${ticket.assignee_first_name || "Someone else"} claimed this a moment ago.`);
-    }
+    throw new HttpError(409, `${ticket.assignee_first_name || "Someone else"} claimed this a moment ago.`);
   }
   if (ticket.ticket_status !== "New") {
     throw new HttpError(409, `This ticket is ${ticket.ticket_status}, so it can't be claimed.`);
@@ -417,7 +429,7 @@ export const getTicketActions = async (ticketId: number, user: User): Promise<Ti
   const actions: TicketAction[] = [];
   if (staff && status === "New" && !ticket.assignee_id) actions.push("claim");
   if (lead && ASSIGNABLE_STATUSES.includes(status)) actions.push("assign");
-  if (staff && !final) actions.push("change_priority");
+  if (!final && !priorityProblem(access, ticket)) actions.push("change_priority");
   if ((requester || staff) && !final) actions.push("reply");
   if (staff && !final) actions.push("internal_note");
   if (status === "Open" && can("Waiting on employee")) actions.push("wait");
@@ -441,7 +453,7 @@ export const getTicketActions = async (ticketId: number, user: User): Promise<Ti
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Staff of the department change priority; both due times are recalculated from created_at with
+ * Staff of the department change priority (once owned: the owner or the lead); both due times are recalculated from created_at with
  * the current policies (page 5), never from now. Pending approval tickets have no clock yet (S6
  * starts it on approval), so only the priority changes. One `priority_changed` event.
  */
@@ -449,9 +461,8 @@ export const changePriority = async (ticketId: number, user: User, priority: Tic
   await closeExpiredResolved(ticketId);
   await withTransaction(async (client) => {
     const { ticket, access } = await lockTicket(client, ticketId, user);
-    if (!canWork(access, ticket)) {
-      throw new HttpError(403, "Only agents and leads of this ticket's department can change its priority.");
-    }
+    const notAllowed = priorityProblem(access, ticket);
+    if (notAllowed) throw new HttpError(403, notAllowed);
     if (FINAL_STATUSES.includes(ticket.ticket_status)) {
       throw new HttpError(409, `This ticket is ${ticket.ticket_status}, so its priority can't change.`);
     }

@@ -1,10 +1,10 @@
-import { pool, query } from "../config/database";
+import { pool, query, withTransaction } from "../config/database";
+import { logEvent } from "./events";
 import {
   Ticket,
   TicketDetail,
   TicketPriority,
   TicketStatus,
-  UpdateTicketDto,
   PaginatedTicketsResult,
   TicketComment,
   TicketFeedback
@@ -69,34 +69,6 @@ export const COMMENT_SELECT = `
   FROM comment c
   LEFT JOIN users u ON u.user_id = c.author_id
   LEFT JOIN department ud ON ud.department_id = u.department_id`;
-
-export const checkDepartmentExists =async (departmentId: number): Promise<boolean> => {
-  const result = await query("SELECT 1 FROM department WHERE department_id = $1", [departmentId]);
-  return (result.rowCount ?? 0) > 0;
-};
-
-export const checkUserExists = async (userId: string | number): Promise<boolean> => {
-  const result = await query("SELECT 1 FROM users WHERE user_id = $1", [userId]);
-  return (result.rowCount ?? 0) > 0;
-};
-
-export const checkCategoryExists = async (categoryId: number): Promise<boolean> => {
-  const result = await query("SELECT 1 FROM category WHERE category_id = $1", [categoryId]);
-  return (result.rowCount ?? 0) > 0;
-};
-
-// LEGACY BRIDGE until S5 ships the category form: the old request form only sends a department, so
-// its ticket goes to that department's "Something else" category (else its first active category).
-export const getFallbackCategoryId = async (departmentId: number): Promise<number | null> => {
-  const result = await query(
-    `SELECT category_id FROM category
-     WHERE department_id = $1 AND active AND NOT needs_approval
-     ORDER BY (category_name = 'Something else') DESC, (kind = 'fix') DESC, category_id
-     LIMIT 1`,
-    [departmentId]
-  );
-  return result.rows[0]?.category_id ?? null;
-};
 
 /** Adds the computed sla_state to a ticket row */
 const withSla = <T extends Ticket>(ticket: T, now = new Date()): T => ({ ...ticket, sla_state: slaState(ticket, now) });
@@ -302,56 +274,6 @@ export const resolveTicketAccess = async (
   };
 };
 
-export const updateTicket = async (
-  ticketId: number,
-  updateData: UpdateTicketDto,
-  includeInternal = false
-): Promise<Ticket | null> => {
-  const fields: string[] = [];
-  const values: any[] = [];
-  let paramIndex = 1;
-
-  if (updateData.title !== undefined) {
-    fields.push(`title = $${paramIndex++}`);
-    values.push(updateData.title);
-  }
-  if (updateData.description !== undefined) {
-    fields.push(`description = $${paramIndex++}`);
-    values.push(updateData.description);
-  }
-  // Status and priority never change here: POST /:id/transition and PATCH /:id/priority enforce the
-  // rules and write the timeline event
-  if (updateData.department_id !== undefined) {
-    fields.push(`ticket_department_id = $${paramIndex++}`);
-    values.push(updateData.department_id);
-  }
-  if (updateData.category_id !== undefined) {
-    fields.push(`ticket_category_id = $${paramIndex++}`);
-    values.push(updateData.category_id);
-  }
-
-  if (fields.length === 0) {
-    return getTicketById(ticketId, includeInternal);
-  }
-
-  fields.push(`updated_at = NOW()`);
-  values.push(ticketId);
-
-  const updateQuery = `
-    UPDATE ticket
-    SET ${fields.join(", ")}
-    WHERE ticket_id = $${paramIndex}
-    RETURNING ticket_id
-  `;
-
-  const result = await pool.query(updateQuery, values);
-  if (result.rowCount === 0) {
-    return null;
-  }
-
-  return getTicketById(ticketId, includeInternal);
-};
-
 export const submitTicketFeedback = async (
   ticketId: number,
   currentUser: User,
@@ -403,16 +325,36 @@ export const submitTicketFeedback = async (
     };
   }
 
-  const trimmedComment = comment !== undefined && comment !== null ? String(comment).trim() : null;
+  // No comment sent keeps the one already there; an empty string clears it
+  const trimmedComment = comment !== undefined && comment !== null ? String(comment).trim().slice(0, 2000) : null;
+  const keepComment = comment === undefined || comment === null;
 
-  const result = await pool.query(
-    `INSERT INTO ticket_feedback (ticket_id, user_id, rating, comment, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, NOW(), NOW())
-     ON CONFLICT (ticket_id) DO UPDATE
-     SET rating = EXCLUDED.rating, comment = EXCLUDED.comment, updated_at = NOW()
-     RETURNING feedback_id, ticket_id, user_id, rating, comment, created_at, updated_at`,
-    [ticketId, currentUser.user_id, ratingNum, trimmedComment]
-  );
+  // The rating and its `feedback_given` event commit together (page 28: every change is a fact)
+  const result = await withTransaction(async (client) => {
+    const previous = await client.query(
+      "SELECT rating FROM ticket_feedback WHERE ticket_id = $1 FOR UPDATE",
+      [ticketId]
+    );
+    const saved = await client.query(
+      `INSERT INTO ticket_feedback (ticket_id, user_id, rating, comment, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, NOW(), NOW())
+       ON CONFLICT (ticket_id) DO UPDATE
+       SET rating = EXCLUDED.rating,
+           comment = CASE WHEN $5::boolean THEN ticket_feedback.comment ELSE EXCLUDED.comment END,
+           updated_at = NOW()
+       RETURNING feedback_id, ticket_id, user_id, rating, comment, created_at, updated_at`,
+      [ticketId, currentUser.user_id, ratingNum, trimmedComment || null, keepComment]
+    );
+    await logEvent(client, {
+      ticketId,
+      actorId: currentUser.user_id,
+      type: "feedback_given",
+      from: previous.rows[0] ? String(previous.rows[0].rating) : null,
+      to: String(ratingNum),
+      note: saved.rows[0].comment ?? null,
+    });
+    return saved;
+  });
 
   const fb = result.rows[0] as TicketFeedback;
   fb.user_name = `${currentUser.name} ${currentUser.surname || ""}`.trim();

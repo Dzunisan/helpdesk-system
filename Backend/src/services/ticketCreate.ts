@@ -1,7 +1,8 @@
 // POST /api/tickets (S5 Guided requests with category routing, briefing p.14; contract:
 // docs/api-sprint-1.md "S5"). The category decides everything the employee shouldn't:
 //   department  = category.department_id
-//   priority    = category.default_priority (Agents and Leads may send their own)
+//   priority    = category.default_priority (Agents and Leads may send their own, but only for a
+//                 category of a department they work in: page 12, triage is their own department's)
 //   status      = "Pending approval" when category.needs_approval, else "New"
 //   due times   = created_at + the SLA policy (sla.ts); none while Pending approval (S6 starts the clock)
 // Whatever else the browser sends (department, status, requester) is ignored. Required extra fields
@@ -11,9 +12,9 @@ import { Request, Response } from "express";
 import { withTransaction } from "../config/database";
 import { logEvent } from "./events";
 import { computeDueTimes, loadSlaPolicies } from "./sla";
-import { NO_TICKET_ACCESS_ROLES, STAFF_ROLES } from "./ticketAccess";
+import { NO_TICKET_ACCESS_ROLES, STAFF_ROLES, departmentsOf, loadTicketAccess } from "./ticketAccess";
 import { getCategoryForTicket, isIntId } from "./categoryService";
-import { getFallbackCategoryId, getTicketById } from "./ticketService";
+import { getTicketById } from "./ticketService";
 import type { CategoryField } from "../types/category.types";
 import {
   VALID_IMPACTS,
@@ -98,7 +99,7 @@ const fail = (res: Response, errors: string[], fieldErrors?: Record<string, stri
     ...(fieldErrors ? { field_errors: fieldErrors } : {}),
   });
 
-/** POST /api/tickets (and the /create alias) -> 201 { ticket, reference } */
+/** POST /api/tickets -> 201 { ticket, reference } */
 export const createTicket = async (req: Request, res: Response) => {
   const user = req.user;
   if (!user) {
@@ -143,43 +144,36 @@ export const createTicket = async (req: Request, res: Response) => {
     errors.push("extra_fields must be an object.");
   }
 
-  // The category. LEGACY BRIDGE (remove with the old form): a body with only a department goes to
-  // that department's "Something else" category.
+  // The category decides the department; a department_id from the browser is ignored
   const rawCategory = body.category_id ?? body.ticket_category_id;
-  const rawDepartment = body.department_id ?? body.ticket_department_id;
   let categoryId: number | null = null;
-  if (!isBlank(rawCategory)) {
-    if (!isIntId(rawCategory)) errors.push("Category ID must be a valid integer.");
-    else categoryId = Number(rawCategory);
-  } else if (isBlank(rawDepartment)) {
-    errors.push("Choose a category.");
-  } else if (!isIntId(rawDepartment)) {
-    errors.push("Choose a category.");
-  }
+  if (isBlank(rawCategory)) errors.push("Choose a category.");
+  else if (!isIntId(rawCategory)) errors.push("Category ID must be a valid integer.");
+  else categoryId = Number(rawCategory);
 
-  if (errors.length > 0) return fail(res, errors);
+  if (errors.length > 0 || categoryId === null) return fail(res, errors);
 
   try {
-    const bridged = categoryId === null;
-    if (categoryId === null) {
-      categoryId = await getFallbackCategoryId(Number(rawDepartment));
-      if (categoryId === null) return fail(res, ["Choose a category."]);
-    }
-
     const category = await getCategoryForTicket(categoryId);
     if (!category) return fail(res, ["That category doesn't exist. Choose another."]);
     if (!category.active || category.department_status !== "active") {
       return fail(res, ["This category is no longer offered. Choose another."]);
     }
 
-    // The old department-only form can't show extra fields, so the bridge doesn't require them
     const fields = Array.isArray(category.fields) ? category.fields : [];
     const { values, fieldErrors } = validateExtraFields(
-      bridged ? fields.map((f) => ({ ...f, required: false })) : fields,
+      fields,
       answers && typeof answers === "object" && !Array.isArray(answers) ? answers : {}
     );
     if (Object.keys(fieldErrors).length > 0) {
       return fail(res, Object.values(fieldErrors), fieldErrors);
+    }
+
+    // Staff triage only their own department (page 12). An agent raising a ticket for another
+    // department is a requester there: the category's default priority applies, as for employees.
+    if (staffPriority !== null) {
+      const ownDepartments = departmentsOf(await loadTicketAccess(user));
+      if (!ownDepartments.includes(Number(category.department_id))) staffPriority = null;
     }
 
     const priority: TicketPriority = staffPriority ?? category.default_priority;
