@@ -1,7 +1,7 @@
 import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ChevronLeft, Paperclip, SearchX, Send } from "lucide-react";
+import { ChevronLeft, Hourglass, SearchX, Send } from "lucide-react";
 import { listCategories } from "@/services/categories";
 import { listSlaPolicies } from "@/services/slaPolicies";
 import { createTicket } from "@/services/tickets";
@@ -15,6 +15,9 @@ import NewRequestSteps from "@/components/request/NewRequestSteps";
 import CategorySummary from "@/components/request/CategorySummary";
 import ExtraFieldInput from "@/components/request/ExtraFieldInput";
 import WhatHappensNext from "@/components/request/WhatHappensNext";
+import AttachmentDropZone from "@/components/request/AttachmentDropZone";
+import { useAttachmentQueue } from "@/components/request/useAttachmentQueue";
+import { leadTitle, useDepartmentLead } from "@/components/request/useDepartmentLead";
 import { useApiData } from "@/hooks/useApiData";
 import { IMPACT_OPTIONS } from "@/components/portal/portalText";
 import { Button } from "@/components/ui/button";
@@ -25,6 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const TITLE_MAX = 255;
 const DESCRIPTION_MIN = 10;
@@ -150,6 +154,9 @@ function DetailsForm({
   const [attempted, setAttempted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const fields = category.fields ?? [];
+  const approverName = useDepartmentLead(category.department_id);
+  // Files wait in the browser (checked there) and upload once the request exists
+  const files = useAttachmentQueue();
 
   const update = (next: FormState) => {
     setForm(next);
@@ -182,7 +189,14 @@ function DetailsForm({
         impact: form.impact || undefined,
         extra_fields: extraFieldsBody(form, fields),
       });
-      navigate(`/employee/tickets/${ticket.ticket_id}/submitted`, { state: { ticket } });
+      let filesFailed = 0;
+      let filesSent = 0;
+      if (files.sendable > 0) {
+        const { uploaded, failed } = await files.uploadAll(ticket.ticket_id);
+        filesSent = uploaded.length;
+        filesFailed = failed.length;
+      }
+      navigate(`/employee/tickets/${ticket.ticket_id}/submitted`, { state: { ticket, filesSent, filesFailed } });
     } catch (err) {
       const apiError = toApiError(err, "Couldn't submit your request.");
       const serverErrors = { ...apiError.fieldErrors };
@@ -210,7 +224,18 @@ function DetailsForm({
         <SectionCard>
           <form ref={formRef} onSubmit={submit} noValidate aria-label="Request details" className="flex flex-col gap-8">
             <fieldset disabled={submitting} className="flex min-w-0 flex-col gap-6">
-              <CategorySummary category={category} />
+              <CategorySummary category={category} approverName={approverName} />
+
+              {category.needs_approval && (
+                <Alert className="border-pending-border bg-pending-muted/60 px-4 py-3 text-foreground *:[svg]:text-pending">
+                  <Hourglass aria-hidden />
+                  <AlertTitle className="font-semibold">Needs approval</AlertTitle>
+                  <AlertDescription className="text-muted-foreground">
+                    {approverName ? `${approverName}, the ${leadTitle(category.department_name)},` : `The ${category.department_name} lead`}{" "}
+                    approves this before anyone starts. Include the cost and why you need it so they can decide quickly.
+                  </AlertDescription>
+                </Alert>
+              )}
 
               <Field data-invalid={errors.title ? true : undefined}>
                 <FieldLabel htmlFor="request-title">Short summary</FieldLabel>
@@ -304,14 +329,19 @@ function DetailsForm({
                 </FieldDescription>
               </Field>
 
-              {/* Sprint 2 (S14): attachments drop zone, png / jpg / pdf / docx up to 5 MB. Slot kept here. */}
-              <div
-                aria-disabled="true"
-                className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-muted/30 px-4 py-5 text-sm text-muted-foreground"
-              >
-                <Paperclip className="size-4 shrink-0" aria-hidden />
-                Attachments are coming soon. For now, describe the screenshot or error in words.
-              </div>
+              <Field>
+                <FieldLabel id="attachments-label">
+                  Attachments <span className="font-normal text-muted-foreground">(optional)</span>
+                </FieldLabel>
+                <AttachmentDropZone
+                  queue={files}
+                  disabled={submitting}
+                  label={category.needs_approval ? "Drop a quote or screenshot here, or" : "Drop a screenshot or document here, or"}
+                />
+                <FieldDescription className="text-xs">
+                  Only you and the {category.department_name} team can open them.
+                </FieldDescription>
+              </Field>
             </fieldset>
 
             <Separator />
@@ -325,7 +355,7 @@ function DetailsForm({
               </Button>
               <Button type="submit" size="lg" disabled={submitting} className="h-11 w-full sm:h-10 sm:w-auto">
                 {submitting ? <Spinner data-icon="inline-start" /> : <Send data-icon="inline-start" />}
-                {submitting ? "Submitting…" : "Submit request"}
+                {submitting ? (files.uploading ? "Uploading files…" : "Submitting…") : "Submit request"}
               </Button>
             </div>
           </form>
@@ -333,7 +363,7 @@ function DetailsForm({
 
         <aside className="flex flex-col gap-6 lg:sticky lg:top-24" aria-label="About your request">
           {/* Sprint 2 (S13): "Before you submit, these might help" help-article suggestions go here */}
-          <WhatHappensNext category={category} firstReplyMins={firstReplyMins} />
+          <WhatHappensNext category={category} firstReplyMins={firstReplyMins} approverName={approverName} />
         </aside>
       </div>
     </div>

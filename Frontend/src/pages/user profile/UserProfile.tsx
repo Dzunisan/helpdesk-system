@@ -12,6 +12,7 @@ import ChangePasswordCard from "@/components/profile/ChangePasswordCard";
 import EditNameDialog from "@/components/profile/EditNameDialog";
 import SectionCard from "@/components/app/SectionCard";
 import { Skeleton } from "@/components/ui/skeleton";
+import NotificationPrefsCard from "./NotificationPrefsCard";
 
 type Action = "name" | "password";
 
@@ -67,7 +68,9 @@ export default function UserProfile() {
     }
   };
 
-  const header = <PageHeader title="Your profile" description="How you appear to the support team, and your sign-in password." />;
+  const header = (
+    <PageHeader title="Your profile" description="How you appear to the support team, your notifications and your sign-in password." />
+  );
   const grid = "grid gap-6 xl:grid-cols-5 xl:items-start";
 
   if (!user) {
@@ -92,8 +95,8 @@ export default function UserProfile() {
       {header}
 
       <div className={grid}>
+        <div className="flex min-w-0 flex-col gap-6 xl:col-span-3">
         <ProfileDetailsCard
-          className="xl:col-span-3"
           details={{
             fullName: fullName(user),
             email: user.email ?? "",
@@ -107,6 +110,8 @@ export default function UserProfile() {
             setEditingName(true);
           }}
         />
+        <NotificationPrefsCard />
+        </div>
 
         <ChangePasswordCard
           className="xl:col-span-2"

@@ -96,11 +96,10 @@ export default function ResolvedCheck({ ticket, canConfirm, canReopen, reopenUnt
             </Button>
           )}
         </div>
-        {reopenUntil && (
-          <p className="text-xs text-muted-foreground">
-            Closes automatically on {formatSast(reopenUntil, "day")} if we don't hear from you.
-          </p>
-        )}
+        <p className="text-xs text-muted-foreground">
+          {reopenUntil && `Closes automatically on ${formatSast(reopenUntil, "day")} if we don't hear from you. `}
+          {canConfirm && `Once it's fixed you can rate how ${resolver ? firstNameOf(resolver) : "the team"} did.`}
+        </p>
       </CardContent>
 
       <Dialog open={reopenOpen} onOpenChange={(open) => busy === null && setReopenOpen(open)}>
