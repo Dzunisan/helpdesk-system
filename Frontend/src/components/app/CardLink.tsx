@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 /**
  * The quiet "View all →" link in a SectionCard's top-right `action` slot.
  * 40px tall on phones (tap target), 32px from sm.
- * @example <SectionCard title="My tickets" action={<CardLink to="/agent/assigned-tickets">View all</CardLink>} />
+ * @example <SectionCard title="My tickets" action={<CardLink to="/agent/queue/my-open">View all</CardLink>} />
  */
 export default function CardLink({ to, children, className }: { to: string; children: string; className?: string }) {
   return (

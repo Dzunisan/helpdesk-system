@@ -47,7 +47,7 @@ interface StatCardProps {
 /**
  * KPI tile: label, big tabular number, one line of context (briefing p.46, p.54, p.60, p.66).
  * Lay several out with `grid grid-cols-2 gap-4 xl:grid-cols-4` (two per row on phones).
- * @example <StatCard label="Breached" value={2} hint="HD-1045 · Sage login" tone="danger" to="/agent/assigned-tickets" />
+ * @example <StatCard label="Breached" value={2} hint="HD-1045 · Sage login" tone="danger" to="/agent/queue/my-open" />
  */
 export default function StatCard({ label, value, hint, tone = "default", icon: Icon, to, loading, className }: StatCardProps) {
   const t = TONE[tone];

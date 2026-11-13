@@ -87,14 +87,14 @@ export function canModifyComment(comment: TicketComment, userId: string, now = D
 /** Where "‹ Back" goes: the list this ticket most likely came from */
 export function backLinkFor(role: ViewerRole | "Admin", ticket: Ticket | null, userId: string): { to: string; label: string } {
   if (role === "Agent") {
-    if (ticket && String(ticket.assignee_id) === userId) return { to: "/agent/assigned-tickets", label: "My open" };
-    if (ticket && !ticket.assignee_id && displayStatus(ticket) === "new") return { to: "/agent/ticket-queue", label: "Unassigned" };
+    if (ticket && String(ticket.assignee_id) === userId) return { to: "/agent/queue/my-open", label: "My open" };
+    if (ticket && !ticket.assignee_id && displayStatus(ticket) === "new") return { to: "/agent/queue/unassigned", label: "Unassigned" };
     // My open is the agent's inbox, also the way out of a ticket that can't be shown
-    return ticket ? { to: "/agent", label: "Home" } : { to: "/agent/assigned-tickets", label: "My open" };
+    return ticket ? { to: "/agent", label: "Home" } : { to: "/agent/queue/my-open", label: "My open" };
   }
   if (role === "Department Lead") {
     if (ticket && displayStatus(ticket) === "pending") return { to: "/department-lead/approvals", label: "Approvals" };
-    return { to: "/department-lead/ticket-queue", label: "All tickets" };
+    return { to: "/department-lead/all-tickets", label: "All tickets" };
   }
   return { to: "/employee/my-requests", label: "My requests" };
 }

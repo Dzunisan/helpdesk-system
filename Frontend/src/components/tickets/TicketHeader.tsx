@@ -18,7 +18,7 @@ interface TicketHeaderProps {
 /** Ref, status, title and, in plain words, who is working on it (briefing p.41, p.48) */
 export default function TicketHeader({ ticket, permissions, back, actions }: TicketHeaderProps) {
   const department = ticket.department_name;
-  const category = ticket.category_name ?? ticket.request_type_name;
+  const category = ticket.category_name;
 
   return (
     <PageHeader

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
+  AlarmClock,
   Bell,
   Building2,
   ChevronsUpDown,
   CircleCheck,
   ClipboardCheck,
+  Hourglass,
   House,
   Inbox,
   LayoutDashboard,
@@ -14,7 +16,9 @@ import {
   Mail,
   Menu,
   Plus,
+  Shapes,
   ShieldCheck,
+  Timer,
   UserRound,
   UserRoundX,
   Users,
@@ -40,6 +44,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { NavHighlightContext, useNavHighlightHref } from "./navHighlight";
+import { AGENT_QUEUE_LABEL, agentQueuePath } from "@/components/queue/queueViews";
 import {
   Sidebar,
   SidebarContent,
@@ -84,16 +89,18 @@ interface NavGroup {
   items: NavItem[];
 }
 
-// Only routes that exist in AppRouter. Mockup items with no page yet (Waiting on employee,
-// Breached, Macros, Help articles, Reports, Categories, SLA policies) are left out until built.
+// Only routes that exist in AppRouter. Mockup items from later sprints (Macros, Help articles,
+// Reports, Business hours, Audit log) are left out until built.
 const STAFF_NAV: Partial<Record<NonNullable<Role>, NavGroup[]>> = {
   Agent: [
     {
       items: [
         { label: "Home", icon: House, href: "/agent", end: true },
-        { label: "My open", icon: Inbox, href: "/agent/assigned-tickets" },
-        { label: "Unassigned", icon: UserRoundX, href: "/agent/ticket-queue" },
-        { label: "Resolved by me", icon: CircleCheck, href: "/agent/resolved-tickets" },
+        { label: AGENT_QUEUE_LABEL["my-open"], icon: Inbox, href: agentQueuePath("my-open") },
+        { label: AGENT_QUEUE_LABEL.unassigned, icon: UserRoundX, href: agentQueuePath("unassigned") },
+        { label: AGENT_QUEUE_LABEL.waiting, icon: Hourglass, href: agentQueuePath("waiting") },
+        { label: AGENT_QUEUE_LABEL.breached, icon: AlarmClock, href: agentQueuePath("breached") },
+        { label: AGENT_QUEUE_LABEL.resolved, icon: CircleCheck, href: agentQueuePath("resolved") },
       ],
     },
   ],
@@ -104,7 +111,7 @@ const STAFF_NAV: Partial<Record<NonNullable<Role>, NavGroup[]>> = {
         {
           label: "All tickets",
           icon: List,
-          href: "/department-lead/ticket-queue",
+          href: "/department-lead/all-tickets",
           alsoActive: ["/department-lead/tickets/"],
         },
         { label: "Approvals", icon: ClipboardCheck, href: "/department-lead/approvals" },
@@ -121,6 +128,8 @@ const STAFF_NAV: Partial<Record<NonNullable<Role>, NavGroup[]>> = {
         { label: "Overview", icon: House, href: "/system-admin", end: true },
         { label: "Users", icon: Users, href: "/system-admin/users" },
         { label: "Departments", icon: Building2, href: "/system-admin/departments" },
+        { label: "Categories & routing", icon: Shapes, href: "/system-admin/categories" },
+        { label: "SLA policies", icon: Timer, href: "/system-admin/sla" },
       ],
     },
   ],
@@ -172,12 +181,12 @@ function useNavCounts(user: User): Record<string, number> {
         if (role === "Agent") {
           const [mine, queue] = await Promise.all([
             fetchTickets({ assignee_id: userId ? String(userId) : undefined, limit: 100 }),
-            fetchTickets({ status: "Open", department_id: departmentId ? Number(departmentId) : undefined, limit: 100 }),
+            fetchTickets({ status: "New", department_id: departmentId ? Number(departmentId) : undefined, limit: 100 }),
           ]);
           if (cancelled) return;
           setCounts({
-            "/agent/assigned-tickets": mine.tickets.filter((t) => !OPEN_STATUSES.has(t.ticket_status)).length,
-            "/agent/ticket-queue": queue.tickets.filter((t) => !t.assignee_id).length,
+            [agentQueuePath("my-open")]: mine.tickets.filter((t) => !OPEN_STATUSES.has(t.ticket_status)).length,
+            [agentQueuePath("unassigned")]: queue.tickets.filter((t) => !t.assignee_id).length,
           });
         } else {
           const approvals = await fetchTickets({ status: "Pending approval", limit: 50 });

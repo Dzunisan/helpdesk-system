@@ -37,7 +37,7 @@ function PriorityBars({ level }: { level: number }) {
 }
 
 interface PriorityBadgeProps {
-  /** The ticket's priority as stored ("Medium" displays as Normal) */
+  /** The ticket's priority as stored: Urgent, High, Normal or Low */
   priority: string | null | undefined;
   className?: string;
 }

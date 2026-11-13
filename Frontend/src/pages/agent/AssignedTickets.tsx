@@ -78,7 +78,7 @@ export default function AssignedTickets() {
         description="Claim a ticket from the queue and it will show up here."
         action={
           <Button variant="outline" asChild>
-            <Link to="/agent/ticket-queue">Open the queue</Link>
+            <Link to="/agent/queue/unassigned">Open the queue</Link>
           </Button>
         }
       />

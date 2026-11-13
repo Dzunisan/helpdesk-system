@@ -3,6 +3,7 @@
  * Pages never colour or label a status/priority themselves: they render
  * <StatusBadge>, <PriorityBadge> or use the labels below.
  */
+import type { TicketPriority, TicketStatus } from "@/types/api";
 
 export type Status =
   | "new"
@@ -32,47 +33,56 @@ export const PRIORITY_LABEL: Record<Priority, string> = {
   low: "Low",
 };
 
-/**
- * LEGACY MAPPING, the only place that knows the old database values.
- * Until Sprint 1 (S1) renames them in the database:
- *   - legacy "Open" (nobody owns it yet) displays as New
- *   - legacy "In progress" (one agent owns it) displays as Open
- *   - legacy priority "Medium" displays as Normal
- * When the rename lands, delete the "Open" -> new and "In progress" entries
- * (the new value "Open" then means owned) and the "Medium" entry.
- */
-const STATUS_FROM_DB: Record<string, Status> = {
-  open: "new", // legacy: "Open" = no owner yet
-  "in progress": "open", // legacy
-  new: "new",
-  "waiting on employee": "waiting",
-  "pending approval": "pending",
-  resolved: "resolved",
-  closed: "closed",
-  cancelled: "cancelled",
+/** Stored status (db/migrations/001_lifecycle.sql) -> display key */
+const STATUS_FROM_DB: Record<TicketStatus, Status> = {
+  "Pending approval": "pending",
+  New: "new",
+  Open: "open",
+  "Waiting on employee": "waiting",
+  Resolved: "resolved",
+  Closed: "closed",
+  Cancelled: "cancelled",
 };
 
-const PRIORITY_FROM_DB: Record<string, Priority> = {
-  medium: "normal", // legacy
-  urgent: "urgent",
-  high: "high",
-  normal: "normal",
-  low: "low",
+/** Stored priority -> display key */
+const PRIORITY_FROM_DB: Record<TicketPriority, Priority> = {
+  Urgent: "urgent",
+  High: "high",
+  Normal: "normal",
+  Low: "low",
+};
+
+/** Display key -> stored value, for filters and requests */
+export const STATUS_VALUE: Record<Status, TicketStatus> = {
+  pending: "Pending approval",
+  new: "New",
+  open: "Open",
+  waiting: "Waiting on employee",
+  resolved: "Resolved",
+  closed: "Closed",
+  cancelled: "Cancelled",
+};
+
+export const PRIORITY_VALUE: Record<Priority, TicketPriority> = {
+  urgent: "Urgent",
+  high: "High",
+  normal: "Normal",
+  low: "Low",
 };
 
 /** Database status value -> display key. Unknown values fall back to "new". */
 export const toStatus = (value: string | null | undefined): Status =>
-  STATUS_FROM_DB[(value ?? "").trim().toLowerCase()] ?? "new";
+  STATUS_FROM_DB[(value ?? "") as TicketStatus] ?? "new";
 
 /** Database priority value -> display key. Unknown values fall back to "normal". */
 export const toPriority = (value: string | null | undefined): Priority =>
-  PRIORITY_FROM_DB[(value ?? "").trim().toLowerCase()] ?? "normal";
+  PRIORITY_FROM_DB[(value ?? "") as TicketPriority] ?? "normal";
 
-/** Display label for a database status value, e.g. "In progress" -> "Open". */
+/** Display label for a database status value, e.g. "Waiting on employee" */
 export const statusLabel = (value: string | null | undefined): string =>
   STATUS_LABEL[toStatus(value)];
 
-/** Display label for a database priority value, e.g. "Medium" -> "Normal". */
+/** Display label for a database priority value, e.g. "Normal" */
 export const priorityLabel = (value: string | null | undefined): string =>
   PRIORITY_LABEL[toPriority(value)];
 

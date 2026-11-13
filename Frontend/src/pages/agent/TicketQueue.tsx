@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { CircleCheck, Lock, RotateCw, SearchX, Shapes } from "lucide-react";
+import { Navigate, useParams } from "react-router-dom";
+import { AlarmClock, CircleCheck, Hourglass, Lock, RotateCw, SearchX, Shapes } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useTickets } from "@/hooks/useTickets";
 import { useDepartmentName } from "@/hooks/useDepartmentName";
@@ -22,6 +23,10 @@ import LeadTicketList from "@/components/queue/LeadTicketList";
 import TicketSubject from "@/components/queue/TicketSubject";
 import { byUrgency, isUnassigned, matchesSearch, plural } from "@/components/queue/queueUtils";
 import { useClaim, useClaimNextShortcut } from "@/components/queue/useClaim";
+import { AGENT_QUEUE_LABEL, agentQueuePath, isAgentQueueView } from "@/components/queue/queueViews";
+import BeingBuilt from "@/components/app/BeingBuilt";
+import AssignedTickets from "./AssignedTickets";
+import ResolvedTickets from "./ResolvedTickets";
 
 type PriorityFilter = "all" | Priority;
 
@@ -33,13 +38,48 @@ const QUEUE_GRID =
   "xl:grid xl:grid-cols-[4.5rem_minmax(0,1fr)_11rem_6rem_4.5rem_5rem] xl:items-center xl:gap-5";
 
 /**
- * Agents: the unassigned queue (p.47). Department Leads land on the same route
- * (/department-lead and /department-lead/ticket-queue) and get every department ticket (p.55).
+ * The agent's queue views, one route: /agent/queue/:view (briefing p.46-47).
+ *   my-open     My open (AssignedTickets)
+ *   unassigned  Unassigned (the queue below)
+ *   waiting     Waiting on employee (S2/S3, being built)
+ *   breached    Breached, sorted by due (S3, being built)
+ *   resolved    Resolved by me (ResolvedTickets)
+ * A Department Lead who reaches it gets every department ticket (p.55).
  */
 export default function TicketQueue() {
   const { user } = useAuth();
+  const { view } = useParams();
   if (user?.role === "Department Lead") return <LeadTicketList />;
-  return <AgentQueue />;
+  if (!isAgentQueueView(view)) return <Navigate to={agentQueuePath("unassigned")} replace />;
+
+  switch (view) {
+    case "my-open":
+      return <AssignedTickets />;
+    case "resolved":
+      return <ResolvedTickets />;
+    case "waiting":
+      return (
+        <BeingBuilt
+          title={AGENT_QUEUE_LABEL.waiting}
+          description="Tickets you own where the ball is with the employee"
+          plan="Your tickets waiting on a reply, with the SLA chip on every row. A reply moves them back to My open."
+          feature="S2"
+          icon={Hourglass}
+        />
+      );
+    case "breached":
+      return (
+        <BeingBuilt
+          title={AGENT_QUEUE_LABEL.breached}
+          description="Every overdue ticket in your department, most overdue first"
+          plan="Tickets whose first response or resolution time has run out, in rose, sorted by due time."
+          feature="S3"
+          icon={AlarmClock}
+        />
+      );
+    default:
+      return <AgentQueue />;
+  }
 }
 
 function AgentQueue() {
@@ -51,10 +91,10 @@ function AgentQueue() {
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [search, setSearch] = useState("");
 
-  // Unassigned "Open" tickets; the server limits them to the agent's own department
+  // New (unassigned) tickets; the server limits them to the agent's own department
   const { tickets, loading, isRefetching, error, claimTicket, refetch } = useTickets({
     filters: {
-      status: "Open",
+      status: "New",
       department_id: departmentId ? Number(departmentId) : undefined,
       limit: 100,
     },

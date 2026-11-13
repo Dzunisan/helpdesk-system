@@ -64,7 +64,7 @@ export default function AgentDashboard() {
     claimTicket,
     refetch: refetchDept,
   } = useTickets({
-    filters: { status: "Open", department_id: departmentId ? Number(departmentId) : undefined, limit: 100 },
+    filters: { status: "New", department_id: departmentId ? Number(departmentId) : undefined, limit: 100 },
     autoFetch: true,
   });
 
@@ -121,7 +121,7 @@ export default function AgentDashboard() {
           loading={myLoading}
           value={myError ? "—" : mine.length}
           hint={myError ? "Couldn't load" : highMine > 0 ? `${highMine} high priority` : "Nothing high priority"}
-          to={`${BASE}/assigned-tickets`}
+          to={`${BASE}/queue/my-open`}
         />
         <StatCard
           label="Unassigned"
@@ -138,7 +138,7 @@ export default function AgentDashboard() {
                   ? `Oldest ${formatAge(oldestQueued.created_at)}`
                   : "Queue clear"
           }
-          to={`${BASE}/ticket-queue`}
+          to={`${BASE}/queue/unassigned`}
         />
         <StatCard
           label="Oldest open"
@@ -154,7 +154,7 @@ export default function AgentDashboard() {
           loading={myLoading}
           value={myError ? "—" : resolved.length}
           hint={myError ? "Couldn't load" : `${resolvedThisWeek} in the last 7 days`}
-          to={`${BASE}/resolved-tickets`}
+          to={`${BASE}/queue/resolved`}
         />
       </div>
 
@@ -164,7 +164,7 @@ export default function AgentDashboard() {
           className="lg:col-span-3"
           title="My tickets"
           description={myLoading || myError || mine.length === 0 ? "Tickets you own, highest priority first" : `${mine.length} open · highest priority first`}
-          action={<CardLink to={`${BASE}/assigned-tickets`}>View all</CardLink>}
+          action={<CardLink to={`${BASE}/queue/my-open`}>View all</CardLink>}
           flush
         >
           {myLoading ? (
@@ -201,7 +201,7 @@ export default function AgentDashboard() {
           description={
             deptLoading || deptError || queue.length === 0 ? `Unassigned in ${teamLabel}` : `${queue.length} unassigned in ${teamLabel}`
           }
-          action={<CardLink to={`${BASE}/ticket-queue`}>Open queue</CardLink>}
+          action={<CardLink to={`${BASE}/queue/unassigned`}>Open queue</CardLink>}
           flush
         >
           {deptLoading ? (

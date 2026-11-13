@@ -115,11 +115,6 @@ export default function TicketPropertiesPanel({
         <KeyValueRow label="Category">
           <span className="truncate">{ticket.category_name || "—"}</span>
         </KeyValueRow>
-        {ticket.request_type_name && (
-          <KeyValueRow label="Type">
-            <span className="truncate">{ticket.request_type_name}</span>
-          </KeyValueRow>
-        )}
         <KeyValueRow label="Submitted">
           <time dateTime={ticket.created_at} title={formatSast(ticket.created_at, "full")}>
             {formatSast(ticket.created_at, "dateTime")}

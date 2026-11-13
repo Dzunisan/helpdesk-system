@@ -166,7 +166,7 @@ export default function Approvals() {
                     <div className="min-w-0">
                       <p className="truncate text-xs text-muted-foreground">
                         <TicketRef id={t.ticket_id} />
-                        {(t.request_type_name || t.category_name) && <> · {t.request_type_name ?? t.category_name}</>}
+                        {t.category_name && <> · {t.category_name}</>}
                       </p>
                       <p className="mt-1 truncate text-sm font-medium text-foreground">{t.title}</p>
                     </div>

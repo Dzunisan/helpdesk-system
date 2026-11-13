@@ -29,7 +29,7 @@ const LOAD_FULL = 10;
 const WEEK_MS = 7 * 86_400_000;
 
 /** Statuses where the work is still with the team */
-const WORKING = new Set(["open", "in progress"]);
+const WORKING = new Set(["open", "waiting on employee"]);
 const DONE = new Set(["resolved", "closed"]);
 const statusOf = (t: Ticket) => t.ticket_status.trim().toLowerCase();
 
@@ -144,7 +144,7 @@ export default function TeamAgents() {
     const agentsOnly = members.filter((m) => m.agent.role === "Agent");
     const assignedOpen = agentsOnly.reduce((sum, m) => sum + m.open, 0);
     const average = agentsOnly.length ? assignedOpen / agentsOnly.length : 0;
-    const unassigned = tickets.filter((t) => statusOf(t) === "open" && !t.assignee_id).length;
+    const unassigned = tickets.filter((t) => statusOf(t) === "new" && !t.assignee_id).length;
     const resolvedWeek = members.reduce((sum, m) => sum + m.resolvedWeek, 0);
 
     // Rebalance hint (p.57): the busiest agent carries at least double the average and 3+ more than the quietest
@@ -198,7 +198,7 @@ export default function TeamAgents() {
               loading={loading}
               value={stats.unassigned}
               hint={stats.unassigned ? "Waiting in the queue" : "Queue clear"}
-              to="/department-lead/ticket-queue"
+              to="/department-lead/all-tickets"
             />
             <StatCard
               label="Resolved"
@@ -292,7 +292,7 @@ export default function TeamAgents() {
                 </div>
               </div>
               <Button asChild variant="outline" className="ml-8 shrink-0 self-start bg-background sm:ml-0 sm:self-auto">
-                <Link to="/department-lead/ticket-queue">
+                <Link to="/department-lead/all-tickets">
                   Rebalance
                   <ArrowRight data-icon="inline-end" />
                 </Link>

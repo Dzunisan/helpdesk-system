@@ -14,7 +14,7 @@ const STYLE: Record<Status, string> = {
 };
 
 interface StatusBadgeProps {
-  /** The ticket's status as stored (legacy names are mapped in lib/ticketVocabulary) */
+  /** The ticket's status as stored, e.g. "Waiting on employee" */
   status?: string | null;
   /** A display key, for samples that aren't database values (e.g. the sign-in panel) */
   kind?: Status;

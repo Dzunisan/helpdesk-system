@@ -80,9 +80,7 @@ export default function TicketConversation({ ticket, comments, permissions, onSa
         <EventLine icon={FilePlus2} time={ticket.created_at}>
           <span className="font-medium text-foreground">{requesterIsMe ? "You" : requesterName}</span> submitted this
           request
-          {(ticket.category_name || ticket.request_type_name) && (
-            <> · {ticket.category_name ?? ticket.request_type_name}</>
-          )}
+          {ticket.category_name && <> · {ticket.category_name}</>}
         </EventLine>
 
         {ticket.description?.trim() && (

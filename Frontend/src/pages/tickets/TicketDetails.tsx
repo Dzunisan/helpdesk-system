@@ -258,7 +258,7 @@ export default function TicketDetails() {
     });
   };
 
-  // Assign to me: the server also moves the status on (Open -> In progress)
+  // Assign to me: the server also moves the status on (New -> Open)
   const applyAssignment = (updated: Ticket) =>
     setTicket((prev) =>
       prev

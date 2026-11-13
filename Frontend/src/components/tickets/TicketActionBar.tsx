@@ -36,7 +36,6 @@ export default function TicketActionBar({
   onReject,
   onCancelRequest,
 }: TicketActionBarProps) {
-  const raw = (ticket.ticket_status ?? "").toLowerCase();
   const status = displayStatus(ticket);
   const buttons: ReactNode[] = [];
 
@@ -57,29 +56,29 @@ export default function TicketActionBar({
   }
 
   if (permissions.canChangeStatus) {
-    // Legacy "Open" = nobody owns it yet (shown as New)
-    if (raw === "open")
+    // New = in the department queue, nobody owns it yet
+    if (status === "new")
       buttons.push(
         <Button key="assign" className={TAP} disabled={busy} onClick={onAssignToMe}>
           {icon("assign", UserPlus)}
           Assign to me
         </Button>,
       );
-    if (raw === "in progress")
+    if (status === "open")
       buttons.push(
         <Button key="resolve" className={TAP} disabled={busy} onClick={() => onStatusChange("Resolved")}>
           {icon("Resolved", CircleCheck)}
           Resolve
         </Button>,
       );
-    if (raw === "resolved" || raw === "closed" || raw === "cancelled")
+    if (status === "resolved" || status === "closed" || status === "cancelled")
       buttons.push(
-        <Button key="reopen" variant="outline" className={TAP} disabled={busy} onClick={() => onStatusChange("In progress")}>
-          {icon("In progress", RotateCcw)}
+        <Button key="reopen" variant="outline" className={TAP} disabled={busy} onClick={() => onStatusChange("Open")}>
+          {icon("Open", RotateCcw)}
           Reopen
         </Button>,
       );
-    if (raw === "resolved")
+    if (status === "resolved")
       buttons.push(
         <Button key="close" className={TAP} disabled={busy} onClick={() => onStatusChange("Closed")}>
           {icon("Closed", Lock)}

@@ -159,7 +159,7 @@ export default function LeadDashboard() {
           loading={loading}
           value={stats.backlog.length}
           hint={stats.highBacklog ? `${stats.highBacklog} high priority` : "Nothing high priority"}
-          to={`${BASE}/ticket-queue`}
+          to={`${BASE}/all-tickets`}
         />
         <StatCard
           label="Unassigned"
@@ -168,7 +168,7 @@ export default function LeadDashboard() {
           value={stats.unassigned.length}
           tone={stats.highUnassigned > 0 ? "warning" : "default"}
           hint={stats.oldestUnassigned ? `Oldest ${formatAge(stats.oldestUnassigned.created_at)}` : "Queue clear"}
-          to={`${BASE}/ticket-queue`}
+          to={`${BASE}/all-tickets`}
         />
         <StatCard
           label="Oldest open"
@@ -203,7 +203,7 @@ export default function LeadDashboard() {
                 ? "Open tickets, highest priority first, then oldest"
                 : `${plural(stats.backlog.length, "open ticket")} · highest priority first, then oldest`
             }
-            action={<CardLink to={`${BASE}/ticket-queue`}>All tickets</CardLink>}
+            action={<CardLink to={`${BASE}/all-tickets`}>All tickets</CardLink>}
             flush
           >
             {loading ? (

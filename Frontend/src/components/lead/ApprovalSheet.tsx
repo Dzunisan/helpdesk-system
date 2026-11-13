@@ -86,8 +86,7 @@ function ApprovalForm({
   };
 
   const details = [
-    { label: "Request type", value: ticket.request_type_name || "—" },
-    ...(ticket.category_name ? [{ label: "Category", value: ticket.category_name }] : []),
+    { label: "Category", value: ticket.category_name || "—" },
     { label: "Priority", value: <PriorityBadge priority={ticket.ticket_priority} /> },
     { label: "Submitted", value: formatSast(ticket.created_at, "full") },
     { label: "Waiting", value: formatAge(ticket.created_at) },
@@ -98,10 +97,10 @@ function ApprovalForm({
       <SheetHeader className="gap-3 border-b border-border px-6 pt-6 pr-14 pb-5">
         <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
           <TicketRef id={ticket.ticket_id} />
-          {ticket.request_type_name && (
+          {ticket.category_name && (
             <>
               <span aria-hidden>·</span>
-              <span className="truncate">{ticket.request_type_name}</span>
+              <span className="truncate">{ticket.category_name}</span>
             </>
           )}
         </p>
