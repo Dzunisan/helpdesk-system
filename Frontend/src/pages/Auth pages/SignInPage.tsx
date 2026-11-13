@@ -1,9 +1,9 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { Button } from "../../components/ui/Button";
-import { Input } from "../../components/ui/Input";
-import { Alert } from "../../components/ui/Alert";
+import { Button } from "../../components/legacy/Button";
+import { Input } from "../../components/legacy/Input";
+import { Alert } from "../../components/legacy/Alert";
 import axios from "axios";
 
 const SignInPage = () => {

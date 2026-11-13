@@ -4,9 +4,9 @@ import { MdOutlineAssignmentInd } from "react-icons/md";
 import { MdOutlineAssignmentTurnedIn } from "react-icons/md";
 import { HiOutlineQueueList } from "react-icons/hi2";
 import { Outlet, useLocation } from "react-router-dom";
-import LogoArea from "../../components/ui/LogoArea";
-import SideBar from "../../components/ui/SideBar";
-import TopHeader from "../../components/ui/TopHeader";
+import LogoArea from "../../components/app/LogoArea";
+import SideBar from "../../components/app/SideBar";
+import TopHeader from "../../components/app/TopHeader";
 
 const AgentHomePage = () => {
     const location = useLocation();

@@ -2,9 +2,9 @@ import { useState } from "react";
 import { IoHomeOutline } from "react-icons/io5";
 import { IoPersonAddOutline } from "react-icons/io5";
 import { Outlet, useLocation } from "react-router-dom";
-import TopHeader from "../../components/ui/TopHeader";
-import SideBar from "../../components/ui/SideBar";
-import LogoArea from "../../components/ui/LogoArea";
+import TopHeader from "../../components/app/TopHeader";
+import SideBar from "../../components/app/SideBar";
+import LogoArea from "../../components/app/LogoArea";
 
 const PlatformAdminHomePage = () => {
   const location = useLocation();

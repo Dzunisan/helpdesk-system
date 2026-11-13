@@ -1,8 +1,8 @@
 import { useState, useRef, useMemo } from "react";
-import DepartmentTable, { type Department } from "../../components/ui/DepartmentTable";
-import { DepartmentDialog } from "../../components/ui/DepartmentDialog";
-import { Button } from "../../components/ui/Button";
-import { Alert } from "../../components/ui/Alert";
+import DepartmentTable, { type Department } from "../../components/legacy/DepartmentTable";
+import { DepartmentDialog } from "../../components/legacy/DepartmentDialog";
+import { Button } from "../../components/legacy/Button";
+import { Alert } from "../../components/legacy/Alert";
 import { useDepartments } from "../../hooks/useDepartments";
 
 const Departments = () => {

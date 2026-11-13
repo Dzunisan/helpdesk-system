@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useTickets } from "../../hooks/useTickets";
-import { useToast } from "../../components/ui/Toast";
+import { useToast } from "../../components/legacy/Toast";
 import type { Ticket } from "../../types/ticket.types";
-import { Button } from "../../components/ui/Button";
+import { Button } from "../../components/legacy/Button";
 import { useNavigate } from "react-router-dom";
-import Loader from "../../components/ui/Loader";
+import Loader from "../../components/legacy/Loader";
 
 export default function EmployeeDashboard() {
   const { toastElement, showToast } = useToast();

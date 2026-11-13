@@ -20,8 +20,8 @@ import type {
   TicketFeedback,
   AgentUser,
 } from "../../types/ticket.types";
-import Loader from "../../components/ui/Loader";
-import { Button } from "../../components/ui/Button";
+import Loader from "../../components/legacy/Loader";
+import { Button } from "../../components/legacy/Button";
 
 function normalizeRole(user: any): string {
   const raw =

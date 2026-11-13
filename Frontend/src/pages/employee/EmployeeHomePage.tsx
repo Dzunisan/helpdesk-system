@@ -1,9 +1,9 @@
 import { IoHomeOutline } from "react-icons/io5";
 import { TbCheckupList } from "react-icons/tb";
 import { Outlet, useLocation } from "react-router-dom";
-import SideBar from "../../components/ui/SideBar";
-import LogoArea from "../../components/ui/LogoArea";
-import TopHeader from "../../components/ui/TopHeader";
+import SideBar from "../../components/app/SideBar";
+import LogoArea from "../../components/app/LogoArea";
+import TopHeader from "../../components/app/TopHeader";
 import { useState } from "react";
 
 const EmployeeHomePage = () => {

@@ -1,8 +1,8 @@
 
 import React, { useState } from "react";
-import { Button } from "../../components/ui/Button";
-import { Input } from "../../components/ui/Input";
-import { Alert } from "../../components/ui/Alert";
+import { Button } from "../../components/legacy/Button";
+import { Input } from "../../components/legacy/Input";
+import { Alert } from "../../components/legacy/Alert";
 import axios from "axios";
 
 const ForgotPasswordPage = () => {

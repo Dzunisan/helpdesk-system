@@ -4,9 +4,9 @@ import { HiOutlineQueueList } from "react-icons/hi2";
 import { MdOutlineApproval } from "react-icons/md";
 import { AiOutlineTeam } from "react-icons/ai";
 import { Outlet, useLocation } from "react-router-dom";
-import LogoArea from "../../components/ui/LogoArea";
-import SideBar from "../../components/ui/SideBar";
-import TopHeader from "../../components/ui/TopHeader";
+import LogoArea from "../../components/app/LogoArea";
+import SideBar from "../../components/app/SideBar";
+import TopHeader from "../../components/app/TopHeader";
 
 const DepartmentLeadHomePage = () => {
   const location = useLocation();

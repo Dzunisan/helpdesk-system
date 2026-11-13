@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useUsers } from "../../context/UsersContext";
-import { Input } from "../../components/ui/Input";
-import { Button } from "../../components/ui/Button";
-import { Alert } from "../../components/ui/Alert";
+import { Input } from "../../components/legacy/Input";
+import { Button } from "../../components/legacy/Button";
+import { Alert } from "../../components/legacy/Alert";
 import {
   IoPersonOutline,
   IoMailOutline,

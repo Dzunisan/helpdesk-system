@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchTickets, approveTicket, rejectTicket } from "../../services/ticketService";
 import type { Ticket } from "../../types/ticket.types";
-import Loader from "../../components/ui/Loader";
-import { Button } from "../../components/ui/Button";
+import Loader from "../../components/legacy/Loader";
+import { Button } from "../../components/legacy/Button";
 
 export default function Approvals() {
   const [tickets, setTickets] = useState<Ticket[]>([]);

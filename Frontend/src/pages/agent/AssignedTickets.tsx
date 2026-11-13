@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useTickets } from "../../hooks/useTickets";
-import { useToast } from "../../components/ui/Toast";
+import { useToast } from "../../components/legacy/Toast";
 import type { Ticket } from "../../types/ticket.types";
-import Loader from "../../components/ui/Loader";
+import Loader from "../../components/legacy/Loader";
 
 type SortOption = "newest" | "oldest" | "priority";
 

@@ -2,9 +2,9 @@ import { useState, useCallback, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTickets } from "../../hooks/useTickets";
-import { useToast } from "../../components/ui/Toast";
+import { useToast } from "../../components/legacy/Toast";
 import type { Ticket } from "../../types/ticket.types";
-import Loader from "../../components/ui/Loader";
+import Loader from "../../components/legacy/Loader";
 
 const TicketQueue = () => {
   const { user } = useAuth();

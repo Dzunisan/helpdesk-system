@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
-import Table from '../../components/ui/Table';
-import { Button } from '../../components/ui/Button';
-import { Dialog } from '../../components/ui/Dialog';
+import Table from '../../components/legacy/Table';
+import { Button } from '../../components/legacy/Button';
+import { Dialog } from '../../components/legacy/Dialog';
 import { useUsers } from '../../context/UsersContext';
 import { useAuth } from '../../context/AuthContext';
 

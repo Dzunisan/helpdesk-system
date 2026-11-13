@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useToast } from "../../components/ui/Toast";
+import { useToast } from "../../components/legacy/Toast";
 import { useDepartments } from "../../hooks/useDepartments";
 import * as ticketService from "../../services/ticketService";
 import type { TicketPriority } from "../../types/ticket.types";
-import { Button } from "../../components/ui/Button";
+import { Button } from "../../components/legacy/Button";
 
 const EmployeeSubmitRequest = () => {
   const navigate = useNavigate();
