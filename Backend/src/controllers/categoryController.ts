@@ -1,14 +1,18 @@
-// S5 Guided requests with category routing (briefing p.14). Contract: docs/api-sprint-1.md "S5".
+// S5 Guided requests with category routing (briefing p.14, p.63). Contract: docs/api-sprint-1.md "S5".
 import { Request, Response } from "express";
-import { pool } from "../config/database";
-import type { Category } from "../types/category.types";
-import { notImplemented } from "../utils/notImplemented";
+import * as categoryService from "../services/categoryService";
 
-const CATEGORY_SELECT = `
-  SELECT c.category_id, c.category_name, c.department_id, d.department_name, c.kind, c.icon, c.description,
-         c.default_priority, c.needs_approval, c.fields, c.active, c.created_at, c.updated_at
-  FROM category c
-  JOIN department d ON d.department_id = c.department_id`;
+const handleError = (res: Response, error: any) => {
+  if (error?.code === "23505") {
+    return res.status(409).json({ message: "A category with that name already exists in this department." });
+  }
+  console.error("Category error:", error);
+  // The database error text stays in the server log; the browser only gets a generic message
+  return res.status(500).json({ message: "An unexpected error occurred" });
+};
+
+const validationFailed = (res: Response, errors: string[]) =>
+  res.status(400).json({ message: errors.length === 1 ? errors[0] : "Validation failed", errors });
 
 /**
  * GET /api/categories -> { categories, departments: [{ department_id, department_name, categories }] }
@@ -18,29 +22,72 @@ const CATEGORY_SELECT = `
 export const listCategories = async (req: Request, res: Response) => {
   const includeInactive = req.user?.role === "System Admin" && req.query.include_inactive === "true";
   try {
-    const { rows } = await pool.query<Category>(
-      `${CATEGORY_SELECT}
-       ${includeInactive ? "" : "WHERE c.active AND d.status = 'active'"}
-       ORDER BY d.department_name, c.kind, c.category_name`
-    );
-    const departments: { department_id: number; department_name: string; categories: Category[] }[] = [];
-    for (const category of rows) {
-      let group = departments.find((g) => g.department_id === category.department_id);
-      if (!group) {
-        group = { department_id: category.department_id, department_name: category.department_name, categories: [] };
-        departments.push(group);
-      }
-      group.categories.push(category);
-    }
-    return res.status(200).json({ categories: rows, departments });
+    return res.status(200).json(await categoryService.listCategories(includeInactive));
   } catch (error) {
-    console.error("Category error:", error);
-    return res.status(500).json({ message: "An unexpected error occurred" });
+    return handleError(res, error);
   }
 };
 
-/** POST /api/categories -> System Admin creates a category */
-export const createCategory = notImplemented("S5 POST /api/categories");
+/** POST /api/categories -> 201 { category }. System Admin (requireRole in categoryRoutes). */
+export const createCategory = async (req: Request, res: Response) => {
+  const errors: string[] = [];
+  const input = categoryService.validateCategoryBody(req.body ?? {}, false, errors) as categoryService.CategoryInput;
+  if (errors.length > 0) return validationFailed(res, errors);
 
-/** PATCH /api/categories/:id -> System Admin edits or deactivates (never deletes) */
-export const updateCategory = notImplemented("S5 PATCH /api/categories/:id");
+  try {
+    if (!(await categoryService.departmentExists(input.department_id))) {
+      return res.status(404).json({ message: "Department not found." });
+    }
+    if (await categoryService.nameTaken(input.department_id, input.category_name)) {
+      return res.status(409).json({ message: `${input.category_name} already exists in this department.` });
+    }
+    const category = await categoryService.createCategory(input);
+    return res.status(201).json({ category });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+/**
+ * PATCH /api/categories/:id -> { category }. System Admin. Any subset of the create body.
+ * Deactivate with { active: false }: there is no delete, old tickets keep their category.
+ */
+export const updateCategory = async (req: Request, res: Response) => {
+  const idParam = String(req.params.id ?? "");
+  if (!categoryService.isIntId(idParam)) {
+    return res.status(400).json({ message: "Invalid category ID." });
+  }
+  const id = Number(idParam);
+
+  const errors: string[] = [];
+  const changes = categoryService.validateCategoryBody(req.body ?? {}, true, errors);
+  if (errors.length > 0) return validationFailed(res, errors);
+  if (Object.keys(changes).length === 0) {
+    return validationFailed(res, ["Send at least one field to change."]);
+  }
+
+  try {
+    const current = await categoryService.getCategory(id);
+    if (!current) {
+      return res.status(404).json({ message: "Category not found." });
+    }
+    if (changes.department_id !== undefined && !(await categoryService.departmentExists(changes.department_id))) {
+      return res.status(404).json({ message: "Department not found." });
+    }
+    const departmentId = changes.department_id ?? current.department_id;
+    const name = changes.category_name ?? current.category_name;
+    if (
+      (changes.department_id !== undefined || changes.category_name !== undefined) &&
+      (await categoryService.nameTaken(departmentId, name, id))
+    ) {
+      return res.status(409).json({ message: `${name} already exists in this department.` });
+    }
+    const category = await categoryService.updateCategory(id, changes);
+    if (!category) {
+      return res.status(404).json({ message: "Category not found." });
+    }
+    return res.status(200).json({ category });
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
