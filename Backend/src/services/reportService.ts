@@ -1,7 +1,8 @@
 import { pool } from "../config/database";
+import { ACTIVE_STATUSES } from "../types/ticket.types";
 
 // Statuses that still need work. Kept here so every count agrees on what "open" means.
-const OPEN_STATUSES = ["Open", "In progress", "Pending approval"];
+const OPEN_STATUSES: string[] = ACTIVE_STATUSES;
 
 export interface AdminOverviewDepartment {
   department_id: number;

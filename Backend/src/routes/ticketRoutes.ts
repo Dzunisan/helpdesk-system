@@ -18,6 +18,9 @@ import {
   getAgents
 } from "../controllers/ticketsController";
 import { requireAuth } from "../middleware/authMiddlware";
+import { claimTicket, getTicketActions, transitionTicket } from "../controllers/lifecycleController";
+import { changePriority } from "../controllers/triageController";
+import { getTimeline } from "../controllers/timelineController";
 
 const router = Router();
 
@@ -27,7 +30,8 @@ router.use(requireAuth);
 // List available agents for reassignment (must be declared before /:id)
 router.get("/agents", getAgents);
 
-// Create a new ticket
+// Create a new ticket (POST /api/tickets is the Sprint 1 contract; /create is kept for old callers)
+router.post("/", createTicket);
 router.post("/create", createTicket);
 
 // Retrieve list of tickets with filtering & pagination
@@ -39,7 +43,18 @@ router.patch("/:id/assign", assignTicket);
 router.put("/:id/reassign", assignTicket);
 router.patch("/:id/reassign", assignTicket);
 
-// Agent / Admin Status Actions
+// S2 lifecycle (docs/api-sprint-1.md): claim, move along the TRANSITIONS arrows, allowed buttons
+router.post("/:id/claim", claimTicket);
+router.post("/:id/transition", transitionTicket);
+router.get("/:id/actions", getTicketActions);
+
+// S3 triage: staff change priority, both due times recalculate from created_at
+router.patch("/:id/priority", changePriority);
+
+// S4 timeline: events + comments, filtered by role on the server
+router.get("/:id/timeline", getTimeline);
+
+// Agent / Admin Status Actions (superseded by POST /:id/transition in S2)
 router.patch("/:id/status", updateStatus);
 router.put("/:id/status", updateStatus);
 

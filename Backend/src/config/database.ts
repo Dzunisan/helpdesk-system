@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import { Pool, PoolClient } from "pg";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -17,6 +17,32 @@ export const pool = new Pool({
 
 
 export const query = (text: string, params?: any[]) => pool.query(text, params)
+
+/**
+ * Runs `fn` inside one database transaction and returns its result. COMMIT when it resolves,
+ * ROLLBACK when it throws (the error is re-thrown). Every ticket mutation and its logEvent()
+ * call share the client this passes in, so the change and its timeline row land together.
+ * @example
+ *   const ticket = await withTransaction(async (client) => {
+ *     const { rows } = await client.query("UPDATE ticket SET ... RETURNING *", [...]);
+ *     await logEvent(client, { ticketId, actorId: user.user_id, type: "claimed", to: "Open" });
+ *     return rows[0];
+ *   });
+ */
+export const withTransaction = async <T>(fn: (client: PoolClient) => Promise<T>): Promise<T> => {
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+        const result = await fn(client);
+        await client.query("COMMIT");
+        return result;
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+};
 
 export const testDbConnection = async () => {
     try{

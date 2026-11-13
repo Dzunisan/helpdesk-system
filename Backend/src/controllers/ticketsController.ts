@@ -8,8 +8,10 @@ import {
   STAFF_ROLES
 } from "../services/ticketAccess";
 import {
+  TicketImpact,
   TicketPriority,
   TicketStatus,
+  VALID_IMPACTS,
   VALID_PRIORITIES,
   VALID_STATUSES,
   CreateTicketDto,
@@ -63,19 +65,19 @@ export const createTicket = async (req: Request, res: Response) => {
     return res.status(403).json({ message: "Forbidden: Administrators cannot create tickets." });
   }
 
-  // Status and assignee are always decided by the server (status from the request type,
-  // assignee by claiming / assigning afterwards). Employees may only send title, description and
-  // department / category / request type; priority and requester are staff-only.
+  // The category decides department, default priority and status (briefing p.14 S5); the browser
+  // can't override them. Employees send title, description, category, impact and extra fields;
+  // staff may also set priority and raise a ticket for someone else.
   const isStaff = STAFF_ROLES.includes(user.role);
   const {
     title,
     description,
-    department_id,
-    ticket_department_id,
     category_id,
     ticket_category_id,
-    request_type_id,
-    ticket_request_type_id
+    department_id,
+    ticket_department_id,
+    impact,
+    extra_fields
   } = req.body;
   const priority = isStaff ? req.body.priority : undefined;
   const requester_id = isStaff ? req.body.requester_id : undefined;
@@ -94,26 +96,30 @@ export const createTicket = async (req: Request, res: Response) => {
     errors.push("Description must be a string.");
   }
 
-  // Priority validation
-  let validatedPriority: TicketPriority = "Low";
+  // Priority validation (staff only; everyone else gets the category's default priority)
+  let staffPriority: TicketPriority | null = null;
   if (priority !== undefined && priority !== null) {
     const norm = normalizePriority(String(priority));
     if (!norm) {
       errors.push(`Priority must be one of: ${VALID_PRIORITIES.join(", ")}.`);
     } else {
-      validatedPriority = norm;
+      staffPriority = norm;
     }
   }
 
-  // Department ID validation
-  const targetDeptId = department_id !== undefined ? department_id : ticket_department_id;
-  let parsedDeptId: number | null = null;
-  if (targetDeptId !== undefined && targetDeptId !== null && String(targetDeptId).trim() !== "") {
-    if (!isIntId(String(targetDeptId))) {
-      errors.push("Department ID must be a valid integer.");
+  // Impact ("How is this affecting you?")
+  let parsedImpact: TicketImpact | null = null;
+  if (impact !== undefined && impact !== null && impact !== "") {
+    if (!VALID_IMPACTS.includes(impact)) {
+      errors.push(`Impact must be one of: ${VALID_IMPACTS.join(", ")}.`);
     } else {
-      parsedDeptId = Number(targetDeptId);
+      parsedImpact = impact;
     }
+  }
+
+  // Extra fields: a plain object of answers keyed by the category's field keys (S5 validates them)
+  if (extra_fields !== undefined && extra_fields !== null && (typeof extra_fields !== "object" || Array.isArray(extra_fields))) {
+    errors.push("extra_fields must be an object.");
   }
 
   // Category ID validation
@@ -127,15 +133,19 @@ export const createTicket = async (req: Request, res: Response) => {
     }
   }
 
-  // Request Type ID validation
-  const targetReqTypeId = request_type_id !== undefined ? request_type_id : ticket_request_type_id;
-  let parsedReqTypeId: number | null = null;
-  if (targetReqTypeId !== undefined && targetReqTypeId !== null && String(targetReqTypeId).trim() !== "") {
-    if (!isIntId(String(targetReqTypeId))) {
-      errors.push("Request type ID must be a valid integer.");
+  // Department: only used by the legacy bridge below when no category is sent
+  const targetDeptId = department_id !== undefined ? department_id : ticket_department_id;
+  let legacyDeptId: number | null = null;
+  if (parsedCatId === null && targetDeptId !== undefined && targetDeptId !== null && String(targetDeptId).trim() !== "") {
+    if (!isIntId(String(targetDeptId))) {
+      errors.push("Department ID must be a valid integer.");
     } else {
-      parsedReqTypeId = Number(targetReqTypeId);
+      legacyDeptId = Number(targetDeptId);
     }
+  }
+
+  if (parsedCatId === null && legacyDeptId === null && errors.length === 0) {
+    errors.push("Choose a category.");
   }
 
   // Requester resolution: Employees can only create tickets as themselves
@@ -153,32 +163,20 @@ export const createTicket = async (req: Request, res: Response) => {
   }
 
   try {
-    // Foreign key existence checks
-    if (parsedDeptId !== null) {
-      const deptExists = await ticketService.checkDepartmentExists(parsedDeptId);
-      if (!deptExists) {
-        return res.status(400).json({ message: "Department not found with the provided ID." });
+    // LEGACY BRIDGE (until S5): a department-only request goes to that department's fallback category
+    if (parsedCatId === null && legacyDeptId !== null) {
+      parsedCatId = await ticketService.getFallbackCategoryId(legacyDeptId);
+      if (parsedCatId === null) {
+        return res.status(400).json({ message: "Choose a category." });
       }
     }
 
-    if (parsedCatId !== null) {
-      const catExists = await ticketService.checkCategoryExists(parsedCatId);
-      if (!catExists) {
-        return res.status(400).json({ message: "Category not found with the provided ID." });
-      }
+    const category = await ticketService.getCategoryRouting(parsedCatId!);
+    if (!category) {
+      return res.status(400).json({ message: "Category not found with the provided ID." });
     }
-
-    // Purchase and access requests (request type kind "provision") start in Pending approval;
-    // everything else starts as Open (briefing: ticket lifecycle)
-    let initialStatus: TicketStatus = "Open";
-    if (parsedReqTypeId !== null) {
-      const reqTypeKind = await ticketService.getRequestTypeKind(parsedReqTypeId);
-      if (!reqTypeKind) {
-        return res.status(400).json({ message: "Request type not found with the provided ID." });
-      }
-      if (reqTypeKind === "provision") {
-        initialStatus = "Pending approval";
-      }
+    if (!category.active) {
+      return res.status(400).json({ message: "This category is no longer offered. Please choose another." });
     }
 
     if (resolvedRequesterId !== String(user.user_id)) {
@@ -191,13 +189,14 @@ export const createTicket = async (req: Request, res: Response) => {
     const newTicketDto: CreateTicketDto = {
       title: title.trim(),
       description: description ? description.trim() : null,
-      priority: validatedPriority,
-      status: initialStatus,
-      department_id: parsedDeptId,
-      category_id: parsedCatId,
-      request_type_id: parsedReqTypeId,
-      requester_id: resolvedRequesterId,
-      assignee_id: null
+      category_id: category.category_id,
+      department_id: category.department_id,
+      priority: staffPriority ?? category.default_priority,
+      // Purchase and access requests start in Pending approval; everything else starts as New
+      status: category.needs_approval ? "Pending approval" : "New",
+      impact: parsedImpact,
+      extra_fields: extra_fields ?? {},
+      requester_id: resolvedRequesterId
     };
 
     const ticket = await ticketService.createTicket(newTicketDto);
@@ -369,8 +368,6 @@ export const updateTicket = async (req: Request, res: Response) => {
       ticket_department_id,
       category_id,
       ticket_category_id,
-      request_type_id,
-      ticket_request_type_id,
       assignee_id
     } = req.body;
 
@@ -392,8 +389,7 @@ export const updateTicket = async (req: Request, res: Response) => {
       const restrictedFields = [
         priority, status, assignee_id,
         department_id, ticket_department_id,
-        category_id, ticket_category_id,
-        request_type_id, ticket_request_type_id
+        category_id, ticket_category_id
       ];
       if (restrictedFields.some((value) => value !== undefined)) {
         return res.status(403).json({
@@ -455,7 +451,7 @@ export const updateTicket = async (req: Request, res: Response) => {
     const targetDeptId = department_id !== undefined ? department_id : ticket_department_id;
     if (targetDeptId !== undefined) {
       if (targetDeptId === null || String(targetDeptId).trim() === "") {
-        updateData.department_id = null;
+        errors.push("A ticket always belongs to a department.");
       } else if (!isIntId(String(targetDeptId))) {
         errors.push("Department ID must be a valid integer.");
       } else {
@@ -473,7 +469,7 @@ export const updateTicket = async (req: Request, res: Response) => {
     const targetCatId = category_id !== undefined ? category_id : ticket_category_id;
     if (targetCatId !== undefined) {
       if (targetCatId === null || String(targetCatId).trim() === "") {
-        updateData.category_id = null;
+        errors.push("A ticket always has a category.");
       } else if (!isIntId(String(targetCatId))) {
         errors.push("Category ID must be a valid integer.");
       } else {
@@ -483,24 +479,6 @@ export const updateTicket = async (req: Request, res: Response) => {
           errors.push("Category does not exist.");
         } else {
           updateData.category_id = catIdNum;
-        }
-      }
-    }
-
-    // Validate request_type_id
-    const targetReqTypeId = request_type_id !== undefined ? request_type_id : ticket_request_type_id;
-    if (targetReqTypeId !== undefined) {
-      if (targetReqTypeId === null || String(targetReqTypeId).trim() === "") {
-        updateData.request_type_id = null;
-      } else if (!isIntId(String(targetReqTypeId))) {
-        errors.push("Request type ID must be a valid integer.");
-      } else {
-        const reqTypeIdNum = Number(targetReqTypeId);
-        const exists = await ticketService.checkRequestTypeExists(reqTypeIdNum);
-        if (!exists) {
-          errors.push("Request type does not exist.");
-        } else {
-          updateData.request_type_id = reqTypeIdNum;
         }
       }
     }
@@ -542,16 +520,12 @@ export const deleteTicket = async (req: Request, res: Response) => {
       return res.status(403).json({ message: "Forbidden: You are not authorized to delete this ticket." });
     }
 
-    const soft = true;
-
-    const success = await ticketService.deleteTicket(ticketId, soft);
+    const success = await ticketService.deleteTicket(ticketId);
     if (!success) {
       return res.status(404).json({ message: "Ticket could not be deleted." });
     }
 
-    return res.status(200).json({
-      message: soft ? "Ticket soft-deleted successfully" : "Ticket permanently deleted successfully"
-    });
+    return res.status(200).json({ message: "Ticket soft-deleted successfully" });
   } catch (error) {
     return handleError(res, error);
   }

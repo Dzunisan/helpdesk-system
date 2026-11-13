@@ -11,6 +11,8 @@ import ticketRoutes from "./src/routes/ticketRoutes";
 import departmentRoutes from "./src/routes/departmentRoutes";
 import commentRoutes from "./src/routes/commentRoutes";
 import reportRoutes from "./src/routes/reportRoutes";
+import categoryRoutes from "./src/routes/categoryRoutes";
+import slaPolicyRoutes from "./src/routes/slaPolicyRoutes";
 
 dotenv.config();
 
@@ -35,6 +37,8 @@ app.use("/api/tickets", ticketRoutes);
 app.use("/api/comments", commentRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use("/api/reports", reportRoutes);
+app.use("/api/categories", categoryRoutes);
+app.use("/api/sla-policies", slaPolicyRoutes);
 
 const startServer = async () => {
   await testDbConnection();

@@ -13,6 +13,8 @@ export const toPublicUser = (user: User): User => ({
   active: user.active,
   department_id: user.department_id ?? null,
   created_at: user.created_at,
+  must_change_password: user.must_change_password ?? false,
+  last_login_at: user.last_login_at ?? null,
 });
 
 export const findUserByEmail = async (email: string): Promise<User | null> => {

@@ -1,16 +1,18 @@
-import { pool, query } from "../config/database";
+import { pool, query, withTransaction } from "../config/database";
 import {
   Ticket,
   TicketDetail,
+  TicketPriority,
   TicketStatus,
   CreateTicketDto,
   UpdateTicketDto,
   TicketFilters,
   PaginatedTicketsResult,
   TicketComment,
-  TicketInternalNote,
   TicketFeedback
 } from "../types/ticket.types";
+import { logEvent } from "./events";
+import { computeDueTimes, loadSlaPolicies, slaState } from "./sla";
 import { User } from "../types/user.types";
 import {
   sendTicketAssignedEmail,
@@ -32,17 +34,26 @@ const TICKET_SELECT_FIELDS = `
   t.description,
   t.ticket_department_id,
   t.ticket_category_id,
-  t.ticket_request_type_id,
   t.ticket_priority,
   t.ticket_status,
-  t.requester_id,
-  t.assignee_id,
+  t.impact,
+  t.extra_fields,
+  t.requester_id::text AS requester_id,
+  t.assignee_id::text AS assignee_id,
   t.created_at,
   t.updated_at,
   t.deleted_at,
+  t.resolved_at,
+  t.closed_at,
+  t.reopen_count,
+  t.resolution_note,
+  t.first_response_due_at,
+  t.resolution_due_at,
+  t.first_response_at,
   d.department_name,
   c.category_name,
-  rt.request_type_name,
+  c.icon AS category_icon,
+  c.kind AS category_kind,
   TRIM(CONCAT(req_u.name, ' ', req_u.surname)) AS requester_name,
   req_u.email AS requester_email,
   TRIM(CONCAT(asg_u.name, ' ', asg_u.surname)) AS assignee_name,
@@ -52,7 +63,6 @@ const TICKET_SELECT_FIELDS = `
 const TICKET_JOINS = `
   LEFT JOIN department d ON t.ticket_department_id = d.department_id
   LEFT JOIN category c ON t.ticket_category_id = c.category_id
-  LEFT JOIN request_type rt ON t.ticket_request_type_id = rt.request_type_id
   LEFT JOIN users req_u ON t.requester_id = req_u.user_id
   LEFT JOIN users asg_u ON t.assignee_id = asg_u.user_id
 `;
@@ -72,63 +82,82 @@ export const checkCategoryExists = async (categoryId: number): Promise<boolean> 
   return (result.rowCount ?? 0) > 0;
 };
 
-export const checkRequestTypeExists = async (requestTypeId: number): Promise<boolean> => {
-  const result = await query("SELECT 1 FROM request_type WHERE request_type_id = $1", [requestTypeId]);
-  return (result.rowCount ?? 0) > 0;
-};
+/** What a category decides about a new ticket (briefing p.14 S5): department, priority, approval */
+export interface CategoryRouting {
+  category_id: number;
+  category_name: string;
+  department_id: number;
+  default_priority: TicketPriority;
+  needs_approval: boolean;
+  active: boolean;
+  fields: unknown[];
+}
 
-// Returns the request type's kind ("fix_it" or "provision"), or null when it doesn't exist
-export const getRequestTypeKind = async (requestTypeId: number): Promise<string | null> => {
-  const result = await query("SELECT kind FROM request_type WHERE request_type_id = $1", [requestTypeId]);
-  return result.rows[0]?.kind ?? null;
-};
-
-export const createTicket = async (dto: CreateTicketDto): Promise<Ticket> => {
-  const {
-    title,
-    description = null,
-    priority = "Low",
-    status = "Open",
-    department_id = null,
-    category_id = null,
-    request_type_id = null,
-    requester_id,
-    assignee_id = null,
-  } = dto;
-
-  const insertResult = await pool.query(
-    `INSERT INTO ticket (
-      title,
-      description,
-      ticket_department_id,
-      ticket_category_id,
-      ticket_request_type_id,
-      ticket_priority,
-      ticket_status,
-      requester_id,
-      assignee_id,
-      created_at,
-      updated_at
-    )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-    RETURNING ticket_id`,
-    [
-      title,
-      description,
-      department_id,
-      category_id,
-      request_type_id,
-      priority,
-      status,
-      requester_id,
-      assignee_id
-    ]
+export const getCategoryRouting = async (categoryId: number): Promise<CategoryRouting | null> => {
+  const result = await query(
+    `SELECT category_id, category_name, department_id, default_priority, needs_approval, active, fields
+     FROM category WHERE category_id = $1`,
+    [categoryId]
   );
+  return result.rows[0] ?? null;
+};
 
-  const ticketId = insertResult.rows[0].ticket_id;
+// LEGACY BRIDGE until S5 ships the category form: the old request form only sends a department, so
+// its ticket goes to that department's "Something else" category (else its first active category).
+export const getFallbackCategoryId = async (departmentId: number): Promise<number | null> => {
+  const result = await query(
+    `SELECT category_id FROM category
+     WHERE department_id = $1 AND active AND NOT needs_approval
+     ORDER BY (category_name = 'Something else') DESC, (kind = 'fix') DESC, category_id
+     LIMIT 1`,
+    [departmentId]
+  );
+  return result.rows[0]?.category_id ?? null;
+};
+
+// Inserts the ticket with both SLA due times and its "created" event in one transaction
+export const createTicket = async (dto: CreateTicketDto): Promise<Ticket> => {
+  const ticketId = await withTransaction(async (client) => {
+    const policies = await loadSlaPolicies(client);
+    const now = new Date();
+    // Pending approval has no clock yet: the team can't act until the lead approves (S6 sets them then)
+    const due =
+      dto.status === "Pending approval"
+        ? { first_response_due_at: null, resolution_due_at: null }
+        : computeDueTimes(now, dto.priority, policies);
+    const insertResult = await client.query(
+      `INSERT INTO ticket (
+        title, description, ticket_department_id, ticket_category_id, ticket_priority, ticket_status,
+        impact, extra_fields, requester_id, first_response_due_at, resolution_due_at, created_at, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+      RETURNING ticket_id`,
+      [
+        dto.title,
+        dto.description ?? null,
+        dto.department_id,
+        dto.category_id,
+        dto.priority,
+        dto.status,
+        dto.impact ?? null,
+        JSON.stringify(dto.extra_fields ?? {}),
+        dto.requester_id,
+        due.first_response_due_at,
+        due.resolution_due_at,
+        now
+      ]
+    );
+    const id: number = insertResult.rows[0].ticket_id;
+    await logEvent(client, { ticketId: id, actorId: dto.requester_id, type: "created", to: dto.status });
+    return id;
+  });
+
   const fullTicket = await getTicketById(ticketId, false);
   return fullTicket!;
 };
+
+/** Adds the computed sla_state to a ticket row */
+const withSla = <T extends Ticket>(ticket: T, now = new Date()): T => ({ ...ticket, sla_state: slaState(ticket, now) });
 
 export const getTickets = async (
   filters: TicketFilters,
@@ -225,7 +254,8 @@ export const getTickets = async (
   values.push(limit, offset);
 
   const dataResult = await pool.query(dataQuery, values);
-  return { tickets: dataResult.rows, total };
+  const now = new Date();
+  return { tickets: dataResult.rows.map((t: Ticket) => withSla(t, now)), total };
 };
 
 // includeInternal: only staff who can work the ticket (ticketAccess.canWork) see internal notes.
@@ -247,12 +277,13 @@ export const getTicketById = async (
     return null;
   }
 
-  const ticket: TicketDetail = result.rows[0];
+  const ticket: TicketDetail = withSla(result.rows[0]);
 
   // Fetch comments: requesters only see public comments; department staff see internal notes too
   const commentFilter = includeInternal ? "" : "AND c.is_internal = false";
   const commentsResult = await pool.query(
-    `SELECT c.comment_id, c.ticket_id, c.author_id, c.body, c.is_internal, c.created_at, c.updated_at,
+    `SELECT c.comment_id, c.ticket_id, c.author_id::text AS author_id, c.body, c.is_internal, c.created_at, c.updated_at,
+            c.edited_at, c.deleted_at,
             TRIM(CONCAT(u.name, ' ', u.surname)) AS author_name,
             u.email AS author_email,
             u.role AS author_role
@@ -263,22 +294,6 @@ export const getTicketById = async (
     [ticketId]
   );
   ticket.comments = commentsResult.rows as TicketComment[];
-
-  // Fetch internal notes for backward compatibility
-  if (includeInternal) {
-    ticket.internal_notes = ticket.comments
-      .filter(c => c.is_internal)
-      .map(c => ({
-        note_id: c.comment_id,
-        ticket_id: c.ticket_id,
-        author: c.author_id,
-        body: c.body,
-        created_at: c.created_at,
-        author_name: c.author_name,
-        author_email: c.author_email,
-        author_role: c.author_role
-      }));
-  }
 
   // Fetch resolution feedback if any
   const feedbackResult = await pool.query(
@@ -368,14 +383,6 @@ export const updateTicket = async (
     fields.push(`ticket_category_id = $${paramIndex++}`);
     values.push(updateData.category_id);
   }
-  if (updateData.request_type_id !== undefined) {
-    fields.push(`ticket_request_type_id = $${paramIndex++}`);
-    values.push(updateData.request_type_id);
-  }
-  if (updateData.assignee_id !== undefined) {
-    fields.push(`assignee_id = $${paramIndex++}`);
-    values.push(updateData.assignee_id);
-  }
 
   if (fields.length === 0) {
     return getTicketById(ticketId, includeInternal);
@@ -399,26 +406,16 @@ export const updateTicket = async (
   return getTicketById(ticketId, includeInternal);
 };
 
-export const deleteTicket = async (
-  ticketId: number,
-  softDelete: boolean = true
-): Promise<boolean> => {
-  if (softDelete) {
-    const result = await pool.query(
-      `UPDATE ticket
-       SET deleted_at = NOW(), ticket_status = 'Cancelled', updated_at = NOW()
-       WHERE ticket_id = $1 AND deleted_at IS NULL
-       RETURNING ticket_id`,
-      [ticketId]
-    );
-    return (result.rowCount ?? 0) > 0;
-  } else {
-    // Permanent deletion: clean up child records first
-    await pool.query("DELETE FROM comment WHERE ticket_id = $1", [ticketId]);
-    await pool.query("DELETE FROM internal_note WHERE ticket_id = $1", [ticketId]);
-    const result = await pool.query("DELETE FROM ticket WHERE ticket_id = $1 RETURNING ticket_id", [ticketId]);
-    return (result.rowCount ?? 0) > 0;
-  }
+// Soft delete only: nothing is ever hard-deleted (briefing p.5 "Audit trail")
+export const deleteTicket = async (ticketId: number): Promise<boolean> => {
+  const result = await pool.query(
+    `UPDATE ticket
+     SET deleted_at = NOW(), ticket_status = 'Cancelled', updated_at = NOW()
+     WHERE ticket_id = $1 AND deleted_at IS NULL
+     RETURNING ticket_id`,
+    [ticketId]
+  );
+  return (result.rowCount ?? 0) > 0;
 };
 
 export interface AssignTicketResult {
@@ -566,10 +563,10 @@ export const assignTicket = async (
       }
     }
 
-    // Automatically update ticket status: transition from 'Open' to 'In progress' upon assignment
+    // Owning a ticket opens it: New -> Open in the same transaction (briefing p.11 S2)
     let newStatus = ticket.ticket_status;
-    if (ticket.ticket_status === "Open") {
-      newStatus = "In progress";
+    if (ticket.ticket_status === "New") {
+      newStatus = "Open";
     }
 
     await client.query(
@@ -580,6 +577,24 @@ export const assignTicket = async (
        WHERE ticket_id = $3`,
       [resolvedAssigneeId, newStatus, ticketId]
     );
+
+    const selfClaim = resolvedAssigneeId === String(currentUser.user_id) && !ticket.assignee_id;
+    await logEvent(client, {
+      ticketId,
+      actorId: currentUser.user_id,
+      type: selfClaim ? "claimed" : "assigned",
+      from: ticket.assignee_id ? String(ticket.assignee_id) : null,
+      to: resolvedAssigneeId,
+    });
+    if (newStatus !== ticket.ticket_status) {
+      await logEvent(client, {
+        ticketId,
+        actorId: currentUser.user_id,
+        type: "status_changed",
+        from: ticket.ticket_status,
+        to: newStatus,
+      });
+    }
 
     await client.query("COMMIT");
 
@@ -723,19 +738,6 @@ export const addComment = async (
   newComment.author_name = `${currentUser.name} ${currentUser.surname || ""}`.trim();
   newComment.author_email = currentUser.email;
   newComment.author_role = currentUser.role;
-
-  // Also maintain internal_note table for backward compatibility if it is an internal note
-  if (isInternal) {
-    try {
-      await pool.query(
-        `INSERT INTO internal_note (ticket_id, author, body, created_at)
-         VALUES ($1, $2, $3, NOW())`,
-        [ticketId, currentUser.user_id, trimmedBody]
-      );
-    } catch (e) {
-      console.warn("[ticketService] Note sync warning:", e);
-    }
-  }
 
   // Trigger email notifications:
   // "users recieve email notification for each posted comment"
@@ -1146,11 +1148,18 @@ export const approveTicket = async (
     };
   }
 
-  // When approved: transition to In progress if assigned, otherwise Open
-  const nextStatus: TicketStatus = existingTicket.assignee_id ? "In progress" : "Open";
+  // Approved: into the department queue as New (Open when someone already owns it)
+  const nextStatus: TicketStatus = existingTicket.assignee_id ? "Open" : "New";
 
+  // The SLA clocks start now: a request has none while it waits for approval (page 40)
   await pool.query(
-    "UPDATE ticket SET ticket_status = $1, updated_at = NOW() WHERE ticket_id = $2",
+    `UPDATE ticket t
+     SET ticket_status = $1,
+         updated_at = NOW(),
+         first_response_due_at = COALESCE(t.first_response_due_at, NOW() + make_interval(mins => p.first_response_mins)),
+         resolution_due_at = COALESCE(t.resolution_due_at, NOW() + make_interval(mins => p.resolution_mins))
+     FROM sla_policy p
+     WHERE t.ticket_id = $2 AND p.priority = t.ticket_priority`,
     [nextStatus, ticketId]
   );
 
