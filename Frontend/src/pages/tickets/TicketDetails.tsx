@@ -15,14 +15,18 @@ import {
   assignTicket,
   fetchAgents,
 } from "../../services/ticketService";
-import type {
-  Ticket,
-  TicketComment,
-  TicketFeedback,
-  AgentUser,
+import {
+  VALID_STATUSES,
+  type Ticket,
+  type TicketComment,
+  type TicketFeedback,
+  type AgentUser,
 } from "../../types/ticket.types";
 import { toast } from "sonner";
 import ReasonDialog from "@/components/app/ReasonDialog";
+import { StatusBadge } from "@/components/app/StatusBadge";
+import { PriorityBadge } from "@/components/app/PriorityBadge";
+import { statusLabel } from "@/lib/ticketVocabulary";
 import { Button as ShadButton } from "@/components/ui/button";
 import {
   Empty,
@@ -62,15 +66,6 @@ function normalizeRole(user: any): string {
   if (r === "admin") return "System Admin";
   return "Employee";
 }
-
-const ALL_STATUSES = [
-  "Open",
-  "In progress",
-  "Pending approval",
-  "Resolved",
-  "Closed",
-  "Cancelled",
-] as const;
 
 export default function TicketDetails() {
   const { id } = useParams<{ id: string }>();
@@ -432,24 +427,6 @@ export default function TicketDetails() {
 
   const isTicketRequester = String(ticket.requester_id) === currentUserId;
 
-  const priorityColor =
-    ticket.ticket_priority === "High"
-      ? "bg-red-100 text-red-800 border-red-200"
-      : ticket.ticket_priority === "Medium"
-        ? "bg-amber-100 text-amber-800 border-amber-200"
-        : "bg-blue-100 text-blue-800 border-blue-200";
-
-  const statusColor =
-    isResolved || isClosed
-      ? "bg-green-100 text-green-800 border-green-200"
-      : isPendingApproval
-        ? "bg-purple-100 text-purple-800 border-purple-200"
-        : isInProgress
-          ? "bg-blue-100 text-blue-800 border-blue-200"
-          : normalizedStatus === "cancelled"
-            ? "bg-gray-100 text-gray-800 border-gray-300"
-            : "bg-amber-100 text-amber-800 border-amber-200";
-
   const formattedDate = (dateVal?: string | Date) => {
     if (!dateVal) return "-";
     return new Date(dateVal).toLocaleDateString("en-ZA", {
@@ -483,16 +460,8 @@ export default function TicketDetails() {
             <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-700">
               HD-{ticket.ticket_id}
             </span>
-            <span
-              className={`text-xs font-semibold px-2.5 py-0.5 border ${priorityColor}`}
-            >
-              {ticket.ticket_priority} Priority
-            </span>
-            <span
-              className={`text-xs font-semibold px-2.5 py-0.5 border ${statusColor}`}
-            >
-              {ticket.ticket_status}
-            </span>
+            <PriorityBadge priority={ticket.ticket_priority} />
+            <StatusBadge status={ticket.ticket_status} />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mt-2">
             {ticket.title}
@@ -659,17 +628,17 @@ export default function TicketDetails() {
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
               Priority
             </p>
-            <p className="font-semibold text-gray-800 mt-0.5">
-              {ticket.ticket_priority}
-            </p>
+            <div className="mt-1">
+              <PriorityBadge priority={ticket.ticket_priority} />
+            </div>
           </div>
           <div>
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
               Status
             </p>
-            <p className="font-semibold text-gray-800 mt-0.5">
-              {ticket.ticket_status}
-            </p>
+            <div className="mt-1">
+              <StatusBadge status={ticket.ticket_status} />
+            </div>
           </div>
         </div>
       </div>
@@ -693,9 +662,9 @@ export default function TicketDetails() {
                 onChange={(e) => handleStatusChange(e.target.value)}
                 className="w-full border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition"
               >
-                {ALL_STATUSES.map((s) => (
+                {VALID_STATUSES.map((s) => (
                   <option key={s} value={s}>
-                    {s}
+                    {statusLabel(s)}
                   </option>
                 ))}
               </select>

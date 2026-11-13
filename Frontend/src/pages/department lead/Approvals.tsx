@@ -4,6 +4,7 @@ import { fetchTickets, approveTicket, rejectTicket } from "../../services/ticket
 import type { Ticket } from "../../types/ticket.types";
 import { toast } from "sonner";
 import ReasonDialog from "@/components/app/ReasonDialog";
+import { PriorityBadge } from "@/components/app/PriorityBadge";
 import Loader from "../../components/legacy/Loader";
 import { Button } from "../../components/legacy/Button";
 
@@ -126,17 +127,7 @@ export default function Approvals() {
                     {t.department_name || "-"}
                   </td>
                   <td className="px-6 py-4">
-                    <span
-                      className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${
-                        t.ticket_priority === "High"
-                          ? "bg-red-100 text-red-800"
-                          : t.ticket_priority === "Medium"
-                          ? "bg-amber-100 text-amber-800"
-                          : "bg-blue-100 text-blue-800"
-                      }`}
-                    >
-                      {t.ticket_priority}
-                    </span>
+                    <PriorityBadge priority={t.ticket_priority} />
                   </td>
                   <td className="px-6 py-4 text-xs text-gray-500">
                     {new Date(t.created_at).toLocaleDateString("en-ZA", {

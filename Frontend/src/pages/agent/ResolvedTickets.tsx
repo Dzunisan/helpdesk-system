@@ -4,6 +4,8 @@ import { useTickets } from "../../hooks/useTickets";
 import { toast } from "sonner";
 import type { Ticket } from "../../types/ticket.types";
 import Loader from "../../components/legacy/Loader";
+import { StatusBadge } from "@/components/app/StatusBadge";
+import { PriorityBadge } from "@/components/app/PriorityBadge";
 
 type DateRange = "all" | "today" | "7days" | "30days";
 
@@ -146,15 +148,7 @@ const ResolvedTickets = () => {
                         HD-{ticket.ticket_id}
                       </span>
 
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          ticket.ticket_status === "Resolved"
-                            ? "bg-green-50 text-green-700"
-                            : "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {ticket.ticket_status}
-                      </span>
+                      <StatusBadge status={ticket.ticket_status} />
                     </div>
 
                     {/* Ticket Title */}
@@ -168,7 +162,7 @@ const ResolvedTickets = () => {
                       {ticket.department_name && (
                         <span>Department: {ticket.department_name}</span>
                       )}
-                      <span>Priority: {ticket.ticket_priority}</span>
+                      <PriorityBadge priority={ticket.ticket_priority} />
                     </div>
 
                     {/* Resolution Information */}

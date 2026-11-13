@@ -5,6 +5,8 @@ import { useTickets } from "../../hooks/useTickets";
 import { toast } from "sonner";
 import type { Ticket } from "../../types/ticket.types";
 import Loader from "../../components/legacy/Loader";
+import { StatusBadge } from "@/components/app/StatusBadge";
+import { PriorityBadge } from "@/components/app/PriorityBadge";
 
 const AgentDashboard = () => {
   const { user } = useAuth();
@@ -174,32 +176,8 @@ const AgentDashboard = () => {
 
                 {/* Priority, Status, and optional Claim button */}
                 <div className="flex items-center gap-2">
-                  <span
-                    className={`rounded-sm px-3 py-1 text-xs font-medium ${
-                      ticket.ticket_priority === "High"
-                        ? "bg-red-50 text-red-600"
-                        : ticket.ticket_priority === "Medium"
-                          ? "bg-yellow-50 text-yellow-700"
-                          : "bg-green-50 text-green-700"
-                    }`}
-                  >
-                    {ticket.ticket_priority}
-                  </span>
-
-                  <span
-                    className={`rounded-sm px-3 py-1 text-xs font-medium ${
-                      ticket.ticket_status === "Open"
-                        ? "bg-gray-100 text-gray-700"
-                        : ticket.ticket_status === "In progress"
-                          ? "bg-accent text-primary"
-                          : ticket.ticket_status === "Resolved" ||
-                              ticket.ticket_status === "Closed"
-                            ? "bg-green-50 text-green-700"
-                            : "bg-gray-100 text-gray-700"
-                    }`}
-                  >
-                    {ticket.ticket_status}
-                  </span>
+                  <PriorityBadge priority={ticket.ticket_priority} />
+                  <StatusBadge status={ticket.ticket_status} />
 
                   {/* Show Claim button for unassigned tab tickets */}
                   {activeTab === "unassigned" && !ticket.assignee_id && (

@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { useTickets } from "../../hooks/useTickets";
 import { toast } from "sonner";
-import type { Ticket } from "../../types/ticket.types";
+import { VALID_STATUSES, type Ticket } from "../../types/ticket.types";
 import { Button } from "../../components/legacy/Button";
 import { useNavigate } from "react-router-dom";
 import Loader from "../../components/legacy/Loader";
+import { StatusBadge } from "@/components/app/StatusBadge";
+import { PriorityBadge } from "@/components/app/PriorityBadge";
+import { statusLabel } from "@/lib/ticketVocabulary";
 
 export default function EmployeeDashboard() {
   const navigate = useNavigate();
@@ -25,24 +28,6 @@ export default function EmployeeDashboard() {
       statusFilter === "All Statuses" || t.ticket_status === statusFilter;
     return matchesSearch && matchesStatus;
   });
-
-  const priorityColor = (p: string) => {
-    if (p === "High") return "text-red-600";
-    if (p === "Medium") return "text-orange-500";
-    return "text-teal-600";
-  };
-
-  const statusBadge = (status: string) => {
-    const map: Record<string, string> = {
-      Open: "bg-blue-50 text-blue-700",
-      "In progress": "bg-indigo-50 text-indigo-700",
-      "Pending approval": "bg-amber-50 text-amber-700",
-      Resolved: "bg-emerald-50 text-emerald-700",
-      Closed: "bg-gray-100 text-gray-600",
-      Cancelled: "bg-red-50 text-red-600",
-    };
-    return map[status] || "bg-gray-100 text-gray-700";
-  };
 
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString("en-ZA", {
@@ -87,12 +72,11 @@ export default function EmployeeDashboard() {
             onChange={(e) => setStatusFilter(e.target.value)}
           >
             <option>All Statuses</option>
-            <option>Open</option>
-            <option>In progress</option>
-            <option>Pending approval</option>
-            <option>Resolved</option>
-            <option>Closed</option>
-            <option>Cancelled</option>
+            {VALID_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {statusLabel(s)}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -138,16 +122,8 @@ export default function EmployeeDashboard() {
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span
-                        className={`text-[13px] font-medium ${priorityColor(t.ticket_priority)}`}
-                      >
-                        {t.ticket_priority}
-                      </span>
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-medium ${statusBadge(t.ticket_status)}`}
-                      >
-                        {t.ticket_status}
-                      </span>
+                      <PriorityBadge priority={t.ticket_priority} />
+                      <StatusBadge status={t.ticket_status} />
                     </div>
                   </div>
                 ))}

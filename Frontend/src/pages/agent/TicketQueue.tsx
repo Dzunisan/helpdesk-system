@@ -3,8 +3,11 @@ import { useAuth } from "../../context/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTickets } from "../../hooks/useTickets";
 import { toast } from "sonner";
-import type { Ticket } from "../../types/ticket.types";
+import { VALID_PRIORITIES, type Ticket } from "../../types/ticket.types";
 import Loader from "../../components/legacy/Loader";
+import { StatusBadge } from "@/components/app/StatusBadge";
+import { PriorityBadge } from "@/components/app/PriorityBadge";
+import { priorityLabel } from "@/lib/ticketVocabulary";
 
 const TicketQueue = () => {
   const { user } = useAuth();
@@ -63,12 +66,6 @@ const TicketQueue = () => {
     },
     [claimTicket, refetch],
   );
-
-  const priorityColor = (p: string) => {
-    if (p === "High") return "bg-red-50 text-red-600";
-    if (p === "Medium") return "bg-yellow-50 text-yellow-700";
-    return "bg-green-50 text-green-700";
-  };
 
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString("en-ZA", {
@@ -153,9 +150,11 @@ const TicketQueue = () => {
           className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-primary transition-colors"
         >
           <option value="All">All Priorities</option>
-          <option value="High">High</option>
-          <option value="Medium">Medium</option>
-          <option value="Low">Low</option>
+          {VALID_PRIORITIES.map((p) => (
+            <option key={p} value={p}>
+              {priorityLabel(p)}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -210,15 +209,8 @@ const TicketQueue = () => {
 
                 {/* Right side: Priority + Claim button */}
                 <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
-                  <span
-                    className={`rounded-sm px-3 py-1 text-xs font-medium ${priorityColor(ticket.ticket_priority)}`}
-                  >
-                    {ticket.ticket_priority}
-                  </span>
-
-                  <span className="rounded-sm px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700">
-                    {ticket.ticket_status}
-                  </span>
+                  <PriorityBadge priority={ticket.ticket_priority} />
+                  <StatusBadge status={ticket.ticket_status} />
 
                   <button
                     id={`claim-ticket-${ticket.ticket_id}`}

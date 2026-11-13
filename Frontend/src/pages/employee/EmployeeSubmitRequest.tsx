@@ -5,6 +5,7 @@ import { useDepartments } from "../../hooks/useDepartments";
 import * as ticketService from "../../services/ticketService";
 import type { TicketPriority } from "../../types/ticket.types";
 import { Button } from "../../components/legacy/Button";
+import { priorityLabel } from "@/lib/ticketVocabulary";
 
 const EmployeeSubmitRequest = () => {
   const navigate = useNavigate();
@@ -126,7 +127,8 @@ const EmployeeSubmitRequest = () => {
                 className="w-full border rounded px-3 py-2 text-sm bg-white"
               >
                 <option value="Low">Low</option>
-                <option value="Medium">Medium</option>
+                {/* Stored as legacy "Medium" until the S1 rename; shown as Normal */}
+                <option value="Medium">{priorityLabel("Medium")}</option>
                 <option value="High">High</option>
               </select>
             </div>

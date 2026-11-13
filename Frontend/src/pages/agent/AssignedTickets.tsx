@@ -4,6 +4,9 @@ import { useTickets } from "../../hooks/useTickets";
 import { toast } from "sonner";
 import type { Ticket } from "../../types/ticket.types";
 import Loader from "../../components/legacy/Loader";
+import { StatusBadge } from "@/components/app/StatusBadge";
+import { PriorityBadge } from "@/components/app/PriorityBadge";
+import { PRIORITY_RANK, toPriority } from "@/lib/ticketVocabulary";
 
 type SortOption = "newest" | "oldest" | "priority";
 
@@ -30,13 +33,6 @@ const AssignedTickets = () => {
       t.ticket_status !== "Cancelled"
   );
 
-  const priorityOrder: Record<string, number> = {
-    Critical: 4,
-    High: 3,
-    Medium: 2,
-    Low: 1,
-  };
-
   const filteredTickets = activeTickets
     .filter((ticket: Ticket) => {
       return (
@@ -48,8 +44,8 @@ const AssignedTickets = () => {
     .sort((a, b) => {
       if (sortBy === "priority") {
         return (
-          (priorityOrder[b.ticket_priority] || 0) -
-          (priorityOrder[a.ticket_priority] || 0)
+          PRIORITY_RANK[toPriority(b.ticket_priority)] -
+          PRIORITY_RANK[toPriority(a.ticket_priority)]
         );
       }
 
@@ -151,29 +147,8 @@ const AssignedTickets = () => {
 
                 {/* Priority and Status */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={`rounded-sm px-3 py-1 text-xs font-medium ${
-                      ticket.ticket_priority === "High"
-                        ? "bg-red-50 text-red-600"
-                        : ticket.ticket_priority === "Medium"
-                        ? "bg-yellow-50 text-yellow-700"
-                        : "bg-green-50 text-green-700"
-                    }`}
-                  >
-                    {ticket.ticket_priority}
-                  </span>
-
-                  <span
-                    className={`rounded-sm px-3 py-1 text-xs font-medium ${
-                      ticket.ticket_status === "In progress"
-                        ? "bg-accent text-primary"
-                        : ticket.ticket_status === "Pending approval"
-                        ? "bg-yellow-50 text-yellow-700"
-                        : "bg-gray-100 text-gray-700"
-                    }`}
-                  >
-                    {ticket.ticket_status}
-                  </span>
+                  <PriorityBadge priority={ticket.ticket_priority} />
+                  <StatusBadge status={ticket.ticket_status} />
                 </div>
               </div>
             ))
