@@ -656,18 +656,27 @@ export default function TicketDetails() {
               <label className="block text-xs font-medium text-gray-700 mb-1">
                 Update Ticket Status
               </label>
+              {/* Pending approval is entered only when a request is raised and left only through
+                  the lead's Approve / Reject, so the server refuses it here */}
               <select
                 value={ticket.ticket_status}
-                disabled={actionLoading}
+                disabled={actionLoading || ticket.ticket_status === "Pending approval"}
                 onChange={(e) => handleStatusChange(e.target.value)}
                 className="w-full border border-gray-300 rounded-md p-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none transition"
               >
-                {VALID_STATUSES.map((s) => (
+                {VALID_STATUSES.filter(
+                  (s) => s !== "Pending approval" || ticket.ticket_status === s,
+                ).map((s) => (
                   <option key={s} value={s}>
                     {statusLabel(s)}
                   </option>
                 ))}
               </select>
+              {ticket.ticket_status === "Pending approval" && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Waiting for the Department Lead to approve or reject.
+                </p>
+              )}
             </div>
 
             {/* Department Lead Reassignment */}
