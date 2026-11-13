@@ -1,4 +1,5 @@
 import { uploadAttachments } from "@/services/attachments";
+import { ACCEPT_WORDS, formatBytes } from "@/components/request/attachmentRules";
 import { ATTACHMENT_ACCEPT, ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_FILES, type AttachmentSummary } from "@/types/api";
 
 /*
@@ -7,20 +8,8 @@ import { ATTACHMENT_ACCEPT, ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_FILES, type Att
  * checks type and size first so mistakes show at once; the server checks the real type again.
  */
 
-/** "96 KB", "2.1 MB", "48 MB" */
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  const mb = bytes / (1024 * 1024);
-  return `${mb < 10 ? mb.toFixed(1).replace(/\.0$/, "") : Math.round(mb)} MB`;
-}
-
-/** For the file picker's accept attribute */
-export const ACCEPT_ATTRIBUTE = [...ATTACHMENT_ACCEPT, ".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".txt", ".csv", ".docx", ".xlsx"].join(",");
-
-/** The kinds people recognise, for the drop zone and the "not allowed" line */
-export const ACCEPT_WORDS = "png, jpg, pdf, docx, xlsx or txt";
-
+// One list of types and one size format for the new request form and the composer
+export { ACCEPT_ATTRIBUTE, ACCEPT_WORDS, formatBytes } from "@/components/request/attachmentRules";
 /** Some browsers leave `type` empty for .docx/.csv: fall back to the extension */
 const EXTENSION_TYPES: Record<string, string> = {
   png: "image/png",
@@ -35,7 +24,8 @@ const EXTENSION_TYPES: Record<string, string> = {
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
-const typeOf = (file: File) => file.type || EXTENSION_TYPES[file.name.split(".").pop()?.toLowerCase() ?? ""] || "";
+const extensionOf = (file: File) => (file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() ?? "" : "");
+const typeOf = (file: File) => file.type || EXTENSION_TYPES[extensionOf(file)] || "";
 
 export const isImageFile = (file: File) => typeOf(file).startsWith("image/");
 
@@ -43,7 +33,9 @@ export const isImageFile = (file: File) => typeOf(file).startsWith("image/");
 export function fileProblem(file: File, alreadyQueued: number): string | null {
   if (alreadyQueued >= ATTACHMENT_MAX_FILES) return `Only ${ATTACHMENT_MAX_FILES} files per message. Remove one to add this.`;
   if (file.size > ATTACHMENT_MAX_BYTES) return `Too large: ${formatBytes(file.size)}. The limit is 5 MB per file.`;
-  if (!(ATTACHMENT_ACCEPT as readonly string[]).includes(typeOf(file))) return `This file type isn't allowed. Use ${ACCEPT_WORDS}.`;
+  // The extension must be one we take too: the server refuses "fix.bat" even though it is plain text
+  if (!EXTENSION_TYPES[extensionOf(file)] || !(ATTACHMENT_ACCEPT as readonly string[]).includes(typeOf(file)))
+    return `This file type isn't allowed. Use ${ACCEPT_WORDS}.`;
   if (file.size === 0) return "This file is empty.";
   return null;
 }

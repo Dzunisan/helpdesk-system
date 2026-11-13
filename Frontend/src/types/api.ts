@@ -280,6 +280,8 @@ export interface TimelineEvent {
   note: string | null;
   /** Staff only; never sent to employees */
   is_internal: boolean;
+  /** S14 `attached` events: the file's size in bytes */
+  size_bytes?: number | null;
 }
 
 export interface TimelineComment {

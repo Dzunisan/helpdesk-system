@@ -77,6 +77,32 @@ export const detectFileType = (data: Buffer, fileName: string): string | null =>
   return null;
 };
 
+/** The extensions each accepted type may carry. The name must agree with the bytes, so a script
+ *  saved as "VPN-fix.bat" or "page.hta" (plain text inside) is refused instead of being handed to
+ *  an agent who would run it by double-clicking the download. */
+const EXTENSIONS_FOR: Record<string, string[]> = {
+  [MIME.png]: ["png"],
+  [MIME.jpeg]: ["jpg", "jpeg"],
+  [MIME.gif]: ["gif"],
+  [MIME.webp]: ["webp"],
+  [MIME.pdf]: ["pdf"],
+  [MIME.text]: ["txt"],
+  [MIME.csv]: ["csv"],
+  [MIME.docx]: ["docx"],
+  [MIME.xlsx]: ["xlsx"],
+};
+
+/** The words every type error uses (same list as the browser's, Frontend attachmentRules.ts) */
+export const ACCEPTED_WORDS = "PNG, JPG, GIF, WebP, PDF, TXT, CSV, DOCX or XLSX";
+
+/** True when the file name's extension belongs to the type found in its bytes */
+export const extensionMatches = (fileName: string, mimeType: string): boolean => {
+  const dot = fileName.lastIndexOf(".");
+  if (dot < 0) return false;
+  const ext = fileName.slice(dot + 1).toLowerCase();
+  return (EXTENSIONS_FOR[mimeType] ?? []).includes(ext);
+};
+
 /**
  * The name as the person typed it, safe to store: no folders (C:\fakepath\..., ../), no control
  * characters, at most 255 characters. "<img onerror>.png" stays exactly that: it is only ever data.
@@ -160,8 +186,8 @@ export const uploadAttachments = async (
     }
     if (file.buffer.length === 0) throw new HttpError(400, `${fileName} is empty.`);
     const mimeType = detectFileType(file.buffer, fileName);
-    if (!mimeType) {
-      throw new HttpError(400, `${fileName} isn't a file type we accept. Use PNG, JPG, GIF, WebP, PDF, TXT, CSV, DOCX or XLSX.`);
+    if (!mimeType || !extensionMatches(fileName, mimeType)) {
+      throw new HttpError(400, `${fileName} isn't a file type we accept. Use ${ACCEPTED_WORDS}.`);
     }
     return { fileName, mimeType, data: file.buffer };
   });

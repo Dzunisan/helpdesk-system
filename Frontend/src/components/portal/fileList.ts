@@ -35,7 +35,7 @@ export function filesOf(items: TimelineItem[] | null): RequestFile[] {
     const id = Number(item.to_value);
     if (!Number.isInteger(id) || files.has(id) || removed.has(id)) continue;
     const name = item.note ?? "File";
-    files.set(id, { id, name, size: null, isImage: IMAGE_NAME.test(name) });
+    files.set(id, { id, name, size: item.size_bytes ?? null, isImage: IMAGE_NAME.test(name) });
   }
   return [...files.values()];
 }

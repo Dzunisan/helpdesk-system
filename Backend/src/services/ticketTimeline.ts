@@ -40,6 +40,8 @@ export interface TimelineEventItem {
   to_label: string | null;
   note: string | null;
   is_internal: boolean;
+  /** S14 `attached` events: the file's size, so a file uploaded with the request shows it too */
+  size_bytes?: number | null;
 }
 
 export interface TimelineCommentItem {
@@ -151,10 +153,12 @@ export const getTimeline = async (ticketId: number, user: User): Promise<Timelin
     pool.query(
       `SELECT e.event_id::text AS event_id, e.type, e.from_value, e.to_value, e.note, e.is_internal, e.created_at,
               e.actor_id::text AS actor_id, TRIM(CONCAT(u.name, ' ', u.surname)) AS actor_name,
-              u.role AS actor_role, ud.department_name AS actor_department_name
+              u.role AS actor_role, ud.department_name AS actor_department_name,
+              fa.size_bytes AS attachment_size_bytes
        FROM ticket_event e
        LEFT JOIN users u ON u.user_id = e.actor_id
        LEFT JOIN department ud ON ud.department_id = u.department_id
+       LEFT JOIN attachment fa ON e.type = 'attached' AND fa.ticket_id = e.ticket_id AND fa.attachment_id::text = e.to_value
        WHERE e.ticket_id = $1 ${eventFilter}
        ORDER BY e.created_at, e.event_id`,
       [ticketId]
@@ -207,6 +211,7 @@ export const getTimeline = async (ticketId: number, user: User): Promise<Timelin
         // requester sees who has the ticket, not why it moved
         note: !staff && e.type === "assigned" ? null : e.note,
         is_internal: e.is_internal,
+        ...(e.type === "attached" ? { size_bytes: e.attachment_size_bytes ?? null } : {}),
       })
     ),
     ...commentsResult.rows.map(
