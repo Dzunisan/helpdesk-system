@@ -6,19 +6,13 @@ import {
   TicketStatus,
   CreateTicketDto,
   UpdateTicketDto,
-  TicketFilters,
   PaginatedTicketsResult,
   TicketComment,
   TicketFeedback
 } from "../types/ticket.types";
 import { logEvent } from "./events";
-import { computeDueTimes, loadSlaPolicies, slaState } from "./sla";
+import { DUE_SOON_SHARE, SQL_IS_BREACHED, SQL_NEXT_DUE, computeDueTimes, loadSlaPolicies, slaState } from "./sla";
 import { User } from "../types/user.types";
-import {
-  sendTicketAssignedEmail,
-  sendTicketCommentEmail,
-  sendTicketStatusEmail
-} from "../utils/emailService";
 import {
   TicketAccessUser,
   loadTicketAccess,
@@ -67,7 +61,18 @@ const TICKET_JOINS = `
   LEFT JOIN users asg_u ON t.assignee_id = asg_u.user_id
 `;
 
-export const checkDepartmentExists = async (departmentId: number): Promise<boolean> => {
+/** Comment columns (S4); the body of a deleted comment never leaves the database */
+export const COMMENT_SELECT = `
+  SELECT c.comment_id, c.ticket_id, c.author_id::text AS author_id,
+         TRIM(CONCAT(u.name, ' ', u.surname)) AS author_name,
+         u.email AS author_email, u.role AS author_role, ud.department_name AS author_department_name,
+         CASE WHEN c.deleted_at IS NULL THEN c.body END AS body,
+         c.is_internal, c.created_at, c.edited_at, c.deleted_at
+  FROM comment c
+  LEFT JOIN users u ON u.user_id = c.author_id
+  LEFT JOIN department ud ON ud.department_id = u.department_id`;
+
+export const checkDepartmentExists =async (departmentId: number): Promise<boolean> => {
   const result = await query("SELECT 1 FROM department WHERE department_id = $1", [departmentId]);
   return (result.rowCount ?? 0) > 0;
 };
@@ -159,101 +164,116 @@ export const createTicket = async (dto: CreateTicketDto): Promise<Ticket> => {
 /** Adds the computed sla_state to a ticket row */
 const withSla = <T extends Ticket>(ticket: T, now = new Date()): T => ({ ...ticket, sla_state: slaState(ticket, now) });
 
+/** GET /api/tickets query, already validated by the controller (docs/api-sprint-1.md "S1") */
+export interface TicketListFilters {
+  statuses?: TicketStatus[];
+  priorities?: TicketPriority[];
+  /** Employees only: Agents and Leads get their department from the role */
+  department_id?: number | null;
+  /** Staff only */
+  creator_id?: string | null;
+  /** A user id, or "none" for unassigned ("me" is resolved by the controller) */
+  assignee_id?: string | null;
+  category_id?: number | null;
+  search?: string | null;
+  sort?: "due" | "created" | "updated";
+  sla?: "breached" | "due_soon" | null;
+  page: number;
+  limit: number;
+}
+
+/**
+ * "Due soon" as SQL (alias t): no clock breached, and a running clock has under 25% of its target
+ * left. Mirrors slaState() in services/sla.ts.
+ */
+const SQL_IS_DUE_SOON = `(NOT ${SQL_IS_BREACHED}
+  AND t.resolved_at IS NULL
+  AND t.ticket_status NOT IN ('Closed', 'Cancelled')
+  AND (
+    (t.first_response_at IS NULL AND t.first_response_due_at > t.created_at
+      AND t.first_response_due_at - now() < (t.first_response_due_at - t.created_at) * ${DUE_SOON_SHARE})
+    OR (t.resolution_due_at > t.created_at
+      AND t.resolution_due_at - now() < (t.resolution_due_at - t.created_at) * ${DUE_SOON_SHARE})
+  ))`;
+
+const ORDER_BY: Record<NonNullable<TicketListFilters["sort"]>, string> = {
+  // Nearest unmet due time first: breached tickets (due in the past) lead, finished ones go last
+  due: `${SQL_NEXT_DUE} ASC NULLS LAST, t.created_at ASC, t.ticket_id ASC`,
+  created: "t.created_at DESC, t.ticket_id DESC",
+  updated: "t.updated_at DESC, t.ticket_id DESC",
+};
+
 export const getTickets = async (
-  filters: TicketFilters,
+  filters: TicketListFilters,
   access: TicketAccessUser
 ): Promise<PaginatedTicketsResult> => {
-  const {
-    status,
-    priority,
-    department_id,
-    creator_id,
-    assignee_id,
-    search,
-    page = 1,
-    limit = 10,
-    include_deleted = false,
-  } = filters;
-
-  const conditions: string[] = [];
-  const values: any[] = [];
-  let paramIndex = 1;
-
-  // Soft deletion filtering
-  if (!include_deleted) {
-    conditions.push("t.deleted_at IS NULL");
-  }
+  const { page, limit } = filters;
+  const conditions: string[] = ["t.deleted_at IS NULL"];
+  const values: unknown[] = [];
+  const param = (value: unknown) => {
+    values.push(value);
+    return `$${values.length}`;
+  };
 
   // Access scope from ticketAccess: the role decides which tickets are listed, not the browser
-  const scope = ticketScopeCondition(access, paramIndex);
+  const scope = ticketScopeCondition(access, 1);
   if (!scope) {
     return { tickets: [], total: 0 };
   }
   conditions.push(scope.sql);
   values.push(...scope.values);
-  paramIndex += scope.values.length;
 
-  // Staff can narrow their scoped list to a specific requester
-  if (access.role !== "Employee" && creator_id) {
-    conditions.push(`t.requester_id = $${paramIndex++}`);
-    values.push(creator_id);
+  if (access.role !== "Employee" && filters.creator_id) {
+    conditions.push(`t.requester_id = ${param(filters.creator_id)}`);
   }
-
-  // Filter by status
-  if (status) {
-    conditions.push(`LOWER(t.ticket_status::text) = LOWER($${paramIndex++})`);
-    values.push(status);
+  if (filters.statuses?.length) {
+    conditions.push(`t.ticket_status::text = ANY(${param(filters.statuses)}::text[])`);
   }
-
-  // Filter by priority
-  if (priority) {
-    conditions.push(`LOWER(t.ticket_priority::text) = LOWER($${paramIndex++})`);
-    values.push(priority);
+  if (filters.priorities?.length) {
+    conditions.push(`t.ticket_priority::text = ANY(${param(filters.priorities)}::text[])`);
   }
-
-  // Filter by department
-  if (department_id !== undefined && department_id !== null) {
-    conditions.push(`t.ticket_department_id = $${paramIndex++}`);
-    values.push(department_id);
+  if (filters.department_id !== undefined && filters.department_id !== null) {
+    conditions.push(`t.ticket_department_id = ${param(filters.department_id)}`);
   }
-
-  // Filter by assignee
-  if (assignee_id) {
-    conditions.push(`t.assignee_id = $${paramIndex++}`);
-    values.push(assignee_id);
+  if (filters.assignee_id === "none") {
+    conditions.push("t.assignee_id IS NULL");
+  } else if (filters.assignee_id) {
+    conditions.push(`t.assignee_id = ${param(filters.assignee_id)}`);
   }
-
-  // Search by title or description
-  if (search && search.trim().length > 0) {
-    conditions.push(`(t.title ILIKE '%' || $${paramIndex} || '%' OR t.description ILIKE '%' || $${paramIndex} || '%')`);
-    values.push(search.trim());
-    paramIndex++;
+  if (filters.category_id !== undefined && filters.category_id !== null) {
+    conditions.push(`t.ticket_category_id = ${param(filters.category_id)}`);
   }
+  // Title, description, requester name, or the reference: "HD-1048" / "1048"
+  const search = filters.search?.trim();
+  if (search) {
+    const like = param(`%${search.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`);
+    const ref = /^(?:hd-?)?(\d{1,9})$/i.exec(search);
+    const refCondition = ref ? ` OR t.ticket_id = ${param(Number(ref[1]))}` : "";
+    conditions.push(
+      `(t.title ILIKE ${like} OR t.description ILIKE ${like} OR CONCAT(req_u.name, ' ', req_u.surname) ILIKE ${like}${refCondition})`
+    );
+  }
+  if (filters.sla === "breached") conditions.push(SQL_IS_BREACHED);
+  if (filters.sla === "due_soon") conditions.push(SQL_IS_DUE_SOON);
 
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const whereClause = `WHERE ${conditions.join(" AND ")}`;
 
-  // Count query
-  const countQuery = `
-    SELECT COUNT(*)::int AS total
-    FROM ticket t
-    ${whereClause}
-  `;
-  const countResult = await pool.query(countQuery, values);
+  const countResult = await pool.query(
+    `SELECT COUNT(*)::int AS total FROM ticket t ${TICKET_JOINS} ${whereClause}`,
+    values
+  );
   const total = countResult.rows[0]?.total || 0;
 
-  // Data query with pagination
   const offset = (page - 1) * limit;
-  const dataQuery = `
-    SELECT ${TICKET_SELECT_FIELDS}
-    FROM ticket t
-    ${TICKET_JOINS}
-    ${whereClause}
-    ORDER BY t.created_at DESC
-    LIMIT $${paramIndex++} OFFSET $${paramIndex++}
-  `;
-  values.push(limit, offset);
-
-  const dataResult = await pool.query(dataQuery, values);
+  const dataResult = await pool.query(
+    `SELECT ${TICKET_SELECT_FIELDS}
+     FROM ticket t
+     ${TICKET_JOINS}
+     ${whereClause}
+     ORDER BY ${ORDER_BY[filters.sort ?? "created"]}
+     LIMIT ${param(limit)} OFFSET ${param(offset)}`,
+    values
+  );
   const now = new Date();
   return { tickets: dataResult.rows.map((t: Ticket) => withSla(t, now)), total };
 };
@@ -280,17 +300,12 @@ export const getTicketById = async (
   const ticket: TicketDetail = withSla(result.rows[0]);
 
   // Fetch comments: requesters only see public comments; department staff see internal notes too
+  // (a deleted comment keeps its place with body null: "Message removed by <name>")
   const commentFilter = includeInternal ? "" : "AND c.is_internal = false";
   const commentsResult = await pool.query(
-    `SELECT c.comment_id, c.ticket_id, c.author_id::text AS author_id, c.body, c.is_internal, c.created_at, c.updated_at,
-            c.edited_at, c.deleted_at,
-            TRIM(CONCAT(u.name, ' ', u.surname)) AS author_name,
-            u.email AS author_email,
-            u.role AS author_role
-     FROM comment c
-     LEFT JOIN users u ON c.author_id = u.user_id
+    `${COMMENT_SELECT}
      WHERE c.ticket_id = $1 ${commentFilter}
-     ORDER BY c.created_at ASC`,
+     ORDER BY c.created_at ASC, c.comment_id ASC`,
     [ticketId]
   );
   ticket.comments = commentsResult.rows as TicketComment[];
@@ -367,14 +382,8 @@ export const updateTicket = async (
     fields.push(`description = $${paramIndex++}`);
     values.push(updateData.description);
   }
-  if (updateData.priority !== undefined) {
-    fields.push(`ticket_priority = $${paramIndex++}`);
-    values.push(updateData.priority);
-  }
-  if (updateData.status !== undefined) {
-    fields.push(`ticket_status = $${paramIndex++}`);
-    values.push(updateData.status);
-  }
+  // Status and priority never change here: POST /:id/transition and PATCH /:id/priority enforce the
+  // rules and write the timeline event
   if (updateData.department_id !== undefined) {
     fields.push(`ticket_department_id = $${paramIndex++}`);
     values.push(updateData.department_id);
@@ -404,539 +413,6 @@ export const updateTicket = async (
   }
 
   return getTicketById(ticketId, includeInternal);
-};
-
-// Soft delete only: nothing is ever hard-deleted (briefing p.5 "Audit trail")
-export const deleteTicket = async (ticketId: number): Promise<boolean> => {
-  const result = await pool.query(
-    `UPDATE ticket
-     SET deleted_at = NOW(), ticket_status = 'Cancelled', updated_at = NOW()
-     WHERE ticket_id = $1 AND deleted_at IS NULL
-     RETURNING ticket_id`,
-    [ticketId]
-  );
-  return (result.rowCount ?? 0) > 0;
-};
-
-export interface AssignTicketResult {
-  success: boolean;
-  statusCode: number;
-  message: string;
-  ticket?: TicketDetail;
-}
-
-export const assignTicket = async (
-  ticketId: number,
-  currentUser: User,
-  assigneeId?: string | null
-): Promise<AssignTicketResult> => {
-  const access = await loadTicketAccess(currentUser);
-
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-
-    // Lock ticket row for update to prevent concurrent double-claiming
-    const ticketResult = await client.query(
-      `SELECT t.*, d.department_name
-       FROM ticket t
-       LEFT JOIN department d ON t.ticket_department_id = d.department_id
-       WHERE t.ticket_id = $1 AND t.deleted_at IS NULL
-       FOR UPDATE OF t`,
-      [ticketId]
-    );
-
-    if (ticketResult.rowCount === 0) {
-      await client.query("ROLLBACK");
-      return {
-        success: false,
-        statusCode: 404,
-        message: "Ticket not found."
-      };
-    }
-
-    const ticket = ticketResult.rows[0];
-
-    // Department scoping (ticketAccess): don't admit the ticket exists to someone who can't view it,
-    // and only staff of the ticket's department may claim or assign it
-    if (!canView(access, ticket)) {
-      await client.query("ROLLBACK");
-      return { success: false, statusCode: 404, message: "Ticket not found." };
-    }
-    if (!canWork(access, ticket)) {
-      await client.query("ROLLBACK");
-      return {
-        success: false,
-        statusCode: 403,
-        message: "Forbidden: Only agents and leads of this ticket's department can assign it."
-      };
-    }
-
-    // Status validation: cannot assign closed, resolved, or cancelled tickets
-    const terminalStatuses = ["Closed", "Resolved", "Cancelled"];
-    if (terminalStatuses.includes(ticket.ticket_status)) {
-      await client.query("ROLLBACK");
-      return {
-        success: false,
-        statusCode: 400,
-        message: `Cannot assign a ${ticket.ticket_status.toLowerCase()} ticket.`
-      };
-    }
-
-    let resolvedAssigneeId: string;
-
-    if (currentUser.role === "Agent") {
-      // Support Agents can only self-assign
-      if (assigneeId !== undefined && assigneeId !== null && String(assigneeId).trim() !== "" && String(assigneeId).trim() !== String(currentUser.user_id)) {
-        await client.query("ROLLBACK");
-        return {
-          success: false,
-          statusCode: 403,
-          message: "Forbidden: Support agents can only assign tickets to themselves."
-        };
-      }
-      resolvedAssigneeId = String(currentUser.user_id);
-
-      // Validate unassigned: agents can only claim unassigned tickets (prevent double-claiming)
-      if (ticket.assignee_id !== null && ticket.assignee_id !== undefined) {
-        await client.query("ROLLBACK");
-        return {
-          success: false,
-          statusCode: 409,
-          message: "Ticket is already assigned."
-        };
-      }
-    } else {
-      // Department Lead of the ticket's department: assign to an agent of that department (or self-assign)
-      if (assigneeId !== undefined && assigneeId !== null && String(assigneeId).trim() !== "") {
-        resolvedAssigneeId = String(assigneeId).trim();
-      } else {
-        resolvedAssigneeId = String(currentUser.user_id);
-      }
-
-      // If assigning to another user, validate that target user exists, is active, and is support staff
-      if (resolvedAssigneeId !== String(currentUser.user_id)) {
-        const targetUserRes = await client.query(
-          "SELECT user_id, name, surname, email, role, active, department_id FROM users WHERE user_id = $1",
-          [resolvedAssigneeId]
-        );
-
-        if (targetUserRes.rowCount === 0) {
-          await client.query("ROLLBACK");
-          return {
-            success: false,
-            statusCode: 400,
-            message: "Assignee user not found."
-          };
-        }
-
-        const targetUser = targetUserRes.rows[0];
-        if (!targetUser.active) {
-          await client.query("ROLLBACK");
-          return {
-            success: false,
-            statusCode: 400,
-            message: "Assignee user is inactive."
-          };
-        }
-
-        const staffRoles = ["Agent", "Department Lead"];
-        if (!staffRoles.includes(targetUser.role)) {
-          await client.query("ROLLBACK");
-          return {
-            success: false,
-            statusCode: 400,
-            message: "Tickets can only be assigned to support staff (agents or leads)."
-          };
-        }
-
-        // The assignee must be able to work the ticket, i.e. belong to (or lead) its department
-        const targetAccess = await loadTicketAccess(targetUser);
-        if (!canWork(targetAccess, ticket)) {
-          await client.query("ROLLBACK");
-          return {
-            success: false,
-            statusCode: 400,
-            message: "Tickets can only be assigned to agents of the ticket's department."
-          };
-        }
-      }
-    }
-
-    // Owning a ticket opens it: New -> Open in the same transaction (briefing p.11 S2)
-    let newStatus = ticket.ticket_status;
-    if (ticket.ticket_status === "New") {
-      newStatus = "Open";
-    }
-
-    await client.query(
-      `UPDATE ticket
-       SET assignee_id = $1,
-           ticket_status = $2,
-           updated_at = NOW()
-       WHERE ticket_id = $3`,
-      [resolvedAssigneeId, newStatus, ticketId]
-    );
-
-    const selfClaim = resolvedAssigneeId === String(currentUser.user_id) && !ticket.assignee_id;
-    await logEvent(client, {
-      ticketId,
-      actorId: currentUser.user_id,
-      type: selfClaim ? "claimed" : "assigned",
-      from: ticket.assignee_id ? String(ticket.assignee_id) : null,
-      to: resolvedAssigneeId,
-    });
-    if (newStatus !== ticket.ticket_status) {
-      await logEvent(client, {
-        ticketId,
-        actorId: currentUser.user_id,
-        type: "status_changed",
-        from: ticket.ticket_status,
-        to: newStatus,
-      });
-    }
-
-    await client.query("COMMIT");
-
-    // Fetch updated ticket with requester & assignee details
-    const fullTicket = await getTicketById(ticketId, true, false);
-
-    // Trigger email notification to employee (ticket requester)
-    if (fullTicket && fullTicket.requester_email) {
-      sendTicketAssignedEmail({
-        recipientEmail: fullTicket.requester_email,
-        recipientName: fullTicket.requester_name || "Valued User",
-        ticketId: fullTicket.ticket_id,
-        ticketTitle: fullTicket.title,
-        assigneeName: fullTicket.assignee_name || "Support Agent",
-        status: fullTicket.ticket_status,
-      }).catch((err) => {
-        console.error("[ticketService] Failed to send ticket assignment email:", err);
-      });
-    }
-
-    return {
-      success: true,
-      statusCode: 200,
-      message: "Ticket assigned successfully",
-      ticket: fullTicket!
-    };
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
-};
-
-export const getCommentEditWindowMinutes = (): number => {
-  const envVal = process.env.COMMENT_EDIT_WINDOW_MINUTES;
-  if (envVal && !isNaN(parseInt(envVal, 10))) {
-    return parseInt(envVal, 10);
-  }
-  return 15; // default configurable 15 minutes window
-};
-
-export interface CommentResult {
-  success: boolean;
-  statusCode: number;
-  message: string;
-  comment?: TicketComment;
-}
-
-export const getTicketComments = async (
-  ticketId: number,
-  currentUser: User
-): Promise<{ success: boolean; statusCode: number; message: string; comments?: TicketComment[] }> => {
-  // ticketAccess: requester or staff of the ticket's department, otherwise 404
-  const resolved = await resolveTicketAccess(ticketId, currentUser);
-  if (!resolved) {
-    return { success: false, statusCode: 404, message: "Ticket not found." };
-  }
-
-  // Internal notes only for staff who can work the ticket
-  const commentFilter = resolved.canWork ? "" : "AND c.is_internal = false";
-
-  const commentsResult = await pool.query(
-    `SELECT c.comment_id, c.ticket_id, c.author_id, c.body, c.is_internal, c.created_at, c.updated_at,
-            TRIM(CONCAT(u.name, ' ', u.surname)) AS author_name,
-            u.email AS author_email,
-            u.role AS author_role
-     FROM comment c
-     LEFT JOIN users u ON c.author_id = u.user_id
-     WHERE c.ticket_id = $1 ${commentFilter}
-     ORDER BY c.created_at ASC`,
-    [ticketId]
-  );
-
-  return {
-    success: true,
-    statusCode: 200,
-    message: "Comments retrieved successfully",
-    comments: commentsResult.rows as TicketComment[]
-  };
-};
-
-export const addComment = async (
-  ticketId: number,
-  currentUser: User,
-  body: string,
-  isInternal: boolean = false
-): Promise<CommentResult> => {
-  // Validate comment body
-  if (!body || typeof body !== "string" || body.trim().length === 0) {
-    return { success: false, statusCode: 400, message: "Comment body cannot be empty." };
-  }
-
-  const trimmedBody = body.trim();
-  if (trimmedBody.length > 5000) {
-    return { success: false, statusCode: 400, message: "Comment body cannot exceed 5000 characters." };
-  }
-
-  // Check ticket existence
-  const ticketRes = await pool.query(
-    `SELECT t.ticket_id, t.title, t.ticket_status, t.requester_id, t.assignee_id,
-            req.email AS requester_email, TRIM(CONCAT(req.name, ' ', req.surname)) AS requester_name,
-            asg.email AS assignee_email, TRIM(CONCAT(asg.name, ' ', asg.surname)) AS assignee_name
-     FROM ticket t
-     LEFT JOIN users req ON t.requester_id = req.user_id
-     LEFT JOIN users asg ON t.assignee_id = asg.user_id
-     WHERE t.ticket_id = $1 AND t.deleted_at IS NULL`,
-    [ticketId]
-  );
-
-  if (ticketRes.rowCount === 0) {
-    return { success: false, statusCode: 404, message: "Ticket not found." };
-  }
-
-  const ticket = ticketRes.rows[0];
-
-  // ticketAccess: only the requester or staff of the ticket's department may comment (others get 404)
-  const resolved = await resolveTicketAccess(ticketId, currentUser);
-  if (!resolved) {
-    return { success: false, statusCode: 404, message: "Ticket not found." };
-  }
-
-  // Only staff who can work the ticket may post internal notes
-  if (isInternal && !resolved.canWork) {
-    return {
-      success: false,
-      statusCode: 403,
-      message: "Forbidden: Only agents and leads of this ticket's department can post internal notes."
-    };
-  }
-
-  // Insert comment
-  const insertResult = await pool.query(
-    `INSERT INTO comment (ticket_id, author_id, body, is_internal, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, NOW(), NOW())
-     RETURNING comment_id, ticket_id, author_id, body, is_internal, created_at, updated_at`,
-    [ticketId, currentUser.user_id, trimmedBody, isInternal]
-  );
-
-  const newComment = insertResult.rows[0];
-  newComment.author_name = `${currentUser.name} ${currentUser.surname || ""}`.trim();
-  newComment.author_email = currentUser.email;
-  newComment.author_role = currentUser.role;
-
-  // Trigger email notifications:
-  // "users recieve email notification for each posted comment"
-  const authorName = `${currentUser.name} ${currentUser.surname || ""}`.trim();
-
-  if (!isInternal) {
-    // Public comment:
-    // If author is the ticket requester -> notify the assigned agent (if assigned)
-    if (String(currentUser.user_id) === String(ticket.requester_id)) {
-      if (ticket.assignee_email) {
-        sendTicketCommentEmail({
-          recipientEmail: ticket.assignee_email,
-          recipientName: ticket.assignee_name || "Support Agent",
-          ticketId: ticket.ticket_id,
-          ticketTitle: ticket.title,
-          authorName,
-          authorRole: currentUser.role,
-          commentBody: trimmedBody,
-          isInternal: false
-        }).catch((err) => {
-          console.error("[ticketService] Failed to send comment email to assignee:", err);
-        });
-      }
-    } else {
-      // Author is agent / lead / admin -> notify the ticket requester
-      if (ticket.requester_email) {
-        sendTicketCommentEmail({
-          recipientEmail: ticket.requester_email,
-          recipientName: ticket.requester_name || "Valued User",
-          ticketId: ticket.ticket_id,
-          ticketTitle: ticket.title,
-          authorName,
-          authorRole: currentUser.role,
-          commentBody: trimmedBody,
-          isInternal: false
-        }).catch((err) => {
-          console.error("[ticketService] Failed to send comment email to requester:", err);
-        });
-      }
-    }
-  } else {
-    // Internal note:
-    // Only notify assigned agent if author is not the assignee (never notify requester)
-    if (ticket.assignee_email && String(currentUser.user_id) !== String(ticket.assignee_id)) {
-      sendTicketCommentEmail({
-        recipientEmail: ticket.assignee_email,
-        recipientName: ticket.assignee_name || "Support Agent",
-        ticketId: ticket.ticket_id,
-        ticketTitle: ticket.title,
-        authorName,
-        authorRole: currentUser.role,
-        commentBody: trimmedBody,
-        isInternal: true
-      }).catch((err) => {
-        console.error("[ticketService] Failed to send internal note email to assignee:", err);
-      });
-    }
-  }
-
-  return {
-    success: true,
-    statusCode: 201,
-    message: isInternal ? "Internal note posted successfully" : "Comment posted successfully",
-    comment: newComment
-  };
-};
-
-export const getCommentById = async (commentId: number): Promise<(TicketComment & { age_minutes?: number }) | null> => {
-  const result = await pool.query(
-    `SELECT c.comment_id, c.ticket_id, c.author_id, c.body, c.is_internal, c.created_at, c.updated_at,
-            EXTRACT(EPOCH FROM (NOW() - c.created_at)) / 60.0 AS age_minutes,
-            TRIM(CONCAT(u.name, ' ', u.surname)) AS author_name,
-            u.email AS author_email,
-            u.role AS author_role
-     FROM comment c
-     LEFT JOIN users u ON c.author_id = u.user_id
-     WHERE c.comment_id = $1`,
-    [commentId]
-  );
-  if (result.rowCount === 0) return null;
-  return result.rows[0];
-};
-
-export const updateComment = async (
-  commentId: number,
-  currentUser: User,
-  newBody: string
-): Promise<CommentResult> => {
-  if (!newBody || typeof newBody !== "string" || newBody.trim().length === 0) {
-    return { success: false, statusCode: 400, message: "Comment body cannot be empty." };
-  }
-
-  const trimmedBody = newBody.trim();
-  if (trimmedBody.length > 5000) {
-    return { success: false, statusCode: 400, message: "Comment body cannot exceed 5000 characters." };
-  }
-
-  const existing = await getCommentById(commentId);
-  if (!existing) {
-    return { success: false, statusCode: 404, message: "Comment not found." };
-  }
-
-  // ticketAccess: a comment on a ticket the user can't view (or an internal note they can't see) "doesn't exist"
-  const resolved = await resolveTicketAccess(existing.ticket_id, currentUser);
-  if (!resolved || (existing.is_internal && !resolved.canWork)) {
-    return { success: false, statusCode: 404, message: "Comment not found." };
-  }
-
-  const isAuthor = String(existing.author_id) === String(currentUser.user_id);
-
-  if (!isAuthor) {
-    return {
-      success: false,
-      statusCode: 403,
-      message: "Forbidden: You are not authorized to edit this comment."
-    };
-  }
-
-  // Authors can edit their own comments within a configurable time window
-  const windowMinutes = getCommentEditWindowMinutes();
-  const ageMinutes = existing.age_minutes !== undefined
-    ? Number(existing.age_minutes)
-    : (Date.now() - new Date(existing.created_at).getTime()) / (1000 * 60);
-
-  if (ageMinutes > windowMinutes) {
-    return {
-      success: false,
-      statusCode: 403,
-      message: `Forbidden: Comments can only be edited within ${windowMinutes} minutes of posting.`
-    };
-  }
-
-  const updateResult = await pool.query(
-    `UPDATE comment
-     SET body = $1, updated_at = NOW()
-     WHERE comment_id = $2
-     RETURNING comment_id, ticket_id, author_id, body, is_internal, created_at, updated_at`,
-    [trimmedBody, commentId]
-  );
-
-  const updatedComment = updateResult.rows[0];
-  updatedComment.author_name = existing.author_name;
-  updatedComment.author_email = existing.author_email;
-  updatedComment.author_role = existing.author_role;
-
-  return {
-    success: true,
-    statusCode: 200,
-    message: "Comment updated successfully",
-    comment: updatedComment
-  };
-};
-
-export const deleteComment = async (
-  commentId: number,
-  currentUser: User
-): Promise<{ success: boolean; statusCode: number; message: string }> => {
-  const existing = await getCommentById(commentId);
-  if (!existing) {
-    return { success: false, statusCode: 404, message: "Comment not found." };
-  }
-
-  // ticketAccess: a comment on a ticket the user can't view (or an internal note they can't see) "doesn't exist"
-  const resolved = await resolveTicketAccess(existing.ticket_id, currentUser);
-  if (!resolved || (existing.is_internal && !resolved.canWork)) {
-    return { success: false, statusCode: 404, message: "Comment not found." };
-  }
-
-  const isAuthor = String(existing.author_id) === String(currentUser.user_id);
-
-  if (!isAuthor) {
-    return {
-      success: false,
-      statusCode: 403,
-      message: "Forbidden: You are not authorized to delete this comment."
-    };
-  }
-
-  // Authors can delete their own comments within a configurable time window
-  const windowMinutes = getCommentEditWindowMinutes();
-  const ageMinutes = existing.age_minutes !== undefined
-    ? Number(existing.age_minutes)
-    : (Date.now() - new Date(existing.created_at).getTime()) / (1000 * 60);
-
-  if (ageMinutes > windowMinutes) {
-    return {
-      success: false,
-      statusCode: 403,
-      message: `Forbidden: Comments can only be deleted within ${windowMinutes} minutes of posting.`
-    };
-  }
-
-  await pool.query("DELETE FROM comment WHERE comment_id = $1", [commentId]);
-
-  return {
-    success: true,
-    statusCode: 200,
-    message: "Comment deleted successfully."
-  };
 };
 
 export const submitTicketFeedback = async (
@@ -1038,196 +514,6 @@ export const getTicketFeedback = async (
     statusCode: 200,
     message: "Feedback retrieved successfully",
     feedback: result.rows[0] ? (result.rows[0] as TicketFeedback) : null
-  };
-};
-
-// The approval step (briefing p.4): a purchase or access request starts in "Pending approval"
-// and only the department lead's approve / reject moves it on. A plain status change may not
-// put a ticket into "Pending approval" or take it out, except that the requester may still
-// withdraw (cancel) their own pending request. Returns the refusal message, or null if allowed.
-export const approvalStepProblem = (
-  oldStatus: TicketStatus,
-  newStatus: TicketStatus,
-  isTicketRequester: boolean
-): string | null => {
-  if (oldStatus === newStatus) return null;
-  if (newStatus === "Pending approval") {
-    return "A ticket can't be moved back to Pending approval. Only purchase and access requests start there.";
-  }
-  if (oldStatus === "Pending approval" && !(newStatus === "Cancelled" && isTicketRequester)) {
-    return "This request is waiting for approval. Only the Department Lead can approve or reject it.";
-  }
-  return null;
-};
-
-export const updateTicketStatus = async (
-  ticketId: number,
-  newStatus: TicketStatus,
-  currentUser: User
-): Promise<{ success: boolean; statusCode: number; message: string; ticket?: TicketDetail }> => {
-  // ticketAccess: 404 for anyone who can't view the ticket
-  const resolved = await resolveTicketAccess(ticketId, currentUser);
-  if (!resolved) {
-    return { success: false, statusCode: 404, message: "Ticket not found." };
-  }
-
-  // Staff of the ticket's department may change status; the requester may only cancel their own ticket
-  if (!resolved.canWork) {
-    if (!resolved.isRequester) {
-      return { success: false, statusCode: 403, message: "Forbidden: You are not authorized to update this ticket." };
-    }
-    if (newStatus !== "Cancelled") {
-      return { success: false, statusCode: 403, message: "Forbidden: Employees can only cancel their own tickets." };
-    }
-  }
-
-  const oldStatus = resolved.ticket.ticket_status;
-
-  const approvalProblem = approvalStepProblem(oldStatus, newStatus, resolved.isRequester);
-  if (approvalProblem) {
-    return { success: false, statusCode: 409, message: approvalProblem };
-  }
-
-  await pool.query(
-    "UPDATE ticket SET ticket_status = $1, updated_at = NOW() WHERE ticket_id = $2",
-    [newStatus, ticketId]
-  );
-
-  const updatedTicket = await getTicketById(ticketId, resolved.canWork, false);
-
-  // Notify requester via email if status changed
-  if (updatedTicket && updatedTicket.requester_email && oldStatus !== newStatus) {
-    sendTicketStatusEmail({
-      recipientEmail: updatedTicket.requester_email,
-      recipientName: updatedTicket.requester_name || "Valued User",
-      ticketId: updatedTicket.ticket_id,
-      ticketTitle: updatedTicket.title,
-      oldStatus,
-      newStatus,
-      updatedByName: `${currentUser.name} ${currentUser.surname || ""}`.trim()
-    }).catch((err) => {
-      console.error("[ticketService] Failed to send status update email:", err);
-    });
-  }
-
-  return {
-    success: true,
-    statusCode: 200,
-    message: `Ticket status updated to ${newStatus}`,
-    ticket: updatedTicket!
-  };
-};
-
-export const approveTicket = async (
-  ticketId: number,
-  currentUser: User,
-  note?: string
-): Promise<{ success: boolean; statusCode: number; message: string; ticket?: TicketDetail }> => {
-  // ticketAccess: 404 for anyone who can't view the ticket
-  const resolved = await resolveTicketAccess(ticketId, currentUser);
-  if (!resolved) {
-    return { success: false, statusCode: 404, message: "Ticket not found." };
-  }
-
-  // Only the lead of the ticket's own department may approve
-  if (currentUser.role !== "Department Lead" || !resolved.canWork) {
-    return {
-      success: false,
-      statusCode: 403,
-      message: "Forbidden: Only the Department Lead of this ticket's department can approve requests."
-    };
-  }
-
-  const existingTicket = resolved.ticket;
-
-  if (existingTicket.ticket_status.toLowerCase() !== "pending approval") {
-    return {
-      success: false,
-      statusCode: 400,
-      message: `Ticket is not pending approval. Current status is ${existingTicket.ticket_status}.`
-    };
-  }
-
-  // Approved: into the department queue as New (Open when someone already owns it)
-  const nextStatus: TicketStatus = existingTicket.assignee_id ? "Open" : "New";
-
-  // The SLA clocks start now: a request has none while it waits for approval (page 40)
-  await pool.query(
-    `UPDATE ticket t
-     SET ticket_status = $1,
-         updated_at = NOW(),
-         first_response_due_at = COALESCE(t.first_response_due_at, NOW() + make_interval(mins => p.first_response_mins)),
-         resolution_due_at = COALESCE(t.resolution_due_at, NOW() + make_interval(mins => p.resolution_mins))
-     FROM sla_policy p
-     WHERE t.ticket_id = $2 AND p.priority = t.ticket_priority`,
-    [nextStatus, ticketId]
-  );
-
-  // Add internal audit note
-  const authorName = `${currentUser.name} ${currentUser.surname || ""}`.trim();
-  const noteBody = note ? `Request Approved: ${note}` : `Request approved by ${authorName} (${currentUser.role}).`;
-  await addComment(ticketId, currentUser, noteBody, true);
-
-  const updatedTicket = await getTicketById(ticketId, true, false);
-  return {
-    success: true,
-    statusCode: 200,
-    message: "Ticket approved successfully.",
-    ticket: updatedTicket!
-  };
-};
-
-export const rejectTicket = async (
-  ticketId: number,
-  currentUser: User,
-  reason?: string
-): Promise<{ success: boolean; statusCode: number; message: string; ticket?: TicketDetail }> => {
-  // ticketAccess: 404 for anyone who can't view the ticket
-  const resolved = await resolveTicketAccess(ticketId, currentUser);
-  if (!resolved) {
-    return { success: false, statusCode: 404, message: "Ticket not found." };
-  }
-
-  // Only the lead of the ticket's own department may reject
-  if (currentUser.role !== "Department Lead" || !resolved.canWork) {
-    return {
-      success: false,
-      statusCode: 403,
-      message: "Forbidden: Only the Department Lead of this ticket's department can reject requests."
-    };
-  }
-
-  const existingTicket = resolved.ticket;
-
-  if (existingTicket.ticket_status.toLowerCase() !== "pending approval") {
-    return {
-      success: false,
-      statusCode: 400,
-      message: `Ticket is not pending approval. Current status is ${existingTicket.ticket_status}.`
-    };
-  }
-
-  // The requester is shown why (briefing p.4: "lead rejects (reason shown)"), so a reason is required
-  if (typeof reason !== "string" || reason.trim().length === 0) {
-    return { success: false, statusCode: 400, message: "A reason is required to reject a request." };
-  }
-  reason = reason.trim();
-
-  // Reject moves to Cancelled
-  await pool.query(
-    "UPDATE ticket SET ticket_status = 'Cancelled', updated_at = NOW() WHERE ticket_id = $1",
-    [ticketId]
-  );
-
-  // A public comment, so the requester sees the reason on their ticket (the reject dialog says so)
-  await addComment(ticketId, currentUser, `Request rejected: ${reason}`, false);
-
-  const updatedTicket = await getTicketById(ticketId, true, false);
-  return {
-    success: true,
-    statusCode: 200,
-    message: "Ticket rejected successfully.",
-    ticket: updatedTicket!
   };
 };
 

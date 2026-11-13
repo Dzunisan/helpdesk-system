@@ -54,7 +54,8 @@ router.patch("/:id/priority", changePriority);
 // S4 timeline: events + comments, filtered by role on the server
 router.get("/:id/timeline", getTimeline);
 
-// Agent / Admin Status Actions (superseded by POST /:id/transition in S2)
+// Older screens: PATCH /:id/status { status } is POST /:id/transition under another name (same
+// arrows, same 403/409, same events). There is no free status path any more.
 router.patch("/:id/status", updateStatus);
 router.put("/:id/status", updateStatus);
 
@@ -77,11 +78,12 @@ router.get("/:ticket_id/feedback", getFeedback);
 // Retrieve details of a specific ticket
 router.get("/:id", getTicketById);
 
-// Update ticket details or status
+// Update ticket details (title, description; staff: department, category). Status, priority and
+// owner are refused here (400): they go through /transition, /priority and /claim or /assign.
 router.put("/update/:id", updateTicket);
 router.patch("/update/:id", updateTicket);
 
-// Delete or soft-delete a ticket
+// Nothing is deleted: DELETE is the requester's Cancel (same rules as /transition to Cancelled)
 router.delete("/delete/:id", deleteTicket);
 router.delete("/:id", deleteTicket);
 
