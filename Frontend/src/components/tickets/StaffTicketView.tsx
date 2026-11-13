@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ChevronLeft, Lock, SearchX } from "lucide-react";
 import { toast } from "sonner";
@@ -15,6 +15,8 @@ import {
   transitionTicket,
 } from "@/services/tickets";
 import { toApiError } from "@/services/apiClient";
+import { listCategories } from "@/services/categories";
+import { useApiData } from "@/hooks/useApiData";
 import type { Ticket, TicketAction, TicketPriority, TicketStatus } from "@/types/api";
 import { formatTicketRef } from "@/lib/format";
 import { statusLabel } from "@/lib/ticketVocabulary";
@@ -124,6 +126,14 @@ export default function StaffTicketView() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const navigate = useNavigate();
+
+  // The category's questions label the request's answers ("Cost per year R3 960", p.56), the same
+  // way the employee page and the approval drawer show them
+  const categoriesQ = useApiData(() => listCategories(), "categories");
+  const fields = useMemo(
+    () => categoriesQ.data?.categories.find((c) => c.category_id === ticket?.ticket_category_id)?.fields ?? [],
+    [categoriesQ.data, ticket?.ticket_category_id],
+  );
 
   const ref = ticket ? formatTicketRef(ticket.ticket_id) : id ? formatTicketRef(id) : "This ticket";
 
@@ -349,6 +359,7 @@ export default function StaffTicketView() {
       ticket={ticket}
       items={timeline}
       audience="staff"
+      fields={fields}
       error={timelineError}
       onRetry={() => void reload()}
       userId={userId}
