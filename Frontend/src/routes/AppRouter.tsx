@@ -19,6 +19,8 @@ import Approvals from "../pages/department lead/Approvals";
 
 import Users from "../pages/users/Users";
 import Departments from "../pages/system admin/Departments";
+import AdminOverview from "../pages/system admin/AdminOverview";
+import PlatformOverview from "../pages/platform admin/PlatformOverview";
 import UserProfile from "../pages/user profile/UserProfile";
 
 import ForgotPasswordPage from "../pages/Auth pages/ForgotPasswordPage";
@@ -59,6 +61,8 @@ const AppRouter = () => {
         {/* Protected Department Lead Routes */}
         <Route element={<ProtectedRoute allowedRoles={["Department Lead"]} />}>
           <Route path="/department-lead" element={<AppLayout />}>
+            {/* The lead's home is the department ticket list until the S8 dashboard (p.55) */}
+            <Route index element={<TicketQueue />} />
             <Route path="ticket-queue" element={<TicketQueue />} />
             <Route path="approvals" element={<Approvals />} />
             <Route path="team" element={<TeamAgents />} />
@@ -71,6 +75,7 @@ const AppRouter = () => {
         {/* Protected System Admin Routes */}
         <Route element={<ProtectedRoute allowedRoles={["System Admin"]} />}>
           <Route path="/system-admin" element={<AppLayout />}>
+            <Route index element={<AdminOverview />} />
             <Route path="users" element={<Users />} />
             <Route path="departments" element={<Departments />} />
             <Route path="reports" element={<Reports />} />
@@ -81,6 +86,7 @@ const AppRouter = () => {
         {/* Protected Platform Admin Routes (no ticket access) */}
         <Route element={<ProtectedRoute allowedRoles={["Platform Admin"]} />}>
           <Route path="/platform-admin" element={<AppLayout />}>
+            <Route index element={<PlatformOverview />} />
             <Route path="users" element={<Users />} />
             <Route path="profile" element={<UserProfile />} />
           </Route>

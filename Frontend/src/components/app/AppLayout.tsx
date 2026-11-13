@@ -44,7 +44,6 @@ import {
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
@@ -62,7 +61,7 @@ import {
 interface NavItem {
   label: string;
   icon: LucideIcon;
-  /** Omit for a page that does not exist yet: it shows as "Soon" and is not a link */
+  /** Omit for a page that does not exist yet: it shows greyed out and is not a link */
   href?: string;
   /** Only active on an exact path match (index routes) */
   end?: boolean;
@@ -237,20 +236,15 @@ function StaffSidebar({ user }: { user: User }) {
                           </NavLink>
                         </SidebarMenuButton>
                       ) : (
-                        <>
-                          <SidebarMenuButton
-                            disabled
-                            aria-disabled
-                            title="Coming soon"
-                            className="text-muted-foreground"
-                          >
-                            <item.icon />
-                            <span>{item.label}</span>
-                          </SidebarMenuButton>
-                          <SidebarMenuBadge className="text-[10px] font-normal text-muted-foreground">
-                            Soon
-                          </SidebarMenuBadge>
-                        </>
+                        // Not built yet: visible so the shape of the product is clear, but not a link
+                        <SidebarMenuButton
+                          disabled
+                          title={`${item.label}: coming soon`}
+                          className="text-muted-foreground"
+                        >
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
                       )}
                     </SidebarMenuItem>
                   ))}
