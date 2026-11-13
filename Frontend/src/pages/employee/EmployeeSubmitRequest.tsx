@@ -1,274 +1,166 @@
-import { useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { toast } from "sonner";
-import { Send, Users } from "lucide-react";
-import { useDepartments } from "@/hooks/useDepartments";
-import * as ticketService from "@/services/ticketService";
-import { formatTicketRef } from "@/lib/format";
+import { useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { ArrowRight, Search, SearchX, Shapes, X } from "lucide-react";
+import { listCategories } from "@/services/categories";
+import { useIsMobile } from "@/hooks/use-mobile";
+import type { Category } from "@/types/api";
 import PageHeader from "@/components/app/PageHeader";
-import SectionCard from "@/components/app/SectionCard";
 import EmptyState from "@/components/app/EmptyState";
 import ErrorState from "@/components/app/ErrorState";
-import DepartmentPicker, { DepartmentPickerSkeleton } from "@/components/request/DepartmentPicker";
-import WhatHappensNext, { RequestTips } from "@/components/request/WhatHappensNext";
+import CategoryTiles, { CategoryTilesSkeleton } from "@/components/request/CategoryTiles";
+import NewRequestSteps from "@/components/request/NewRequestSteps";
+import { useApiData } from "@/components/portal/useApiData";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Spinner } from "@/components/ui/spinner";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+  InputGroupText,
+} from "@/components/ui/input-group";
 
-type FormData = { department_id: string; title: string; description: string };
-type FormErrors = Partial<Record<keyof FormData, string>>;
+const matches = (category: Category, query: string) =>
+  `${category.category_name} ${category.description ?? ""} ${category.department_name}`.toLowerCase().includes(query);
 
-const TITLE_MIN = 5;
-const TITLE_MAX = 255;
-const DESCRIPTION_MIN = 15;
+const isSomethingElse = (category: Category) => category.category_name.toLowerCase() === "something else";
 
-// Employees never choose a priority: staff set it after triage (the server ignores it from Employees)
-function validate(data: FormData): FormErrors {
-  const e: FormErrors = {};
-  const title = data.title.trim();
-  const description = data.description.trim();
-  if (!data.department_id) e.department_id = "Choose the team that should handle this.";
-  if (title.length < TITLE_MIN) e.title = `Add a short summary of at least ${TITLE_MIN} characters.`;
-  else if (title.length > TITLE_MAX) e.title = `Keep the summary to ${TITLE_MAX} characters or fewer.`;
-  if (description.length < DESCRIPTION_MIN)
-    e.description = `Tell us a little more: at least ${DESCRIPTION_MIN} characters.`;
-  return e;
-}
-
-/** A numbered group inside the form: "1 Which team can help?" */
-function FormSection({
-  step,
-  title,
-  description,
-  titleId,
-  children,
-}: {
-  step: number;
-  title: string;
-  description: string;
-  titleId?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="flex flex-col gap-5">
-      <div className="flex items-start gap-3">
-        <span className="mt-px flex size-6 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-xs font-semibold text-muted-foreground tabular-nums">
-          {step}
-        </span>
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <h2 id={titleId} className="text-base font-semibold tracking-tight text-foreground">
-            {title}
-          </h2>
-          <p className="text-sm text-muted-foreground">{description}</p>
-        </div>
-      </div>
-      <div className="flex flex-col gap-6 sm:pl-9">{children}</div>
-    </section>
-  );
-}
-
+/**
+ * New request, step 1: choose a category (briefing p.38, S5). Asks *what*, not *who*: the
+ * category decides the department, priority and approval on the server.
+ * `?selected=<id>` keeps the choice when the employee comes back with "Change".
+ */
 export default function EmployeeSubmitRequest() {
   const navigate = useNavigate();
-  const { departments, loading: deptLoading, error: deptError, isRefetching, refetch } = useDepartments();
+  const [params] = useSearchParams();
+  const { data, error, loading, refreshing, reload } = useApiData(() => listCategories(), "categories");
+  // "Something else" always comes last in its group: it's the fallback, not a first choice
+  const categories = useMemo(
+    () => [...(data?.categories ?? [])].sort((a, b) => Number(isSomethingElse(a)) - Number(isSomethingElse(b))),
+    [data],
+  );
+  const isMobile = useIsMobile();
 
-  const [formData, setFormData] = useState<FormData>({ department_id: "", title: "", description: "" });
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [attempted, setAttempted] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [picked, setPicked] = useState<string>(params.get("selected") ?? "");
+  const [search, setSearch] = useState("");
 
-  const firstTileRef = useRef<HTMLButtonElement>(null);
-  const titleRef = useRef<HTMLInputElement>(null);
-  const descriptionRef = useRef<HTMLTextAreaElement>(null);
+  const query = search.trim().toLowerCase();
+  const visible = useMemo(() => (query ? categories.filter((c) => matches(c, query)) : categories), [categories, query]);
+  const somethingElse = categories.find(isSomethingElse);
+  // A choice that is no longer listed (deactivated meanwhile) doesn't count
+  const selected = categories.some((c) => String(c.category_id) === picked) ? picked : "";
 
-  const activeDepartments = useMemo(() => departments.filter((d) => d.status === "active"), [departments]);
-
-  // With a single team there is nothing to choose; otherwise the employee picks (pre-selecting the
-  // first team sent tickets to the wrong queue, briefing p.38)
-  const onlyTeamId = activeDepartments.length === 1 ? String(activeDepartments[0].department_id) : "";
-  const current: FormData = { ...formData, department_id: formData.department_id || onlyTeamId };
-
-  const selectedDepartment = activeDepartments.find((d) => String(d.department_id) === current.department_id);
-
-  const update = (field: keyof FormData, value: string) => {
-    const next = { ...current, [field]: value };
-    setFormData(next);
-    // After the first submit, errors follow the input so they clear as soon as they're fixed
-    if (attempted) setErrors(validate(next));
+  const goToDetails = (value = selected) => {
+    if (value) navigate(`/employee/submit-request/${value}`);
   };
 
-  const addRequest = async (ev: FormEvent) => {
-    ev.preventDefault();
-    setAttempted(true);
-    const found = validate(current);
-    setErrors(found);
-    if (found.department_id) return firstTileRef.current?.focus();
-    if (found.title) return titleRef.current?.focus();
-    if (found.description) return descriptionRef.current?.focus();
-
-    setSubmitting(true);
-    try {
-      const ticket = await ticketService.createTicket({
-        title: current.title.trim(),
-        description: current.description.trim(),
-        department_id: current.department_id ? Number(current.department_id) : undefined,
-      });
-      const team = selectedDepartment?.department_name;
-      toast.success("Request submitted", {
-        description: ticket?.ticket_id
-          ? `${formatTicketRef(ticket.ticket_id)} is with ${team ?? "the team"}. We'll email you updates.`
-          : "We'll email you updates.",
-      });
-      setSubmitted(true);
-      setTimeout(() => navigate("/employee/my-requests"), 1200);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to submit request.";
-      toast.error("Couldn't submit your request", { description: message });
-    } finally {
-      setSubmitting(false);
-    }
+  // Phones: one category per row with a chevron, so a tap goes straight to the details (p.45)
+  const pick = (value: string) => {
+    setPicked(value);
+    if (isMobile) goToDetails(value);
   };
 
-  const busy = submitting || submitted;
+  const chooseSomethingElse = () => {
+    if (!somethingElse) return;
+    setSearch("");
+    setPicked(String(somethingElse.category_id));
+  };
 
-  let teamPicker: ReactNode;
-  if (deptLoading) {
-    teamPicker = <DepartmentPickerSkeleton />;
-  } else if (deptError) {
-    teamPicker = (
-      <ErrorState title="Couldn't load the teams" onRetry={() => refetch()} retrying={isRefetching} />
-    );
-  } else if (activeDepartments.length === 0) {
-    teamPicker = (
+  let body;
+  if (loading) {
+    body = <CategoryTilesSkeleton />;
+  } else if (error && !data) {
+    body = <ErrorState title="Couldn't load the categories" onRetry={reload} retrying={refreshing} />;
+  } else if (categories.length === 0) {
+    body = (
       <EmptyState
         variant="card"
-        size="compact"
-        icon={Users}
-        title="No teams are taking requests"
-        description="Please try again later, or contact your manager."
+        icon={Shapes}
+        title="Nothing to choose from yet"
+        description="No team is taking requests right now. Please try again later."
+      />
+    );
+  } else if (visible.length === 0) {
+    body = (
+      <EmptyState
+        variant="card"
+        icon={SearchX}
+        title={`Nothing matches “${search.trim()}”`}
+        description="Try another word, or choose Something else and the service desk will route it."
+        action={
+          <>
+            <Button variant="outline" onClick={() => setSearch("")}>
+              Clear search
+            </Button>
+            {somethingElse && <Button onClick={chooseSomethingElse}>Choose Something else</Button>}
+          </>
+        }
       />
     );
   } else {
-    teamPicker = (
-      <Field data-invalid={!!errors.department_id || undefined} className="gap-3">
-        <DepartmentPicker
-          id="department-select"
-          ref={firstTileRef}
-          departments={activeDepartments}
-          value={current.department_id}
-          onValueChange={(v) => update("department_id", v)}
-          invalid={!!errors.department_id}
-          aria-labelledby="team-heading"
-          aria-describedby={errors.department_id ? "department-error" : undefined}
-        />
-        {errors.department_id && <FieldError id="department-error" className="text-xs">{errors.department_id}</FieldError>}
-      </Field>
-    );
+    body = <CategoryTiles categories={visible} value={selected} onValueChange={pick} onPick={goToDetails} />;
   }
 
   return (
     <div className="flex flex-col gap-8">
+      <NewRequestSteps current={0} />
+
       <PageHeader
-        back={{ to: "/employee/my-requests", label: "My requests" }}
-        title="New request"
-        description="Tell us what you need and we'll get it to the right people."
+        title="What do you need help with?"
+        description="Pick the closest match. We'll send it to the right team, so you don't need to know who handles what."
       />
 
-      <div className="grid items-start gap-6 lg:grid-cols-3">
-        <SectionCard className="lg:col-span-2">
-          <form onSubmit={addRequest} noValidate className="flex flex-col gap-8" aria-label="New request">
-            {/* Locked while sending so nothing changes under the request in flight */}
-            <fieldset disabled={busy} className="flex min-w-0 flex-col gap-8">
-              <FormSection
-                step={1}
-                titleId="team-heading"
-                title="Which team can help?"
-                description="Pick the closest match. If it's not theirs, they'll pass it on."
-              >
-                {teamPicker}
-              </FormSection>
+      <div className="flex flex-col gap-6">
+        <InputGroup className="h-11 bg-background">
+          <InputGroupAddon>
+            <Search aria-hidden />
+          </InputGroupAddon>
+          <InputGroupInput
+            type="search"
+            aria-label="Search categories"
+            placeholder='Search, e.g. "vpn" or "payslip"'
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="[&::-webkit-search-cancel-button]:hidden"
+          />
+          {query && (
+            <InputGroupAddon align="inline-end">
+              <InputGroupText className="hidden text-xs tabular-nums sm:inline">
+                {visible.length} {visible.length === 1 ? "category" : "categories"}
+              </InputGroupText>
+              <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => setSearch("")}>
+                <X />
+              </InputGroupButton>
+            </InputGroupAddon>
+          )}
+        </InputGroup>
 
-              <Separator />
-
-              <FormSection
-                step={2}
-                title="Describe your request"
-                description="A clear summary and a few details help the team sort it out first time."
-              >
-                <Field data-invalid={!!errors.title || undefined}>
-                  <FieldLabel htmlFor="ticket-title">Short summary</FieldLabel>
-                  <Input
-                    id="ticket-title"
-                    ref={titleRef}
-                    value={formData.title}
-                    onChange={(e) => update("title", e.target.value)}
-                    placeholder="e.g. VPN won't connect from home"
-                    autoComplete="off"
-                    maxLength={TITLE_MAX + 50}
-                    aria-invalid={!!errors.title || undefined}
-                    aria-describedby={errors.title ? "ticket-title-error" : "ticket-title-help"}
-                    className="h-10 scroll-mt-28"
-                  />
-                  {errors.title ? (
-                    <FieldError id="ticket-title-error" className="text-xs">{errors.title}</FieldError>
-                  ) : (
-                    <FieldDescription id="ticket-title-help" className="text-xs">
-                      One line the team will see in their queue.
-                    </FieldDescription>
-                  )}
-                </Field>
-
-                <Field data-invalid={!!errors.description || undefined}>
-                  <FieldLabel htmlFor="ticket-description">Details</FieldLabel>
-                  <Textarea
-                    id="ticket-description"
-                    ref={descriptionRef}
-                    value={formData.description}
-                    onChange={(e) => update("description", e.target.value)}
-                    placeholder="What happened, when it started, and anything you've already tried."
-                    aria-invalid={!!errors.description || undefined}
-                    aria-describedby={errors.description ? "ticket-description-error" : "ticket-description-help"}
-                    className="min-h-40 scroll-mt-28 resize-y"
-                  />
-                  {errors.description ? (
-                    <FieldError id="ticket-description-error" className="text-xs">{errors.description}</FieldError>
-                  ) : (
-                    <FieldDescription id="ticket-description-help" className="text-xs">
-                      No need to include your password. The team will never ask for it.
-                    </FieldDescription>
-                  )}
-                </Field>
-              </FormSection>
-            </fieldset>
-
-            <Separator />
-
-            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <Button asChild variant="outline" size="lg" className="w-full sm:w-auto">
-                <Link to="/employee/my-requests">Cancel</Link>
-              </Button>
-              <Button
-                type="submit"
-                id="submit-ticket-btn"
-                size="lg"
-                disabled={busy}
-                className="w-full sm:w-auto"
-              >
-                {submitting ? <Spinner data-icon="inline-start" /> : <Send data-icon="inline-start" />}
-                {submitting ? "Submitting…" : submitted ? "Submitted" : "Submit request"}
-              </Button>
-            </div>
-          </form>
-        </SectionCard>
-
-        <aside className="flex flex-col gap-6 lg:sticky lg:top-8" aria-label="About your request">
-          <WhatHappensNext departmentName={selectedDepartment?.department_name} />
-          <RequestTips />
-        </aside>
+        {body}
       </div>
+
+      {/* Phones go straight to the details on tap, so the footer is for larger screens */}
+      {categories.length > 0 && !isMobile && (
+        <div className="flex flex-col gap-4">
+          <Separator />
+          <div className="flex items-center justify-between gap-6">
+            <p className="text-sm text-muted-foreground">
+              Not sure?{" "}
+              {somethingElse ? (
+                <Button variant="link" className="h-auto p-0 align-baseline font-semibold" onClick={chooseSomethingElse}>
+                  Choose Something else
+                </Button>
+              ) : (
+                "Choose Something else"
+              )}{" "}
+              and the service desk will route it.
+            </p>
+            <Button size="lg" className="h-10 shrink-0" disabled={!selected} onClick={() => goToDetails()}>
+              Continue
+              <ArrowRight data-icon="inline-end" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

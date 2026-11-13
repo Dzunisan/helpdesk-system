@@ -1,29 +1,36 @@
-import { Lightbulb } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { Category } from "@/types/api";
+import { durationWords } from "@/components/portal/portalText";
 import { cn } from "@/lib/utils";
 
 interface WhatHappensNextProps {
-  /** The team picked in the form, so step 1 can name it */
-  departmentName?: string | null;
+  category: Category;
+  /** The first-response target for the category's default priority, from the SLA policy */
+  firstReplyMins?: number | null;
   className?: string;
 }
 
-/** Side card for the new request form (briefing p.39 "What happens next") */
-export default function WhatHappensNext({ departmentName, className }: WhatHappensNextProps) {
-  const steps = [
-    {
-      title: departmentName ? `It goes to ${departmentName}` : "It goes to the team you pick",
-      body: "Your request joins their queue straight away with an HD reference you can quote.",
-    },
-    {
-      title: "Someone picks it up",
-      body: "An agent takes it on and sets the priority. Replies and status changes are emailed to you.",
-    },
-    {
-      title: "It gets resolved",
-      body: "You can follow every step, and reply, under My requests.",
-    },
-  ];
+/**
+ * Side card on the details step (briefing p.39 "What happens next"): who approves (approval
+ * categories), who picks it up and how soon, and how it ends.
+ */
+export default function WhatHappensNext({ category, firstReplyMins, className }: WhatHappensNextProps) {
+  const team = category.department_name;
+  const within = firstReplyMins ? ` First reply within ${durationWords(firstReplyMins)}.` : "";
+  const steps = category.needs_approval
+    ? [
+        {
+          title: `The ${team} lead approves or declines`,
+          body: "Usually within 1 working day. You'll see the reason either way.",
+        },
+        { title: `If approved, ${team} picks it up`, body: `It joins their queue straight away.${within}` },
+        { title: "You confirm it works", body: "Then the request closes." },
+      ]
+    : [
+        { title: `It goes straight to ${team}`, body: "You get an HD reference to quote on the phone or WhatsApp." },
+        { title: "Someone picks it up", body: `An agent takes it on and replies to you here.${within}` },
+        { title: "You confirm it works", body: "Then the request closes. You can say it's still broken for 5 days." },
+      ];
 
   return (
     <Card
@@ -38,7 +45,7 @@ export default function WhatHappensNext({ departmentName, className }: WhatHappe
       <CardContent>
         <ol className="flex flex-col">
           {steps.map((step, i) => (
-            <li key={step.body} className="relative flex gap-3 pb-5 last:pb-0">
+            <li key={step.title} className="relative flex gap-3 pb-5 last:pb-0">
               {i < steps.length - 1 && (
                 <span aria-hidden className="absolute top-7 bottom-1 left-3 w-px -translate-x-1/2 bg-primary/20" />
               )}
@@ -52,33 +59,6 @@ export default function WhatHappensNext({ departmentName, className }: WhatHappe
             </li>
           ))}
         </ol>
-      </CardContent>
-    </Card>
-  );
-}
-
-/** Compact "how to write a good request" card under What happens next */
-export function RequestTips({ className }: { className?: string }) {
-  const tips = [
-    "Say what you were trying to do when it went wrong.",
-    "Copy any error message word for word.",
-    "Mention your device, office or desk if it matters.",
-  ];
-  return (
-    <Card className={cn("gap-4 border border-border shadow-none ring-0 [--card-spacing:--spacing(6)]", className)}>
-      <CardHeader className="flex items-center gap-2">
-        <Lightbulb className="size-4 text-muted-foreground" aria-hidden />
-        <CardTitle className="text-base font-semibold tracking-tight">Tips for a quicker fix</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ul className="flex flex-col gap-2.5">
-          {tips.map((tip) => (
-            <li key={tip} className="flex gap-2.5 text-sm text-muted-foreground">
-              <span aria-hidden className="mt-2 size-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
-              {tip}
-            </li>
-          ))}
-        </ul>
       </CardContent>
     </Card>
   );
