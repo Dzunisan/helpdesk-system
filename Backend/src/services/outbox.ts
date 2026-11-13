@@ -128,3 +128,128 @@ export const sendPending = async ({ retryFailed = false } = {}): Promise<SendSum
 export const sendPendingSoon = (): void => {
   sendPending().catch((error) => console.error("[outbox] sendPending failed:", error));
 };
+
+// ---------------------------------------------------------------------------------------------
+// Account emails (welcome, password reset): sent at once, never queued, but still one outbox row
+// each so "Sent messages" lists every email the app sent. Their secrets (temporary password, reset
+// link) are only in the email itself: the row keeps a copy with them blanked out, and is written
+// with MAX_ATTEMPTS so sendPending never re-sends that blanked copy.
+// ---------------------------------------------------------------------------------------------
+
+export interface DirectEmail {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  /** The HTML kept in the outbox row: the same email with its secrets replaced */
+  storedHtml: string;
+  userId?: string | number | null;
+}
+
+/**
+ * Sends one account email now through utils/smtp.ts and records it in the outbox (SENT, FAILED or,
+ * when SMTP isn't configured, SIMULATED). Returns the status; throws when the send failed, so
+ * callers keep their own error handling.
+ */
+export const sendDirectEmail = async (email: DirectEmail): Promise<OutboxStatus> => {
+  let status: OutboxStatus = "SIMULATED";
+  let error: string | null = null;
+  if (isEmailConfigured()) {
+    try {
+      await getTransport().sendMail({
+        from: fromAddress(),
+        to: email.to,
+        subject: email.subject,
+        html: email.html,
+        text: email.text,
+      });
+      status = "SENT";
+    } catch (e) {
+      status = "FAILED";
+      error = ((e as Error).message || "Send failed").slice(0, 500);
+    }
+  }
+  try {
+    const userId = email.userId === null || email.userId === undefined ? null : String(email.userId);
+    await pool.query(
+      `INSERT INTO outbox (channel, recipient, user_id, subject, body, status, error, attempts, sent_at)
+       VALUES ('email', $1,
+               COALESCE((SELECT user_id FROM users WHERE user_id::text = $2),
+                        (SELECT user_id FROM users WHERE lower(email) = lower($1) LIMIT 1)),
+               $3, $4, $5, $6, $7,
+               CASE WHEN $5 = 'SENT' THEN now() END)`,
+      [email.to, userId, email.subject, email.storedHtml, status, error, MAX_ATTEMPTS]
+    );
+  } catch (e) {
+    console.error("[outbox] Could not record an account email:", (e as Error).message);
+  }
+  if (status === "FAILED") throw new Error(error ?? "Send failed");
+  return status;
+};
+
+// ---------------------------------------------------------------------------------------------
+// GET /api/admin/outbox (System Admin "Sent messages"): newest first, no HTML body
+// ---------------------------------------------------------------------------------------------
+
+export const OUTBOX_STATUSES: OutboxStatus[] = ["QUEUED", "SENT", "FAILED", "SIMULATED"];
+export const OUTBOX_CHANNELS: OutboxChannel[] = ["email", "sms", "whatsapp", "push"];
+
+export interface OutboxFilters {
+  status?: OutboxStatus;
+  channel?: OutboxChannel;
+  /** YYYY-MM-DD, a day in SAST */
+  date?: string;
+  page: number;
+  limit: number;
+}
+
+export const listOutboxMessages = async (filters: OutboxFilters) => {
+  // Every filter but status: the status chips show what each status would list
+  const where: string[] = [];
+  const values: unknown[] = [];
+  if (filters.channel) {
+    values.push(filters.channel);
+    where.push(`o.channel = $${values.length}`);
+  }
+  if (filters.date) {
+    values.push(filters.date);
+    where.push(`(o.created_at AT TIME ZONE 'Africa/Johannesburg')::date = $${values.length}::date`);
+  }
+
+  const { rows: countRows } = await pool.query<{ status: OutboxStatus; n: number }>(
+    `SELECT o.status, COUNT(*)::int AS n FROM outbox o
+     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+     GROUP BY o.status`,
+    values
+  );
+  const counts = Object.fromEntries(OUTBOX_STATUSES.map((s) => [s, 0])) as Record<OutboxStatus, number>;
+  for (const r of countRows) counts[r.status] = r.n;
+
+  if (filters.status) {
+    values.push(filters.status);
+    where.push(`o.status = $${values.length}`);
+  }
+  const total = filters.status ? counts[filters.status] : OUTBOX_STATUSES.reduce((sum, s) => sum + counts[s], 0);
+  values.push(filters.limit, (filters.page - 1) * filters.limit);
+  const { rows: messages } = await pool.query(
+    `SELECT o.id::text AS id, o.channel, o.recipient,
+            NULLIF(TRIM(CONCAT(u.name, ' ', u.surname)), '') AS recipient_name,
+            o.subject, o.status, o.error, o.ticket_id, o.created_at, o.sent_at
+     FROM outbox o
+     LEFT JOIN users u ON u.user_id = o.user_id
+     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+     ORDER BY o.created_at DESC, o.id DESC
+     LIMIT $${values.length - 1} OFFSET $${values.length}`,
+    values
+  );
+  return {
+    messages,
+    pagination: {
+      page: filters.page,
+      limit: filters.limit,
+      total,
+      totalPages: Math.ceil(total / filters.limit),
+    },
+    counts,
+  };
+};
