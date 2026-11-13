@@ -1,276 +1,166 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, CircleCheck, Gauge, UserCheck, UserRoundX, Users, Zap } from "lucide-react";
-import { listAllTickets, listAssignees } from "@/services/tickets";
-import type { Assignee as AgentUser, Ticket } from "@/types/api";
+import { ArrowRight, CircleCheck, Gauge, Smile, UserCheck, Users, Zap } from "lucide-react";
+import { getReportSummary, getWorkload } from "@/services/reports";
 import { useAuth } from "@/context/AuthContext";
 import { useDepartmentName } from "@/hooks/useDepartmentName";
+import { useApiData } from "@/hooks/useApiData";
+import { firstNameOf } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import PageHeader from "@/components/app/PageHeader";
 import StatCard from "@/components/app/StatCard";
 import UserAvatar from "@/components/app/UserAvatar";
 import EmptyState from "@/components/app/EmptyState";
 import ErrorState from "@/components/app/ErrorState";
-import { ListBody, ListCaption, ListCard, ListHeaderRow, ListRow } from "@/components/app/ListCard";
+import { ListBody, ListCaption, ListCard, ListHeaderRow, ListRow, LoadingRows } from "@/components/app/ListCard";
+import LoadBar from "@/components/lead/LoadBar";
+import { loadOf, minutesOrDash, pctOrDash, type WorkloadRowWithExtras } from "@/components/lead/reportFormat";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-import { Skeleton } from "@/components/ui/skeleton";
 
-// One grid for the header, the rows and the loading rows. Below lg the rows stack.
-// Fixed side tracks (a growable track would starve the name column on laptops).
+const BASE = "/department-lead";
+
+// Agent · Availability · Open · Waiting · Breached · Load · Resolved 7d · Avg 1st reply · CSAT.
+// One grid for the header, the rows and the loading rows; below xl the rows stack as cards.
 const ROW_GRID =
-  "lg:grid lg:grid-cols-[minmax(0,1fr)_5.5rem_3.5rem_5.5rem_8rem] lg:items-center lg:gap-5 xl:grid-cols-[minmax(0,1fr)_7rem_4rem_6rem_14rem] xl:gap-6";
+  "xl:grid xl:grid-cols-[minmax(0,1fr)_6.5rem_2.75rem_3.5rem_4rem_8rem_4.5rem_4.5rem_3rem] xl:items-center xl:gap-4";
 
-/** A full load bar: this many open tickets on one person (briefing p.57: rose at 10+) */
-const LOAD_FULL = 10;
-const WEEK_MS = 7 * 86_400_000;
-
-/** Statuses where the work is still with the team */
-const WORKING = new Set(["open", "waiting on employee"]);
-const DONE = new Set(["resolved", "closed"]);
-const statusOf = (t: Ticket) => t.ticket_status.trim().toLowerCase();
-
-interface MemberLoad {
-  agent: AgentUser;
-  name: string;
-  open: number;
-  resolvedWeek: number;
-}
-
-const fullName = (a: AgentUser) => `${a.name} ${a.surname ?? ""}`.trim();
-const roleLabel = (role: string) => (role === "Department Lead" ? "Lead" : role);
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const formatAverage = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+const ticketsFor = (userId: string) => `${BASE}/all-tickets?tab=open&assignee=${encodeURIComponent(userId)}`;
+const isAvailable = (row: WorkloadRowWithExtras) => row.available !== false;
 
-function LoadBar({ open }: { open: number }) {
-  return (
-    <Progress
-      value={Math.min(open / LOAD_FULL, 1) * 100}
-      aria-label={`Load: ${open} open of ${LOAD_FULL}`}
-      className={cn("h-1.5", open >= LOAD_FULL && "[&>[data-slot=progress-indicator]]:bg-destructive")}
-    />
-  );
-}
-
-/** Placeholder rows shaped like member rows: two-line avatar, role pill, two numbers, a bar */
-function MemberSkeletonRows({ rows = 4 }: { rows?: number }) {
-  const sk = "bg-foreground/[0.07]";
-  return (
-    <ListBody>
-      {Array.from({ length: rows }, (_, i) => (
-        <ListRow key={i} grid={ROW_GRID}>
-          <div className="flex items-center gap-2.5">
-            <Skeleton className={cn(sk, "size-8 shrink-0 rounded-full")} />
-            <div className="flex flex-col gap-1.5">
-              <Skeleton className={cn(sk, "h-3.5 w-28")} />
-              <Skeleton className={cn(sk, "h-3 w-40")} />
-            </div>
-          </div>
-          <Skeleton className={cn(sk, "hidden h-5 w-14 rounded-full lg:block")} />
-          <Skeleton className={cn(sk, "h-3.5 w-24 lg:ml-auto lg:w-5")} />
-          <Skeleton className={cn(sk, "hidden h-3.5 w-5 lg:ml-auto lg:block")} />
-          <Skeleton className={cn(sk, "h-1.5 w-full rounded-full")} />
-        </ListRow>
-      ))}
-    </ListBody>
-  );
-}
-
+/**
+ * Team & workload (briefing p.17, p.57): only this department's agents, with what each person is
+ * carrying, how fast they reply and how happy their requesters are. GET /api/reports/workload.
+ */
 export default function TeamAgents() {
   const { user } = useAuth();
   const departmentName = useDepartmentName(user?.department_id);
-  const myId = String(user?.user_id ?? user?.id ?? "");
 
-  const [agents, setAgents] = useState<AgentUser[]>([]);
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  /** When the data arrived: "this week" is counted back from here */
-  const [loadedAt, setLoadedAt] = useState(0);
-
-  // Bumped by Try again; the effect below does the fetching (state only changes once it settles)
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([listAssignees(), listAllTickets()])
-      .then(([list, all]) => {
-        if (cancelled) return;
-        setAgents(list);
-        setTickets(all);
-        setLoadedAt(Date.now());
-        setError(false);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        console.error("Failed to load the team:", err);
-        setError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [reloadKey]);
-
-  const load = () => {
-    setLoading(true);
-    setError(false);
-    setReloadKey((k) => k + 1);
-  };
+  const workload = useApiData(() => getWorkload({ days: 30 }), "team-workload");
+  const summary = useApiData(() => getReportSummary({ days: 30 }), "team-summary");
 
   const stats = useMemo(() => {
-    const weekAgo = loadedAt - WEEK_MS;
-    const members: MemberLoad[] = agents.map((agent) => {
-      const mine = tickets.filter((t) => t.assignee_id != null && String(t.assignee_id) === String(agent.user_id));
-      return {
-        agent,
-        name: fullName(agent),
-        open: mine.filter((t) => WORKING.has(statusOf(t))).length,
-        resolvedWeek: mine.filter(
-          (t) => DONE.has(statusOf(t)) && new Date(t.updated_at ?? t.created_at).getTime() >= weekAgo,
-        ).length,
-      };
-    });
-    // Lead last, agents by name: a stable roster rather than a ranking
-    members.sort((a, b) => {
-      const lead = Number(a.agent.role === "Department Lead") - Number(b.agent.role === "Department Lead");
+    const rows = (workload.data?.agents ?? []) as WorkloadRowWithExtras[];
+    // Agents by name, then the lead (if they carry tickets too): a roster, not a ranking
+    const members = rows.filter((m) => m.role === "Agent" || loadOf(m) > 0).sort((a, b) => {
+      const lead = Number(a.role !== "Agent") - Number(b.role !== "Agent");
       return lead || a.name.localeCompare(b.name);
     });
+    const agents = members.filter((m) => m.role === "Agent");
+    const available = agents.filter(isAvailable);
+    const inHand = agents.reduce((sum, m) => sum + loadOf(m), 0);
+    const average = agents.length ? inHand / agents.length : 0;
+    const resolvedWeek = members.reduce((sum, m) => sum + m.resolved_7d, 0);
 
-    const agentsOnly = members.filter((m) => m.agent.role === "Agent");
-    const assignedOpen = agentsOnly.reduce((sum, m) => sum + m.open, 0);
-    const average = agentsOnly.length ? assignedOpen / agentsOnly.length : 0;
-    const unassigned = tickets.filter((t) => statusOf(t) === "new" && !t.assignee_id).length;
-    const resolvedWeek = members.reduce((sum, m) => sum + m.resolvedWeek, 0);
-
-    // Rebalance hint (p.57): the busiest agent carries at least double the average and 3+ more than the quietest
-    const byLoad = [...agentsOnly].sort((a, b) => b.open - a.open);
+    // Rebalance hint (p.57): the busiest available agent is far above the team average and the quietest
+    const byLoad = [...available].sort((a, b) => loadOf(b) - loadOf(a));
     const busiest = byLoad[0];
     const quietest = byLoad[byLoad.length - 1];
+    const gap = busiest && quietest ? loadOf(busiest) - loadOf(quietest) : 0;
     const imbalance =
-      busiest && quietest && busiest !== quietest && busiest.open >= average * 2 && busiest.open - quietest.open >= 3
-        ? { busiest, quietest }
-        : null;
+      busiest && quietest && busiest !== quietest && gap >= 4 && loadOf(busiest) >= average * 1.4 ? { busiest, quietest, move: Math.floor(gap / 2) } : null;
 
-    return { members, agentsOnly, average, unassigned, resolvedWeek, busiest, imbalance };
-  }, [agents, tickets, loadedAt]);
+    return { members, agents, available, average, resolvedWeek, busiest: byLoad[0], imbalance };
+  }, [workload.data]);
 
-  const team = departmentName ?? agents[0]?.department_name ?? null;
+  const team = departmentName ?? summary.data?.department_name ?? null;
   const leadName = user ? `${user.name} ${user.surname ?? ""}`.trim() : "";
-  const description = loading || error
-    ? "Who's on the team and how much each person is carrying."
-    : [team, `${stats.agentsOnly.length} ${stats.agentsOnly.length === 1 ? "agent" : "agents"}`, leadName && `lead ${leadName}`]
-        .filter(Boolean)
-        .join(" · ");
-
-  const firstOf = (name: string) => name.split(" ")[0];
+  const loading = workload.loading;
+  const description =
+    loading || workload.error
+      ? "Who's on the team and how much each person is carrying"
+      : [team, plural(stats.agents.length, "agent"), leadName && `lead ${leadName}`].filter(Boolean).join(" · ");
+  const away = stats.agents.filter((a) => !isAvailable(a));
 
   return (
     <div className="flex flex-col gap-8">
       <PageHeader title="Team & workload" description={description} />
 
-      {error && !loading ? (
-        <ErrorState title="Couldn't load your team" onRetry={load} />
+      {workload.error && !workload.data ? (
+        <ErrorState
+          title="Couldn't load your team"
+          description={workload.error.status === 0 ? undefined : workload.error.message}
+          onRetry={workload.reload}
+        />
       ) : (
         <>
           <section aria-label="Team summary" className="grid grid-cols-2 gap-4 xl:grid-cols-4">
             <StatCard
-              label="Agents"
-              icon={Users}
+              label="Agents available"
+              icon={UserCheck}
               loading={loading}
-              value={stats.agentsOnly.length}
-              hint={stats.members.length > stats.agentsOnly.length ? "Plus you as lead" : "In your team"}
+              value={`${stats.available.length} of ${stats.agents.length}`}
+              hint={away.length ? `${away.map((a) => firstNameOf(a.name)).join(", ")} away` : stats.agents.length ? "Everyone is in" : "No agents yet"}
             />
             <StatCard
               label="Open per agent"
               icon={Gauge}
               loading={loading}
-              value={stats.agentsOnly.length ? formatAverage(stats.average) : "—"}
-              hint={stats.busiest && stats.busiest.open > 0 ? `Busiest: ${firstOf(stats.busiest.name)}, ${stats.busiest.open}` : "Team average"}
+              value={stats.agents.length ? formatAverage(stats.average) : "—"}
+              hint={
+                stats.busiest && loadOf(stats.busiest) > 0
+                  ? `Busiest: ${firstNameOf(stats.busiest.name)}, ${loadOf(stats.busiest)}`
+                  : "Team average, open + waiting"
+              }
             />
+            <StatCard label="Resolved this week" icon={CircleCheck} loading={loading} value={stats.resolvedWeek} hint="Last 7 days" />
             <StatCard
-              label="Unassigned"
-              icon={UserRoundX}
-              loading={loading}
-              value={stats.unassigned}
-              hint={stats.unassigned ? "Waiting in the queue" : "Queue clear"}
-              to="/department-lead/all-tickets"
-            />
-            <StatCard
-              label="Resolved"
-              icon={CircleCheck}
-              loading={loading}
-              value={stats.resolvedWeek}
-              hint="Last 7 days"
+              label="Team CSAT"
+              icon={Smile}
+              loading={summary.loading}
+              value={summary.data ? pctOrDash(summary.data.csat_pct) : "—"}
+              hint={
+                summary.data
+                  ? summary.data.csat_responses
+                    ? `${plural(summary.data.csat_responses, "rating")}, last 30 days`
+                    : "No ratings yet"
+                  : "Couldn't load"
+              }
             />
           </section>
 
           <div className="flex flex-col gap-3">
             <ListCard>
               <ListHeaderRow grid={ROW_GRID}>
-                <span>Member</span>
-                <span>Role</span>
+                <span>Agent</span>
+                <span>Availability</span>
                 <span className="text-right">Open</span>
-                <span className="text-right">Resolved 7d</span>
+                <span className="text-right">Waiting</span>
+                <span className="text-right">Breached</span>
                 <span>Load</span>
+                <span className="text-right">Resolved 7d</span>
+                <span className="text-right">1st reply</span>
+                <span className="text-right">CSAT</span>
               </ListHeaderRow>
 
               {loading ? (
-                <MemberSkeletonRows />
+                <LoadingRows
+                  grid={ROW_GRID}
+                  breakpoint="xl"
+                  rows={4}
+                  columns={["person", "badge", "meta", "meta", "meta", "text", "meta", "meta", "meta"]}
+                />
               ) : stats.members.length === 0 ? (
                 <EmptyState
-                  icon={UserCheck}
+                  icon={Users}
                   title="No one on the team yet"
-                  description="Agents appear here once a system admin adds them to your department."
+                  description="Agents appear here once a System Admin adds them to your department."
                 />
               ) : (
                 <ListBody>
-                  {stats.members.map((m) => {
-                    const isMe = String(m.agent.user_id) === myId;
-                    return (
-                      <ListRow key={m.agent.user_id} grid={ROW_GRID}>
-                        <div className="flex min-w-0 items-center justify-between gap-3 lg:block">
-                          <UserAvatar name={m.name} description={m.agent.email} />
-                          <Badge variant="outline" className="shrink-0 font-normal text-muted-foreground lg:hidden">
-                            {roleLabel(m.agent.role)}
-                            {isMe && " · you"}
-                          </Badge>
-                        </div>
-
-                        <div className="hidden lg:block">
-                          <Badge variant="outline" className="font-normal text-muted-foreground">
-                            {roleLabel(m.agent.role)}
-                            {isMe && " · you"}
-                          </Badge>
-                        </div>
-
-                        {/* Phone: open + resolved as a compact line; desktop: their own columns */}
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground tabular-nums lg:contents lg:text-sm lg:text-foreground">
-                          <span className="lg:text-right">
-                            <span className="font-medium text-foreground lg:font-normal">{m.open}</span>
-                            <span className="lg:hidden"> open</span>
-                          </span>
-                          <span className="lg:text-right">
-                            <span className="font-medium text-foreground lg:font-normal">{m.resolvedWeek}</span>
-                            <span className="lg:hidden"> resolved this week</span>
-                          </span>
-                        </div>
-
-                        <LoadBar open={m.open} />
-                      </ListRow>
-                    );
-                  })}
+                  {stats.members.map((m) => (
+                    <MemberRow key={m.user_id} member={m} />
+                  ))}
                 </ListBody>
               )}
             </ListCard>
 
             {!loading && stats.members.length > 0 && (
               <ListCaption>
-                Only active members of {team ?? "your department"} are listed. Open counts tickets assigned and not yet
-                resolved; a bar is full at {LOAD_FULL}.
+                Only members of {team ?? "your department"} are listed. Admins and other departments never appear here. Load is
+                open + waiting on employee: amber at 8, rose at 10.
               </ListCaption>
             )}
           </div>
@@ -281,17 +171,19 @@ export default function TeamAgents() {
                 <Zap aria-hidden className="mt-0.5 size-5 shrink-0 text-primary" />
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <AlertTitle className="font-semibold text-foreground">
-                    {firstOf(stats.imbalance.busiest.name)} has {stats.imbalance.busiest.open} open tickets;{" "}
-                    {firstOf(stats.imbalance.quietest.name)} has{" "}
-                    {stats.imbalance.quietest.open === 0 ? "none" : stats.imbalance.quietest.open}.
+                    {firstNameOf(stats.imbalance.busiest.name)} has {plural(loadOf(stats.imbalance.busiest), "ticket")}
+                    {stats.imbalance.busiest.breached > 0 &&
+                      ` and ${stats.imbalance.busiest.breached === 1 ? "one is" : `${stats.imbalance.busiest.breached} are`} breached`}
+                    ; {firstNameOf(stats.imbalance.quietest.name)} has {loadOf(stats.imbalance.quietest) || "none"}.
                   </AlertTitle>
                   <AlertDescription className="text-muted-foreground">
-                    Open All tickets to reassign some of {firstOf(stats.imbalance.busiest.name)}'s work.
+                    Open All tickets filtered to {firstNameOf(stats.imbalance.busiest.name)} to reassign{" "}
+                    {stats.imbalance.move === 1 ? "one" : stats.imbalance.move} of them.
                   </AlertDescription>
                 </div>
               </div>
-              <Button asChild variant="outline" className="ml-8 shrink-0 self-start bg-background sm:ml-0 sm:self-auto">
-                <Link to="/department-lead/all-tickets">
+              <Button asChild variant="outline" className="ml-8 h-10 shrink-0 self-start bg-background sm:ml-0 sm:h-9 sm:self-auto">
+                <Link to={ticketsFor(stats.imbalance.busiest.user_id)}>
                   Rebalance
                   <ArrowRight data-icon="inline-end" />
                 </Link>
@@ -303,3 +195,67 @@ export default function TeamAgents() {
     </div>
   );
 }
+
+function Availability({ member }: { member: WorkloadRowWithExtras }) {
+  const available = isAvailable(member);
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 text-sm", available ? "text-foreground" : "text-muted-foreground")}>
+      <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", available ? "bg-success" : "bg-muted-foreground/50")} />
+      {available ? "Available" : member.availability_note || "Away"}
+    </span>
+  );
+}
+
+function MemberRow({ member: m }: { member: WorkloadRowWithExtras }) {
+  const load = loadOf(m);
+  const role = m.role === "Department Lead" ? "Lead" : m.role;
+  const breached = (
+    <span className={cn("tabular-nums", m.breached > 0 ? "font-medium text-destructive" : "text-muted-foreground")}>{m.breached}</span>
+  );
+  return (
+    <ListRow grid={ROW_GRID} to={ticketsFor(m.user_id)} aria-label={`${m.name}: ${load} tickets in hand. Open their tickets.`}>
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <UserAvatar name={m.name} description={role} />
+        <span className="xl:hidden">
+          <Availability member={m} />
+        </span>
+      </div>
+
+      <span className="hidden xl:flex">
+        <Availability member={m} />
+      </span>
+
+      {/* Phones and laptops: the numbers as one line, then the bar; wide screens: their own columns */}
+      <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground tabular-nums xl:hidden">
+        <span>
+          <span className="font-medium text-foreground">{m.open}</span> open
+        </span>
+        <span>
+          <span className="font-medium text-foreground">{m.waiting}</span> waiting
+        </span>
+        <span>{breached} breached</span>
+      </p>
+      <span className="hidden text-right text-sm tabular-nums xl:block">{m.open}</span>
+      <span className="hidden text-right text-sm tabular-nums xl:block">{m.waiting}</span>
+      <span className="hidden text-right text-sm xl:block">{breached}</span>
+
+      <LoadBar load={load} />
+
+      <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground tabular-nums xl:hidden">
+        <span>
+          <span className="font-medium text-foreground">{m.resolved_7d}</span> resolved in 7 days
+        </span>
+        <span>
+          <span className="font-medium text-foreground">{minutesOrDash(m.avg_first_response_mins)}</span> first reply
+        </span>
+        <span>
+          <span className="font-medium text-foreground">{pctOrDash(m.csat_pct)}</span> CSAT
+        </span>
+      </p>
+      <span className="hidden text-right text-sm tabular-nums xl:block">{m.resolved_7d}</span>
+      <span className="hidden text-right text-sm tabular-nums xl:block">{minutesOrDash(m.avg_first_response_mins)}</span>
+      <span className="hidden text-right text-sm tabular-nums xl:block">{pctOrDash(m.csat_pct)}</span>
+    </ListRow>
+  );
+}
+

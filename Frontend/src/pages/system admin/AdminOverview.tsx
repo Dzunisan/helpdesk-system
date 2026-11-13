@@ -17,6 +17,7 @@ import { ListBody, ListHeaderRow, ListRow, LoadingRows } from "@/components/app/
 import { ActiveBadge, NoLeadBadge } from "@/components/admin/AdminBadges";
 import ChecklistItem from "@/components/admin/ChecklistItem";
 import { useLoader } from "@/components/admin/useLoader";
+import ServiceLevels from "@/components/admin/ServiceLevels";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -31,7 +32,8 @@ const loadCategories = async () => (await listCategories({ includeInactive: true
 
 /**
  * System Admin home (briefing p.60): organisation totals, the department table
- * (counts only, so HR stays private) and a set-up checklist for broken configuration.
+ * (counts only, so HR stays private), a set-up checklist for broken configuration and the
+ * S8 service-level tiles for the organisation or one department (aggregates only).
  */
 export default function AdminOverview() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -110,6 +112,8 @@ export default function AdminOverview() {
               policies={policies.loading ? undefined : policies.data}
             />
           </div>
+
+          <ServiceLevels departments={data?.departments ?? []} />
         </>
       )}
     </div>
