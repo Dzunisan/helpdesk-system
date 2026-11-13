@@ -9,6 +9,7 @@ import EmployeeDashboard from "../pages/employee/EmployeeDashboard";
 import NewRequestDetails from "../pages/employee/NewRequestDetails";
 import RequestSubmitted from "../pages/employee/RequestSubmitted";
 import RequestDetail from "../pages/employee/RequestDetail";
+import CsatSurvey from "../pages/employee/CsatSurvey";
 import TicketDetails from "../pages/tickets/TicketDetails";
 
 import TicketQueue from "../pages/agent/TicketQueue";
@@ -19,12 +20,14 @@ import TeamAgents from "../pages/department lead/TeamAgents";
 import Approvals from "../pages/department lead/Approvals";
 import LeadDashboard from "../pages/department lead/LeadDashboard";
 import AllTickets from "../pages/department lead/AllTickets";
+import MacrosManager from "../pages/department lead/MacrosManager";
 
 import Users from "../pages/users/Users";
 import Departments from "../pages/system admin/Departments";
 import AdminOverview from "../pages/system admin/AdminOverview";
 import Categories from "../pages/system admin/Categories";
 import SlaPolicies from "../pages/system admin/SlaPolicies";
+import SentMessages from "../pages/system admin/SentMessages";
 import PlatformOverview from "../pages/platform admin/PlatformOverview";
 import UserProfile from "../pages/user profile/UserProfile";
 
@@ -61,6 +64,8 @@ const AppRouter = () => {
             <Route path="submit-request/:categoryId" element={<NewRequestDetails />} />
             <Route path="tickets/:id/submitted" element={<RequestSubmitted />} />
             <Route path="tickets/:id" element={<RequestDetail />} />
+            {/* S10 "How did we do?" survey, linked from the csat_requested notification (p.19, p.43) */}
+            <Route path="tickets/:id/feedback" element={<CsatSurvey />} />
             <Route path="profile" element={<UserProfile />} />
           </Route>
         </Route>
@@ -83,13 +88,15 @@ const AppRouter = () => {
         {/* Protected Department Lead Routes */}
         <Route element={<ProtectedRoute allowedRoles={["Department Lead"]} />}>
           <Route path="/department-lead" element={<AppLayout />}>
-            {/* Sprint 1: the lead's home is All tickets, Breached tab first (p.55), until the S8 dashboard */}
-            <Route index element={<Navigate to="/department-lead/all-tickets" replace />} />
-            <Route path="dashboard" element={<LeadDashboard />} />
+            {/* S8: the lead's home is the dashboard (p.17, p.54) */}
+            <Route index element={<LeadDashboard />} />
+            <Route path="dashboard" element={<Navigate to="/department-lead" replace />} />
             <Route path="all-tickets" element={<AllTickets />} />
             <Route path="ticket-queue" element={<Navigate to="/department-lead/all-tickets" replace />} />
             <Route path="approvals" element={<Approvals />} />
             <Route path="team" element={<TeamAgents />} />
+            {/* S7 macros manager (p.58) */}
+            <Route path="macros" element={<MacrosManager />} />
             <Route path="tickets/:id" element={<TicketDetails />} />
             <Route path="profile" element={<UserProfile />} />
           </Route>
@@ -103,6 +110,8 @@ const AppRouter = () => {
             <Route path="departments" element={<Departments />} />
             <Route path="categories" element={<Categories />} />
             <Route path="sla" element={<SlaPolicies />} />
+            {/* S9 sent messages (outbox) + Run jobs now (p.18) */}
+            <Route path="outbox" element={<SentMessages />} />
             <Route path="profile" element={<UserProfile />} />
           </Route>
         </Route>

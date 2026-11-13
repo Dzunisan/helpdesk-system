@@ -102,6 +102,13 @@ export const getTimeline = (id: number) =>
 export const addComment = async (ticketId: number, body: AddCommentRequest): Promise<Comment> =>
   (await call(() => api.post<CommentResponse>(`/tickets/${ticketId}/comments`, body), "Couldn't send your message.")).comment;
 
+/**
+ * POST /api/tickets/:id/comments with the Sprint 2 extras (attachment_ids S14, macro_id S7,
+ * set_status): the comment plus what happened to set_status (a refused move keeps the reply).
+ */
+export const sendComment = (ticketId: number, body: AddCommentRequest): Promise<CommentResponse> =>
+  call(() => api.post<CommentResponse>(`/tickets/${ticketId}/comments`, body), "Couldn't send your message.");
+
 /** PATCH /api/comments/:id (S4): the author, within 15 minutes */
 export const editComment = async (commentId: number, body: string): Promise<Comment> =>
   (await call(() => api.patch<CommentResponse>(`/comments/${commentId}`, { body }), "Couldn't edit the message.")).comment;

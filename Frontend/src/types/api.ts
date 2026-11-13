@@ -1,5 +1,6 @@
 /**
- * Sprint 1 API contract types (docs/api-sprint-1.md). The backend implements exactly these shapes;
+ * Sprint 1 API contract types (docs/api-sprint-1.md); Sprint 2 types are at the end of the file
+ * (docs/api-sprint-2.md). The backend implements exactly these shapes;
  * every client in src/services/{tickets,users,departments,categories,slaPolicies}.ts returns them.
  * Times are ISO 8601 strings in UTC; show them in SAST with lib/format.ts. User ids are strings
  * (bigint), every other id is a number.
@@ -106,6 +107,11 @@ export interface TicketFeedback {
   created_at: string;
   updated_at: string;
   user_name: string | null;
+  /** S10: quick tags chosen on the survey ("Fast reply", "Kept me updated", ...) */
+  tags?: string[];
+  /** S10: the owner and department when the ticket closed (a later move doesn't move the score) */
+  agent_id?: string | null;
+  department_id?: number | null;
 }
 
 /** POST /api/tickets/:id/feedback */
@@ -246,7 +252,11 @@ export type TicketEventType =
   /** The author edited a message (the card shows "edited"; no separate line) */
   | "comment_edited"
   /** The requester rated the request: from = previous rating or null, to = 1-5, note = comment */
-  | "feedback_given";
+  | "feedback_given"
+  /** S12: from/to = department NAMES. One public event, plus an internal one whose note is the reason */
+  | "department_changed"
+  /** S14: to = attachment id, note = file name; is_internal follows the file */
+  | "attached";
 
 export interface TimelinePerson {
   user_id: string;
@@ -287,6 +297,8 @@ export interface TimelineComment {
   deleted_at: string | null;
   /** The caller wrote it and it is under 15 minutes old */
   can_edit: boolean;
+  /** S14: files sent with this message (internal ones only reach staff); [] when none */
+  attachments: AttachmentSummary[];
 }
 
 export type TimelineItem = TimelineEvent | TimelineComment;
@@ -315,10 +327,25 @@ export interface AddCommentRequest {
   body: string;
   /** Internal note (staff of the ticket's department only) */
   is_internal?: boolean;
+  /** S14: ids from POST /api/tickets/:id/attachments (the caller's own unsent uploads, at most 5) */
+  attachment_ids?: number[];
+  /** S7: the macro that filled the composer (use_count + 1; its set_status applies unless set_status is sent) */
+  macro_id?: number;
+  /** S2/S7: move the ticket with the reply when that arrow is allowed for the caller. null = reply only. */
+  set_status?: TicketStatus | null;
+}
+
+/** What happened to set_status: a refused move keeps the reply and says why */
+export interface SetStatusResult {
+  requested: TicketStatus;
+  applied: boolean;
+  message: string | null;
 }
 
 export interface CommentResponse {
   comment: Comment;
+  /** Present on POST /comments: null when no status change was asked for */
+  set_status?: SetStatusResult | null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -528,4 +555,421 @@ export interface UpdateSlaPolicyRequest {
 
 export interface SlaPolicyResponse {
   policy: SlaPolicy;
+}
+
+// =============================================================================================
+// SPRINT 2 (docs/api-sprint-2.md). Clients: services/{approvals,macros,reports,notifications,
+// feedback,attachments,admin}.ts
+// =============================================================================================
+
+// ---------------------------------------------------------------------------------------------
+// S6 approvals
+// ---------------------------------------------------------------------------------------------
+
+export type ApprovalDecision = "approved" | "rejected";
+
+/** One row of GET /api/approvals: a Pending approval ticket, or a decision (?decided_by=me) */
+export interface ApprovalItem {
+  ticket: Ticket;
+  /** null while pending */
+  decision: ApprovalDecision | null;
+  /** Approve note or reject reason */
+  reason: string | null;
+  decided_at: string | null;
+  approver_id: string | null;
+  approver_name: string | null;
+  /** How long it has been waiting (pending) or waited (decided), in minutes */
+  waiting_mins: number;
+}
+
+export interface ApprovalListParams {
+  /** "pending" (default): the queue. Use decided_by=me for the History tab. */
+  status?: "pending";
+  decided_by?: "me";
+  page?: number;
+  limit?: number;
+}
+
+export interface ApprovalListResponse {
+  approvals: ApprovalItem[];
+  pagination: Pagination;
+}
+
+export interface ApprovalCountResponse {
+  pending: number;
+}
+
+/** POST /api/tickets/:id/approve */
+export interface ApproveRequest {
+  note?: string;
+}
+
+/** POST /api/tickets/:id/reject (reason required: 400 without it) */
+export interface RejectRequest {
+  reason: string;
+}
+
+// ---------------------------------------------------------------------------------------------
+// S7 macros (canned responses)
+// ---------------------------------------------------------------------------------------------
+
+/** Placeholders a macro body may use; GET /api/macros/:id/render fills them */
+export const MACRO_PLACEHOLDERS = [
+  "{{requester.first_name}}",
+  "{{ticket.ref}}",
+  "{{ticket.title}}",
+  "{{agent.first_name}}",
+] as const;
+
+export interface Macro {
+  id: number;
+  department_id: number;
+  department_name: string | null;
+  title: string;
+  /** Raw body with {{placeholders}} */
+  body: string;
+  /** "Then set status"; null = reply only */
+  set_status: TicketStatus | null;
+  is_internal: boolean;
+  use_count: number;
+  active: boolean;
+  created_by: string | null;
+  updated_by: string | null;
+  updated_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MacroListParams {
+  /** Search in title and body */
+  q?: string;
+  /** Leads only (macros manager): include deactivated macros */
+  include_inactive?: boolean;
+}
+
+export interface MacroListResponse {
+  macros: Macro[];
+}
+
+export interface MacroResponse {
+  macro: Macro;
+}
+
+/** GET /api/macros/:id/render?ticket=1048 */
+export interface RenderedMacro {
+  macro_id: number;
+  ticket_id: number;
+  /** Placeholders replaced, ready for the composer */
+  body: string;
+  set_status: TicketStatus | null;
+  is_internal: boolean;
+}
+
+/** POST /api/macros (lead; the department is the lead's own) */
+export interface CreateMacroRequest {
+  title: string;
+  body: string;
+  set_status?: TicketStatus | null;
+  is_internal?: boolean;
+}
+
+/** PATCH /api/macros/:id (lead): any subset; active: false deactivates */
+export type UpdateMacroRequest = Partial<CreateMacroRequest> & { active?: boolean };
+
+// ---------------------------------------------------------------------------------------------
+// S8 reports (lead dashboard) and S10 CSAT
+// ---------------------------------------------------------------------------------------------
+
+/** Lead: ignored (own department forced). System Admin: a department, or none for all. */
+export interface ReportParams {
+  department_id?: number;
+  /** Window for averages and CSAT, default 30 */
+  days?: number;
+}
+
+/** GET /api/reports/summary: the six KPI tiles (p.17, p.54). Averages are null when there's no data. */
+export interface ReportSummary {
+  department_id: number | null;
+  department_name: string | null;
+  days: number;
+  backlog: number;
+  unassigned: number;
+  /** Age of the oldest unassigned ticket in minutes, null when none */
+  oldest_unassigned_mins: number | null;
+  breached: number;
+  breached_first_response: number;
+  breached_resolution: number;
+  avg_first_response_mins: number | null;
+  /** Share of first responses within target, 0-100, null when none */
+  first_response_within_target_pct: number | null;
+  avg_resolution_mins: number | null;
+  resolution_within_target_pct: number | null;
+  /** Tickets resolved in the window that were reopened at least once, 0-100 */
+  reopen_rate_pct: number | null;
+  /** 4-5 stars / all ratings in the window, 0-100, null when no ratings */
+  csat_pct: number | null;
+  csat_responses: number;
+  pending_approvals: number;
+  oldest_pending_approval_mins: number | null;
+}
+
+/** GET /api/reports/workload: one row per agent of the department */
+export interface WorkloadRow {
+  user_id: string;
+  name: string;
+  role: Role;
+  open: number;
+  waiting: number;
+  breached: number;
+  resolved_7d: number;
+  /** CSAT of their rated tickets in the window, null when none */
+  csat_pct: number | null;
+}
+
+export interface WorkloadResponse {
+  agents: WorkloadRow[];
+}
+
+/** GET /api/reports/breaches: top 10 overdue (and due soon) live tickets */
+export interface BreachesResponse {
+  tickets: Ticket[];
+}
+
+export interface DailyPoint {
+  /** YYYY-MM-DD in SAST */
+  date: string;
+  created: number;
+  resolved: number;
+}
+
+/** GET /api/reports/daily?days=14 */
+export interface DailyResponse {
+  days: DailyPoint[];
+}
+
+export interface CsatAgentRow {
+  user_id: string;
+  name: string;
+  responses: number;
+  csat_pct: number | null;
+  avg_rating: number | null;
+}
+
+export interface CsatRecentFeedback {
+  feedback_id: number;
+  ticket_id: number;
+  ticket_title: string;
+  rating: number;
+  comment: string | null;
+  tags: string[];
+  requester_name: string | null;
+  agent_id: string | null;
+  agent_name: string | null;
+  created_at: string;
+}
+
+/** GET /api/reports/csat?days=30 */
+export interface CsatReport {
+  department_id: number | null;
+  days: number;
+  responses: number;
+  csat_pct: number | null;
+  avg_rating: number | null;
+  /** Count per star, index 0 = 1 star */
+  distribution: [number, number, number, number, number];
+  by_agent: CsatAgentRow[];
+  recent: CsatRecentFeedback[];
+}
+
+// ---------------------------------------------------------------------------------------------
+// S9 notifications, preferences, outbox and jobs
+// ---------------------------------------------------------------------------------------------
+
+export type NotificationType =
+  | "reply_added"
+  | "assigned"
+  | "status_changed"
+  | "approval_waiting"
+  | "approval_decided"
+  | "sla_breached"
+  | "low_csat"
+  | "csat_requested"
+  | "department_changed";
+
+export const NOTIFICATION_TYPES: NotificationType[] = [
+  "reply_added",
+  "assigned",
+  "status_changed",
+  "approval_waiting",
+  "approval_decided",
+  "sla_breached",
+  "low_csat",
+  "csat_requested",
+  "department_changed",
+];
+
+export interface AppNotification {
+  /** bigserial: a string */
+  notification_id: string;
+  type: NotificationType;
+  title: string;
+  /** Optional plain-text second line */
+  body: string | null;
+  ticket_id: number | null;
+  actor: { user_id: string; name: string } | null;
+  read_at: string | null;
+  created_at: string;
+  /** Where clicking it goes for this user (role-specific ticket page, or the CSAT survey) */
+  path: string | null;
+}
+
+export interface NotificationListParams {
+  /** true: unread only */
+  unread?: boolean;
+  /** Default 30, max 100 */
+  limit?: number;
+}
+
+export interface NotificationListResponse {
+  notifications: AppNotification[];
+  unread: number;
+}
+
+export interface NotificationCountResponse {
+  unread: number;
+}
+
+export interface NotificationPref {
+  type: NotificationType;
+  /** Human label, e.g. "Replies on my tickets" */
+  label: string;
+  email: boolean;
+}
+
+export interface NotificationPrefsResponse {
+  prefs: NotificationPref[];
+}
+
+/** PUT /api/me/notification-prefs */
+export interface SaveNotificationPrefsRequest {
+  prefs: { type: NotificationType; email: boolean }[];
+}
+
+export type OutboxStatus = "QUEUED" | "SENT" | "FAILED" | "SIMULATED";
+export type OutboxChannel = "email" | "sms" | "whatsapp" | "push";
+
+export interface OutboxMessage {
+  id: string;
+  channel: OutboxChannel;
+  recipient: string;
+  recipient_name: string | null;
+  subject: string;
+  status: OutboxStatus;
+  error: string | null;
+  ticket_id: number | null;
+  /** The list leaves out the HTML body to stay small */
+  created_at: string;
+  sent_at: string | null;
+}
+
+export interface OutboxListParams {
+  status?: OutboxStatus;
+  channel?: OutboxChannel;
+  /** YYYY-MM-DD (SAST); default all */
+  date?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface OutboxListResponse {
+  messages: OutboxMessage[];
+  pagination: Pagination;
+  /** Totals per status for the filter chips */
+  counts: Record<OutboxStatus, number>;
+}
+
+/** POST /api/admin/jobs/run */
+export interface JobsResult {
+  closed: number;
+  breach_alerts: number;
+  emails: { sent: number; failed: number; simulated: number };
+  ran_at: string;
+}
+
+export interface RunJobsResponse {
+  message: string;
+  result: JobsResult;
+}
+
+// ---------------------------------------------------------------------------------------------
+// S10 CSAT survey (per ticket)
+// ---------------------------------------------------------------------------------------------
+
+/** Quick tags on the survey (p.19, p.43) */
+export const CSAT_TAGS = ["Fast reply", "Kept me updated", "Fixed first time", "Friendly"] as const;
+export type CsatTag = (typeof CSAT_TAGS)[number];
+
+/** POST /api/tickets/:id/feedback (Sprint 2): once; 409 when already rated or not Closed */
+export interface SubmitCsatRequest {
+  rating: number;
+  tags?: CsatTag[];
+  comment?: string;
+}
+
+// ---------------------------------------------------------------------------------------------
+// S12 move to another department
+// ---------------------------------------------------------------------------------------------
+
+/** PATCH /api/tickets/:id/department */
+export interface MoveDepartmentRequest {
+  department_id: number;
+  category_id: number;
+  /** Internal, required (400 without it) */
+  reason: string;
+  /** Public message to the requester (pre-filled, editable) */
+  message?: string;
+}
+
+/** GET /api/departments/:id/categories */
+export interface DepartmentCategoriesResponse {
+  categories: Category[];
+}
+
+// ---------------------------------------------------------------------------------------------
+// S14 attachments
+// ---------------------------------------------------------------------------------------------
+
+/** Server limits (p.21); the browser checks the same before uploading */
+export const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+export const ATTACHMENT_MAX_FILES = 5;
+export const ATTACHMENT_ACCEPT = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "application/pdf",
+  "text/plain",
+  "text/csv",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+] as const;
+
+export interface AttachmentSummary {
+  attachment_id: number;
+  /** null until sent with a comment */
+  comment_id: number | null;
+  /** Display as text only, never as HTML */
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  is_internal: boolean;
+  /** Images have GET /api/attachments/:id/thumb */
+  is_image: boolean;
+  uploader_id: string;
+  created_at: string;
+}
+
+/** POST /api/tickets/:id/attachments -> 201 */
+export interface UploadAttachmentsResponse {
+  attachments: AttachmentSummary[];
 }

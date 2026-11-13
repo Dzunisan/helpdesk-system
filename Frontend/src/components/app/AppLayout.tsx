@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   AlarmClock,
-  Bell,
   Building2,
   ChevronsUpDown,
   CircleCheck,
@@ -13,9 +12,9 @@ import {
   LayoutDashboard,
   List,
   LogOut,
-  Mail,
   Menu,
   Plus,
+  Send,
   Shapes,
   ShieldCheck,
   Timer,
@@ -23,6 +22,7 @@ import {
   UserRoundX,
   Users,
   X,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth, type Role, type User } from "@/context/AuthContext";
@@ -43,7 +43,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import NotificationBell from "@/components/notifications/NotificationBell";
 import { NavHighlightContext, useNavHighlightHref } from "./navHighlight";
 import { AGENT_QUEUE_LABEL, AGENT_VIEWS, LEAD_VIEWS, agentQueuePath } from "@/components/queue/queueViews";
 import {
@@ -90,8 +90,8 @@ interface NavGroup {
   items: NavItem[];
 }
 
-// Only routes that exist in AppRouter. Mockup items from later sprints (Macros, Help articles,
-// Reports, Business hours, Audit log) are left out until built.
+// Only routes that exist in AppRouter. Mockup items from stretch goals (Help articles, Reports,
+// Business hours, Audit log) are left out until built.
 const STAFF_NAV: Partial<Record<NonNullable<Role>, NavGroup[]>> = {
   Agent: [
     {
@@ -109,7 +109,8 @@ const STAFF_NAV: Partial<Record<NonNullable<Role>, NavGroup[]>> = {
   "Department Lead": [
     {
       items: [
-        { label: "Dashboard", icon: LayoutDashboard, href: "/department-lead/dashboard" },
+        // S8: the lead's home is the dashboard (p.54)
+        { label: "Dashboard", icon: LayoutDashboard, href: "/department-lead", end: true },
         {
           label: "All tickets",
           icon: List,
@@ -121,7 +122,11 @@ const STAFF_NAV: Partial<Record<NonNullable<Role>, NavGroup[]>> = {
     },
     {
       label: "department",
-      items: [{ label: "Team & workload", icon: Users, href: "/department-lead/team" }],
+      items: [
+        { label: "Team & workload", icon: Users, href: "/department-lead/team" },
+        // S7 macros manager (p.58)
+        { label: "Macros", icon: Zap, href: "/department-lead/macros" },
+      ],
     },
   ],
   "System Admin": [
@@ -132,6 +137,8 @@ const STAFF_NAV: Partial<Record<NonNullable<Role>, NavGroup[]>> = {
         { label: "Departments", icon: Building2, href: "/system-admin/departments" },
         { label: "Categories & routing", icon: Shapes, href: "/system-admin/categories" },
         { label: "SLA policies", icon: Timer, href: "/system-admin/sla" },
+        // S9: the outbox and Run jobs now (p.18, p.30)
+        { label: "Sent messages", icon: Send, href: "/system-admin/outbox" },
       ],
     },
   ],
@@ -214,36 +221,6 @@ function useNavCounts(user: User): Record<string, number> {
   return counts;
 }
 
-/**
- * The bell. In-app notifications are not built yet; the backend emails replies,
- * assignments and status changes, so the bell says where they go instead of being a dead button.
- */
-function NotificationsButton({ user, align = "end" }: { user: User; align?: "start" | "end" }) {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Notifications" className="size-9 text-muted-foreground hover:text-foreground">
-          <Bell />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align={align} className="w-80 gap-3 p-4">
-        <PopoverHeader className="gap-1">
-          <PopoverTitle className="text-sm font-semibold">Notifications</PopoverTitle>
-          <PopoverDescription className="text-sm">
-            Replies, assignments and status changes are emailed to you.
-          </PopoverDescription>
-        </PopoverHeader>
-        {user.email && (
-          <div className="flex min-w-0 items-center gap-2.5 rounded-lg bg-muted px-3 py-2.5 text-sm">
-            <Mail className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            <span className="truncate font-medium text-foreground">{user.email}</span>
-          </div>
-        )}
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 /** Profile and sign-out items shared by both layouts */
 function UserMenuItems({ user }: { user: User }) {
   const { logout } = useAuth();
@@ -323,7 +300,7 @@ function StaffSidebar({ user }: { user: User }) {
             <X />
           </Button>
         ) : (
-          <NotificationsButton user={user} align="start" />
+          <NotificationBell align="start" />
         )}
       </SidebarHeader>
 
@@ -423,7 +400,7 @@ function StaffMobileBar({ user }: { user: User }) {
         <BrandMark />
       </NavLink>
       <div className="ml-auto">
-        <NotificationsButton user={user} />
+        <NotificationBell />
       </div>
     </header>
   );
@@ -489,7 +466,7 @@ function PortalLayout({ user, children }: { user: User; children: ReactNode }) {
             })}
           </nav>
           <div className="-mr-1 ml-auto flex items-center gap-1">
-            <NotificationsButton user={user} />
+            <NotificationBell />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" aria-label="Account menu" className="size-10 rounded-full">
