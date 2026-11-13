@@ -152,7 +152,7 @@ export default function StaffUsers() {
       />
 
       <Toolbar>
-        <div className="grid grid-cols-[1fr_1.4fr_1fr] gap-2 sm:flex sm:items-center">
+        <div className="flex flex-wrap items-center gap-2">
           <FilterChip label="Role" icon={UserCog} value={role} anyValue="all" onValueChange={withReset(setRole)} options={[ANY, ...ROLE_OPTIONS]} />
           <FilterChip
             label="Department"

@@ -153,7 +153,12 @@ export default function NotificationBell({ align = "end" }: NotificationBellProp
             <ErrorState
               stacked
               title="Couldn't load notifications"
-              description={panel.error.status === 0 ? undefined : panel.error.message}
+              description={
+                // A server or network failure only repeats the title: use the default "Check your connection" line
+                panel.error.status >= 400 && panel.error.status < 500 && !/^couldn't load notifications/i.test(panel.error.message)
+                  ? panel.error.message
+                  : undefined
+              }
               onRetry={() => void load()}
               retrying={panel.loading}
             />

@@ -262,7 +262,7 @@ function MiniStat({ label, value, loading, muted }: { label: string; value: Reac
 
 const linkState = (view: string): TicketLinkState => ({ view });
 
-/** One of my tickets: ref · title + requester/category (· Waiting) · SLA chip */
+/** One of my tickets: ref · title + requester/category (· Waiting) · priority + SLA chip (p.46) */
 function MyTicketRow({ ticket }: { ticket: Ticket }) {
   const clock = rowClock(ticket);
   const meta = [ticket.requester_name, ticket.category_name].filter(Boolean).join(" · ");
@@ -283,7 +283,10 @@ function MyTicketRow({ ticket }: { ticket: Ticket }) {
           {waiting && <StatusBadge status={ticket.ticket_status} className="shrink-0" />}
         </span>
       </div>
-      <div className="flex sm:justify-end">{clock && <SlaChip due={clock.due} met={clock.met} start={clock.start} />}</div>
+      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+        <PriorityBadge priority={ticket.ticket_priority} />
+        {clock && <SlaChip due={clock.due} met={clock.met} start={clock.start} />}
+      </div>
     </ListRow>
   );
 }
