@@ -19,7 +19,7 @@ import type { Assignee } from "@/components/queue/useClaim";
 import type { TeamMember } from "@/components/queue/useTeam";
 import { useTicketCount } from "@/components/queue/useTicketList";
 
-// A select that reads like the value it holds until hovered (same as TicketPropertiesPanel)
+// A select that reads like the value it holds until hovered
 const INLINE_TRIGGER =
   "-mr-2 -my-2.5 h-10 max-w-[calc(100%+0.5rem)] min-w-0 gap-1 border-transparent bg-transparent px-2 shadow-none hover:bg-muted data-[state=open]:bg-muted sm:-my-1 sm:h-7 dark:bg-transparent *:data-[slot=select-value]:line-clamp-none";
 

@@ -1,15 +1,10 @@
 import axios, { AxiosError } from "axios";
-import type {
-  Ticket,
-  CreateTicketPayload,
-  TicketFilters,
-  PaginatedTicketsResponse,
-  TicketApiResponse,
-  TicketApiError,
-  TicketComment,
-  TicketFeedback,
-  AgentUser,
-} from "../types/ticket.types";
+/**
+ * The older ticket client, kept only for screens that are rebuilt in Sprint 2: the lead's
+ * Approvals page (S6), dashboard and team page (S8). Everything else uses services/tickets.ts,
+ * the Sprint 1 contract (docs/api-sprint-1.md).
+ */
+import type { Ticket, TicketFilters, PaginatedTicketsResponse, TicketApiError, AgentUser } from "../types/ticket.types";
 
 const API = `${import.meta.env.VITE_API_URL}/api`;
 
@@ -33,24 +28,6 @@ const extractErrorMessage = (error: unknown): string => {
     return error.message;
   }
   return "An unexpected error occurred.";
-};
-
-/**
- * Create a new ticket.
- * POST /api/tickets/create
- */
-export const createTicket = async (
-  payload: CreateTicketPayload
-): Promise<Ticket> => {
-  try {
-    const response = await api.post<TicketApiResponse>(
-      "/tickets/create",
-      payload
-    );
-    return response.data.ticket;
-  } catch (error) {
-    throw new Error(extractErrorMessage(error));
-  }
 };
 
 /**
@@ -78,182 +55,7 @@ export const fetchTickets = async (
     });
     return response.data;
   } catch (error) {
-    throw new Error(extractErrorMessage(error));
-  }
-};
-
-/**
- * Fetch a single ticket by ID.
- * GET /api/tickets/:id
- */
-export const fetchTicketById = async (id: number): Promise<Ticket> => {
-  try {
-    const response = await api.get<{ ticket: Ticket }>(`/tickets/${id}`);
-    return response.data.ticket;
-  } catch (error) {
-    // Carry the HTTP status so the page can show "Ticket not found" for 404 / 403
-    const enrichedError = new Error(extractErrorMessage(error), { cause: error }) as Error & {
-      statusCode?: number;
-    };
-    if (error instanceof AxiosError && error.response) {
-      enrichedError.statusCode = error.response.status;
-    }
-    throw enrichedError;
-  }
-};
-
-/**
- * Assign / claim a ticket.
- * PUT /api/tickets/:id/assign
- *
- * For self-assignment, omit assignee_id or pass the current user's ID.
- * Returns the HTTP status code alongside the data so the caller can
- * differentiate between 409 Conflict (race condition) and other errors.
- */
-export const assignTicket = async (
-  ticketId: number,
-  assigneeId?: string | null
-): Promise<Ticket> => {
-  try {
-    const body: Record<string, unknown> = {};
-    if (assigneeId !== undefined && assigneeId !== null) {
-      body.assignee_id = assigneeId;
-    }
-    const response = await api.put<TicketApiResponse>(
-      `/tickets/${ticketId}/assign`,
-      body
-    );
-    return response.data.ticket;
-  } catch (error) {
-    if (error instanceof AxiosError && error.response) {
-      const status = error.response.status;
-      const data = error.response.data as TicketApiError;
-      const message = data.message || "Assignment failed.";
-
-      // Enrich error with status code for race condition handling
-      const enrichedError = new Error(message) as Error & {
-        statusCode?: number;
-      };
-      enrichedError.statusCode = status;
-      throw enrichedError;
-    }
-    throw new Error(extractErrorMessage(error));
-  }
-};
-
-/**
- * Fetch all comments for a ticket.
- * GET /api/tickets/:ticket_id/comments
- */
-export const fetchTicketComments = async (ticketId: number): Promise<TicketComment[]> => {
-  try {
-    const response = await api.get<{ comments: TicketComment[] }>(`/tickets/${ticketId}/comments`);
-    return response.data.comments || [];
-  } catch (error) {
-    throw new Error(extractErrorMessage(error));
-  }
-};
-
-/**
- * Add a comment or internal note to a ticket.
- * POST /api/tickets/:ticket_id/comments
- */
-export const addTicketComment = async (
-  ticketId: number,
-  body: string,
-  isInternal: boolean = false
-): Promise<TicketComment> => {
-  try {
-    const response = await api.post<{ message: string; comment: TicketComment }>(
-      `/tickets/${ticketId}/comments`,
-      { body, is_internal: isInternal }
-    );
-    return response.data.comment;
-  } catch (error) {
-    throw new Error(extractErrorMessage(error));
-  }
-};
-
-/**
- * Edit a specific comment.
- * PATCH /api/comments/:id
- */
-export const updateComment = async (
-  commentId: number,
-  body: string
-): Promise<TicketComment> => {
-  try {
-    const response = await api.patch<{ message: string; comment: TicketComment }>(
-      `/comments/${commentId}`,
-      { body }
-    );
-    return response.data.comment;
-  } catch (error) {
-    throw new Error(extractErrorMessage(error));
-  }
-};
-
-/**
- * Delete a specific comment.
- * DELETE /api/comments/:id
- */
-export const deleteComment = async (commentId: number): Promise<void> => {
-  try {
-    await api.delete(`/comments/${commentId}`);
-  } catch (error) {
-    throw new Error(extractErrorMessage(error));
-  }
-};
-
-/**
- * Submit resolution rating and feedback for a resolved ticket.
- * POST /api/tickets/:ticket_id/feedback
- */
-export const submitTicketFeedback = async (
-  ticketId: number,
-  rating: number,
-  comment?: string
-): Promise<TicketFeedback> => {
-  try {
-    const response = await api.post<{ message: string; feedback: TicketFeedback }>(
-      `/tickets/${ticketId}/feedback`,
-      { rating, comment }
-    );
-    return response.data.feedback;
-  } catch (error) {
-    throw new Error(extractErrorMessage(error));
-  }
-};
-
-/**
- * Fetch resolution feedback for a ticket.
- * GET /api/tickets/:ticket_id/feedback
- */
-export const fetchTicketFeedback = async (ticketId: number): Promise<TicketFeedback | null> => {
-  try {
-    const response = await api.get<{ feedback: TicketFeedback | null }>(`/tickets/${ticketId}/feedback`);
-    return response.data.feedback;
-  } catch (error) {
-    throw new Error(extractErrorMessage(error));
-  }
-};
-
-/**
- * Update ticket status.
- * PATCH /api/tickets/:id/status
- */
-export const updateTicketStatus = async (
-  ticketId: number,
-  status: string
-): Promise<Ticket> => {
-  try {
-    const response = await api.patch<{ message: string; ticket: Ticket }>(
-      `/tickets/${ticketId}/status`,
-      { status }
-    );
-    return response.data.ticket;
-  } catch (error) {
-    throw new Error(extractErrorMessage(error));
+    throw new Error(extractErrorMessage(error), { cause: error });
   }
 };
 
@@ -272,7 +74,7 @@ export const approveTicket = async (
     );
     return response.data.ticket;
   } catch (error) {
-    throw new Error(extractErrorMessage(error));
+    throw new Error(extractErrorMessage(error), { cause: error });
   }
 };
 
@@ -291,7 +93,7 @@ export const rejectTicket = async (
     );
     return response.data.ticket;
   } catch (error) {
-    throw new Error(extractErrorMessage(error));
+    throw new Error(extractErrorMessage(error), { cause: error });
   }
 };
 
@@ -305,6 +107,6 @@ export const fetchAgents = async (departmentId?: number): Promise<AgentUser[]> =
     const response = await api.get<{ agents: AgentUser[] }>("/tickets/agents", { params });
     return response.data.agents || [];
   } catch (error) {
-    throw new Error(extractErrorMessage(error));
+    throw new Error(extractErrorMessage(error), { cause: error });
   }
 };

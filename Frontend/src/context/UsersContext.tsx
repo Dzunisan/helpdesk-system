@@ -57,7 +57,6 @@ export interface UsersContextType {
   getUserById: (id: string) => Promise<User | null>;
   createUser: (userData: CreateUserData) => Promise<User | null>;
   updateUser: (id: string, userData: UpdateUserData) => Promise<User | null>;
-  deleteUser: (id: string) => Promise<boolean>;
   toggleUserStatus: (id: string, currentStatus: boolean) => Promise<User | null>;
 
   // Helpers
@@ -246,29 +245,6 @@ export const UsersProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     []
   );
 
-  // 5. DELETE - Delete a user
-  const deleteUser = useCallback(async (id: string): Promise<boolean> => {
-    setActionLoading(true);
-    setError(null);
-    try {
-      await axios.delete(`${API_BASE_URL}/${id}`, { withCredentials: true });
-
-      setUsers((prev) => prev.filter((u) => u.user_id !== id && u.id !== id));
-
-      setSelectedUser((prev) =>
-        prev && (prev.user_id === id || prev.id === id) ? null : prev
-      );
-
-      return true;
-    } catch (err: any) {
-      const message = err.response?.data?.message || err.message || 'Failed to delete user';
-      setError(message);
-      console.error('deleteUser error:', err);
-      return false;
-    } finally {
-      setActionLoading(false);
-    }
-  }, []);
 
   // 6. TOGGLE STATUS - Activate / Deactivate a user
   const toggleUserStatus = useCallback(
@@ -291,7 +267,6 @@ export const UsersProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         getUserById,
         createUser,
         updateUser,
-        deleteUser,
         toggleUserStatus,
         setSelectedUser,
         clearError,
