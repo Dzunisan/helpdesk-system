@@ -222,7 +222,7 @@ incorrect." Sessions are looked up by the token's user id (an email change signs
 | GET | `/api/tickets/agents` | ready | `listAssignees` |
 | POST | `/api/tickets/:id/transition` | ready | `transitionTicket` |
 | GET | `/api/tickets/:id/actions` | ready | `getTicketActions` |
-| POST | `/api/tickets/:id/feedback` | ready | `submitFeedback` |
+| POST | `/api/tickets/:id/feedback` | moved to S10 ([api-sprint-2.md](api-sprint-2.md)) | `feedback.submitCsat` |
 | PATCH `/api/tickets/:id/status`, `/approve`, `/reject` | | legacy (same rules as `/transition`; approve/reject belong to S6) | |
 
 **POST /api/tickets/:id/claim** - Agent or Lead of the ticket's department. No body. Locks the row
@@ -264,11 +264,9 @@ Leads of the caller's department. Response `{ agents: Assignee[] }` (`user_id, n
 role, department_id, department_name`). Others 403. The lead's Assign menu adds each person's open
 load from `GET /api/tickets?status=Open,Waiting on employee`.
 
-**POST /api/tickets/:id/feedback** - the requester, once the ticket is Resolved or Closed. Body
-`{ rating: 1-5, comment? }`. Response **201** `{ feedback }`; `GET /api/tickets/:id` returns it as
-`ticket.feedback`. Sending it again replaces the rating and keeps the earlier comment unless a new
-one is sent. Logs `feedback_given` (from = previous rating or null, to = rating, note = comment). Errors: 400 (not finished, bad rating),
-403 not the requester, 404. The CSAT reports on top of it are S10 (Sprint 2).
+**POST /api/tickets/:id/feedback** - replaced in Sprint 2 by S10 (see [api-sprint-2.md](api-sprint-2.md)):
+the requester rates a **Closed** ticket once (a second rating is 409, staff 403), with optional tags.
+`GET /api/tickets/:id` still returns it as `ticket.feedback`.
 
 ## S3 Priority triage & SLA timers (page 12)
 

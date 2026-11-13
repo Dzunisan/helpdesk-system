@@ -87,6 +87,8 @@ export interface Ticket {
   resolved_at: string | null;
   closed_at: string | null;
   reopen_count: number;
+  /** S12: how many times the ticket was moved to another department */
+  moved_count?: number;
   resolution_note: string | null;
   /** null while Pending approval: the clocks start when the lead approves */
   first_response_due_at: string | null;
@@ -111,13 +113,9 @@ export interface TicketFeedback {
   tags?: string[];
   /** S10: the owner and department when the ticket closed (a later move doesn't move the score) */
   agent_id?: string | null;
+  /** S10: the owner's name, so the survey can name the agent without a second call */
+  agent_name?: string | null;
   department_id?: number | null;
-}
-
-/** POST /api/tickets/:id/feedback */
-export interface SubmitFeedbackRequest {
-  rating: number;
-  comment?: string;
 }
 
 export interface FeedbackResponse {
@@ -256,7 +254,8 @@ export type TicketEventType =
   /** S12: from/to = department NAMES. One public event, plus an internal one whose note is the reason */
   | "department_changed"
   /** S14: to = attachment id, note = file name; is_internal follows the file */
-  | "attached";
+  | "attached"
+  | "attachment_removed";
 
 export interface TimelinePerson {
   user_id: string;
@@ -711,6 +710,8 @@ export interface ReportSummary {
   csat_responses: number;
   pending_approvals: number;
   oldest_pending_approval_mins: number | null;
+  /** Most requested categories among tickets created in the window, busiest first (top 5) */
+  top_categories: { category_id: number; category_name: string; count: number }[];
 }
 
 /** GET /api/reports/workload: one row per agent of the department */
@@ -722,6 +723,8 @@ export interface WorkloadRow {
   waiting: number;
   breached: number;
   resolved_7d: number;
+  /** Average minutes to first response on their tickets created in the window, null when none */
+  avg_first_response_mins: number | null;
   /** CSAT of their rated tickets in the window, null when none */
   csat_pct: number | null;
 }
