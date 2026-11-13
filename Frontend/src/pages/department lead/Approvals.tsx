@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchTickets, approveTicket, rejectTicket } from "../../services/ticketService";
 import type { Ticket } from "../../types/ticket.types";
+import { toast } from "sonner";
 import Loader from "../../components/legacy/Loader";
 import { Button } from "../../components/legacy/Button";
 
@@ -9,12 +10,6 @@ export default function Approvals() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
-
-  const showToast = (message: string, type: "success" | "error" = "success") => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3500);
-  };
 
   const loadPendingTickets = async () => {
     setLoading(true);
@@ -23,7 +18,7 @@ export default function Approvals() {
       setTickets(res.tickets || []);
     } catch (err: any) {
       console.error("Failed to load approval requests:", err);
-      showToast(err.message || "Failed to load approval requests", "error");
+      toast.error(err.message || "Failed to load approval requests");
     } finally {
       setLoading(false);
     }
@@ -38,10 +33,10 @@ export default function Approvals() {
     setActionLoading(ticketId);
     try {
       await approveTicket(ticketId, note);
-      showToast(`Ticket #${ticketId} approved successfully!`);
+      toast.success(`Ticket #${ticketId} approved successfully!`);
       setTickets((prev) => prev.filter((t) => t.ticket_id !== ticketId));
     } catch (err: any) {
-      showToast(err.message || "Approval failed", "error");
+      toast.error(err.message || "Approval failed");
     } finally {
       setActionLoading(null);
     }
@@ -54,10 +49,10 @@ export default function Approvals() {
     setActionLoading(ticketId);
     try {
       await rejectTicket(ticketId, reason || undefined);
-      showToast(`Ticket #${ticketId} rejected.`, "error");
+      toast.success(`Ticket #${ticketId} rejected.`);
       setTickets((prev) => prev.filter((t) => t.ticket_id !== ticketId));
     } catch (err: any) {
-      showToast(err.message || "Rejection failed", "error");
+      toast.error(err.message || "Rejection failed");
     } finally {
       setActionLoading(null);
     }
@@ -65,16 +60,6 @@ export default function Approvals() {
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
-      {/* Toast Notification */}
-      {toast && (
-        <div
-          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-md shadow-lg text-sm font-medium transition-all duration-300 flex items-center gap-2 ${
-            toast.type === "error" ? "bg-red-600 text-white" : "bg-emerald-600 text-white"
-          }`}
-        >
-          {toast.type === "error" ? "⚠️" : "✓"} {toast.message}
-        </div>
-      )}
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-200">

@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import { useTickets } from "../../hooks/useTickets";
-import { useToast } from "../../components/legacy/Toast";
+import { toast } from "sonner";
 import type { Ticket } from "../../types/ticket.types";
 import { Button } from "../../components/legacy/Button";
 import { useNavigate } from "react-router-dom";
 import Loader from "../../components/legacy/Loader";
 
 export default function EmployeeDashboard() {
-  const { toastElement, showToast } = useToast();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All Statuses");
@@ -53,14 +52,13 @@ export default function EmployeeDashboard() {
     });
   };
 
-  // Show fetch errors once per error (calling showToast during render loops forever)
+  // Show fetch errors once per error (calling toast during render loops forever)
   useEffect(() => {
-    if (error) showToast(error, "error");
-  }, [error, showToast]);
+    if (error) toast.error(error);
+  }, [error]);
 
   return (
     <div className="min-h-screen">
-      {toastElement}
       <div className="p-6 max-w-5xl mx-auto">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-[20px] font-bold">My Requests</h1>

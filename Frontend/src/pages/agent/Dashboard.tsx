@@ -2,13 +2,12 @@ import { useState, useCallback, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { useTickets } from "../../hooks/useTickets";
-import { useToast } from "../../components/legacy/Toast";
+import { toast } from "sonner";
 import type { Ticket } from "../../types/ticket.types";
 import Loader from "../../components/legacy/Loader";
 
 const AgentDashboard = () => {
   const { user } = useAuth();
-  const { toastElement, showToast } = useToast();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("my");
   const [claimingId, setClaimingId] = useState<number | null>(null);
@@ -66,25 +65,22 @@ const AgentDashboard = () => {
       setClaimingId(ticketId);
       try {
         await claimTicket(ticketId);
-        showToast("Ticket claimed successfully!", "success");
+        toast.success("Ticket claimed successfully!");
         // Refresh both lists
         refetchMy();
       } catch (err: unknown) {
         const error = err as Error & { statusCode?: number };
         if (error.statusCode === 409) {
-          showToast(
-            "This ticket was already claimed by another agent.",
-            "warning",
-          );
+          toast.warning("This ticket was already claimed by another agent.");
           refetchDept();
         } else {
-          showToast(error.message || "Failed to claim ticket.", "error");
+          toast.error(error.message || "Failed to claim ticket.");
         }
       } finally {
         setClaimingId(null);
       }
     },
-    [claimTicket, showToast, refetchMy, refetchDept],
+    [claimTicket, refetchMy, refetchDept],
   );
 
   const tabs = [
@@ -102,17 +98,16 @@ const AgentDashboard = () => {
   const isLoading = activeTab === "unassigned" ? deptLoading : myLoading;
   const displayTickets = getDisplayTickets();
 
-  // Show fetch errors once per error (calling showToast during render loops forever)
+  // Show fetch errors once per error (calling toast during render loops forever)
   useEffect(() => {
-    if (myError) showToast(myError, "error");
-  }, [myError, showToast]);
+    if (myError) toast.error(myError);
+  }, [myError]);
   useEffect(() => {
-    if (deptError) showToast(deptError, "error");
-  }, [deptError, showToast]);
+    if (deptError) toast.error(deptError);
+  }, [deptError]);
 
   return (
     <div className="min-h-screen p-6">
-      {toastElement}
 
       {/* Dashboard Heading */}
       <div className="mb-6">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useToast } from "../../components/legacy/Toast";
+import { toast } from "sonner";
 import { useDepartments } from "../../hooks/useDepartments";
 import * as ticketService from "../../services/ticketService";
 import type { TicketPriority } from "../../types/ticket.types";
@@ -8,7 +8,6 @@ import { Button } from "../../components/legacy/Button";
 
 const EmployeeSubmitRequest = () => {
   const navigate = useNavigate();
-  const { toastElement, showToast } = useToast();
   const { departments, loading: deptLoading } = useDepartments();
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -57,12 +56,12 @@ const EmployeeSubmitRequest = () => {
           ? Number(formData.department_id)
           : undefined,
       });
-      showToast("Request submitted successfully!", "success");
+      toast.success("Request submitted successfully!");
       setTimeout(() => navigate("/employee/my-requests"), 1200);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to submit request.";
-      showToast(message, "error");
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -70,7 +69,6 @@ const EmployeeSubmitRequest = () => {
 
   return (
     <div className="p-8 max-w-3xl">
-      {toastElement}
 
       <h1 className="font-bold text-lg border-b pb-4 mb-6">
         Submit a new request

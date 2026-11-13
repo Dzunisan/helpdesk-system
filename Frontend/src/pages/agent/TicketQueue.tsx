@@ -2,13 +2,12 @@ import { useState, useCallback, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTickets } from "../../hooks/useTickets";
-import { useToast } from "../../components/legacy/Toast";
+import { toast } from "sonner";
 import type { Ticket } from "../../types/ticket.types";
 import Loader from "../../components/legacy/Loader";
 
 const TicketQueue = () => {
   const { user } = useAuth();
-  const { toastElement, showToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const [search, setSearch] = useState("");
@@ -47,31 +46,22 @@ const TicketQueue = () => {
       setClaimingId(ticketId);
       try {
         await claimTicket(ticketId);
-        showToast(
-          "Ticket claimed successfully! It's now in your assigned tickets.",
-          "success",
-        );
+        toast.success("Ticket claimed successfully! It's now in your assigned tickets.");
       } catch (err: unknown) {
         const error = err as Error & { statusCode?: number };
         if (error.statusCode === 409) {
-          showToast(
-            "This ticket was already claimed by another agent. Refreshing queue…",
-            "warning",
-          );
+          toast.warning("This ticket was already claimed by another agent. Refreshing queue…");
           refetch();
         } else if (error.statusCode === 403) {
-          showToast(
-            error.message || "You're not authorized to claim this ticket.",
-            "error",
-          );
+          toast.error(error.message || "You're not authorized to claim this ticket.");
         } else {
-          showToast(error.message || "Failed to claim ticket.", "error");
+          toast.error(error.message || "Failed to claim ticket.");
         }
       } finally {
         setClaimingId(null);
       }
     },
-    [claimTicket, showToast, refetch],
+    [claimTicket, refetch],
   );
 
   const priorityColor = (p: string) => {
@@ -104,14 +94,13 @@ const TicketQueue = () => {
     return `${diffDays}d ago`;
   };
 
-  // Show fetch errors once per error (calling showToast during render loops forever)
+  // Show fetch errors once per error (calling toast during render loops forever)
   useEffect(() => {
-    if (error) showToast(error, "error");
-  }, [error, showToast]);
+    if (error) toast.error(error);
+  }, [error]);
 
   return (
     <div className="space-y-6">
-      {toastElement}
 
       {/* Page Heading */}
       <div className="flex items-center justify-between">

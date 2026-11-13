@@ -20,6 +20,7 @@ import type {
   TicketFeedback,
   AgentUser,
 } from "../../types/ticket.types";
+import { toast } from "sonner";
 import Loader from "../../components/legacy/Loader";
 import { Button } from "../../components/legacy/Button";
 
@@ -78,18 +79,6 @@ export default function TicketDetails() {
 
   // Actions loading state
   const [actionLoading, setActionLoading] = useState(false);
-  const [toast, setToast] = useState<{
-    message: string;
-    type: "success" | "error";
-  } | null>(null);
-
-  const showToast = (
-    message: string,
-    type: "success" | "error" = "success",
-  ) => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3500);
-  };
 
   // Role permissions
   const userRole = normalizeRole(user);
@@ -133,7 +122,7 @@ export default function TicketDetails() {
       }
     } catch (err: any) {
       console.error("Failed to load ticket:", err);
-      showToast(err.message || "Failed to load ticket details", "error");
+      toast.error(err.message || "Failed to load ticket details");
     } finally {
       setLoading(false);
     }
@@ -169,13 +158,13 @@ export default function TicketDetails() {
       setComments((prev) => [...prev, created]);
       setNewComment("");
       setIsInternalNote(false);
-      showToast(
+      toast.success(
         created.is_internal
           ? "Internal note posted successfully"
           : "Comment posted successfully",
       );
     } catch (err: any) {
-      showToast(err.message || "Failed to post comment", "error");
+      toast.error(err.message || "Failed to post comment");
     } finally {
       setSubmittingComment(false);
     }
@@ -202,9 +191,9 @@ export default function TicketDetails() {
       );
       setEditingCommentId(null);
       setEditingCommentText("");
-      showToast("Comment updated successfully");
+      toast.success("Comment updated successfully");
     } catch (err: any) {
-      showToast(err.message || "Failed to edit comment", "error");
+      toast.error(err.message || "Failed to edit comment");
     } finally {
       setSavingEdit(false);
     }
@@ -217,9 +206,9 @@ export default function TicketDetails() {
     try {
       await deleteComment(commentId);
       setComments((prev) => prev.filter((c) => c.comment_id !== commentId));
-      showToast("Comment deleted successfully");
+      toast.success("Comment deleted successfully");
     } catch (err: any) {
-      showToast(err.message || "Failed to delete comment", "error");
+      toast.error(err.message || "Failed to delete comment");
     }
   };
 
@@ -228,7 +217,7 @@ export default function TicketDetails() {
     e.preventDefault();
     if (!ticket) return;
     if (starRating < 1 || starRating > 5) {
-      showToast("Please select a rating between 1 and 5 stars.", "error");
+      toast.error("Please select a rating between 1 and 5 stars.");
       return;
     }
 
@@ -240,9 +229,9 @@ export default function TicketDetails() {
         feedbackComment.trim() || undefined,
       );
       setFeedback(submitted);
-      showToast("Thank you! Feedback submitted successfully.");
+      toast.success("Thank you! Feedback submitted successfully.");
     } catch (err: any) {
-      showToast(err.message || "Failed to submit feedback", "error");
+      toast.error(err.message || "Failed to submit feedback");
     } finally {
       setSubmittingFeedback(false);
     }
@@ -257,12 +246,12 @@ export default function TicketDetails() {
       setTicket((prev) =>
         prev ? { ...prev, ticket_status: updated.ticket_status } : null,
       );
-      showToast(`Status updated to "${newStatus}"`);
+      toast.success(`Status updated to "${newStatus}"`);
       // Reload comments to catch any system audit notes
       const updatedComments = await fetchTicketComments(ticket.ticket_id);
       setComments(updatedComments);
     } catch (err: any) {
-      showToast(err.message || "Failed to update status", "error");
+      toast.error(err.message || "Failed to update status");
     } finally {
       setActionLoading(false);
     }
@@ -278,11 +267,11 @@ export default function TicketDetails() {
       setTicket((prev) =>
         prev ? { ...prev, ticket_status: updated.ticket_status } : null,
       );
-      showToast("Ticket approved successfully!");
+      toast.success("Ticket approved successfully!");
       const updatedComments = await fetchTicketComments(ticket.ticket_id);
       setComments(updatedComments);
     } catch (err: any) {
-      showToast(err.message || "Failed to approve ticket", "error");
+      toast.error(err.message || "Failed to approve ticket");
     } finally {
       setActionLoading(false);
     }
@@ -300,11 +289,11 @@ export default function TicketDetails() {
       setTicket((prev) =>
         prev ? { ...prev, ticket_status: updated.ticket_status } : null,
       );
-      showToast("Ticket rejected.", "error");
+      toast.success("Ticket rejected.");
       const updatedComments = await fetchTicketComments(ticket.ticket_id);
       setComments(updatedComments);
     } catch (err: any) {
-      showToast(err.message || "Failed to reject ticket", "error");
+      toast.error(err.message || "Failed to reject ticket");
     } finally {
       setActionLoading(false);
     }
@@ -328,9 +317,9 @@ export default function TicketDetails() {
             }
           : null,
       );
-      showToast("Ticket assigned to you");
+      toast.success("Ticket assigned to you");
     } catch (err: any) {
-      showToast(err.message || "Failed to assign ticket", "error");
+      toast.error(err.message || "Failed to assign ticket");
     } finally {
       setActionLoading(false);
     }
@@ -355,11 +344,9 @@ export default function TicketDetails() {
             }
           : null,
       );
-      showToast(
-        `Ticket reassigned to ${updated.assignee_name || "selected agent"}`,
-      );
+      toast.success(`Ticket reassigned to ${updated.assignee_name || "selected agent"}`);
     } catch (err: any) {
-      showToast(err.message || "Failed to reassign ticket", "error");
+      toast.error(err.message || "Failed to reassign ticket");
     } finally {
       setActionLoading(false);
     }
@@ -433,18 +420,6 @@ export default function TicketDetails() {
 
   return (
     <div className="p-6 space-y-6 max-w-4xl mx-auto pb-16">
-      {/* Toast Notification */}
-      {toast && (
-        <div
-          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-md shadow-lg text-sm font-medium transition-all duration-300 flex items-center gap-2 ${
-            toast.type === "error"
-              ? "bg-red-600 text-white"
-              : "bg-emerald-600 text-white"
-          }`}
-        >
-          {toast.type === "error" ? "⚠️" : "✓"} {toast.message}
-        </div>
-      )}
       <div className="flex items-center gap-2">
         <h1 className="text-xl font-bold text-foreground">Ticket Details</h1>
       </div>
