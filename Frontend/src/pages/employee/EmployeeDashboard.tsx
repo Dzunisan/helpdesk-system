@@ -13,7 +13,7 @@ import EmptyState from "@/components/app/EmptyState";
 import ErrorState from "@/components/app/ErrorState";
 import { FilterTabs, SearchInput, Toolbar } from "@/components/app/Toolbar";
 import { ListBody, ListCaption, ListCard, ListHeaderRow, ListRow, LoadingRows } from "@/components/app/ListCard";
-import { useApiData } from "@/components/portal/useApiData";
+import { useApiData } from "@/hooks/useApiData";
 import WaitingCallout from "@/components/portal/WaitingCallout";
 import {
   REQUEST_TABS,
@@ -30,7 +30,7 @@ const ROW_GRID = "md:grid md:grid-cols-[minmax(0,1fr)_10rem_12rem_16rem_1rem] md
 
 const TONE: Record<PromiseTone, string> = {
   muted: "text-muted-foreground",
-  waiting: "font-medium text-amber-700",
+  waiting: "font-medium text-warning",
   late: "font-medium text-destructive",
   action: "font-medium text-primary",
 };
@@ -162,7 +162,7 @@ export default function EmployeeDashboard() {
                   value={t.key}
                   className={cn(
                     "h-9 rounded-full! px-3.5 data-[state=on]:border-foreground data-[state=on]:bg-foreground data-[state=on]:text-background",
-                    t.key === "waiting" && counts.waiting > 0 && "border-amber-300 bg-amber-50 text-amber-800",
+                    t.key === "waiting" && counts.waiting > 0 && "border-warning-border bg-warning-muted text-warning-strong",
                   )}
                 >
                   {t.label}

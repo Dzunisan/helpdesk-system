@@ -28,12 +28,5 @@ export const minutesOf = (draft: DurationDraft): number | null => {
   return mins > 0 ? mins : null;
 };
 
-/** 30 -> "30 min", 60 -> "1 hour", 1440 -> "24 hours", 4320 -> "3 days", 90 -> "1 h 30 min" */
-export const formatMinutes = (mins: number): string => {
-  if (mins < 60) return `${mins} min`;
-  if (mins >= 2880 && mins % 1440 === 0) return `${mins / 1440} days`;
-  const hours = Math.floor(mins / 60);
-  const rest = mins % 60;
-  if (rest === 0) return `${hours} ${hours === 1 ? "hour" : "hours"}`;
-  return `${hours} h ${rest} min`;
-};
+/** 30 -> "30 min", 60 -> "1 hour", 4320 -> "3 days", 90 -> "1 h 30 min" (lib/format) */
+export { formatDurationWords as formatMinutes } from "@/lib/format";

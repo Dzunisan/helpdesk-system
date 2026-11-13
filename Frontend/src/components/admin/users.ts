@@ -4,7 +4,7 @@ import type { Role, User } from "@/types/api";
 export const fullNameOf = (u: Pick<User, "name" | "surname">) => `${u.name ?? ""} ${u.surname ?? ""}`.trim() || "This user";
 
 /** First name for sentences: "Thabo can't sign in…" */
-export const firstNameOf = (u: Pick<User, "name" | "surname">) => u.name?.trim() || fullNameOf(u);
+export const givenNameOf = (u: Pick<User, "name" | "surname">) => u.name?.trim() || fullNameOf(u);
 
 /**
  * Account status on the Users table (briefing p.61):

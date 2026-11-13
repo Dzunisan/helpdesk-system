@@ -7,16 +7,16 @@ import { cn } from "@/lib/utils";
 
 /**
  * Tones carry meaning only (briefing p.31): `warning` for "due soon / needs attention",
- * `danger` for "breached / broken". Amber has no theme token, so it lives here and in
- * SlaChip only; pages never colour a tile themselves.
+ * `danger` for "breached / broken". Both come from theme tokens (--warning, --destructive);
+ * pages never colour a tile themselves.
  */
 const TONE = {
   default: { card: "", label: "text-muted-foreground", value: "text-foreground", hint: "text-muted-foreground" },
   warning: {
-    card: "border-amber-200 bg-amber-50/60",
-    label: "text-amber-800",
-    value: "text-amber-900",
-    hint: "text-amber-800/80",
+    card: "border-warning-border bg-warning-muted/60",
+    label: "text-warning-strong",
+    value: "text-warning-strong",
+    hint: "text-warning-strong/80",
   },
   danger: {
     card: "border-destructive/25 bg-destructive/5",

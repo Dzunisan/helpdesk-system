@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckIcon, ClockIcon, PauseIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { formatSast } from "@/lib/format";
+import { formatDuration, formatSast } from "@/lib/format";
 
 /**
  * SLA clock chip (briefing p.12 S3, p.31):
@@ -35,22 +35,16 @@ const toMs = (value: Timestamp): number | null => {
   return Number.isNaN(ms) ? null : ms;
 };
 
-/** 25m, 1h 54m, 2d 3h */
-const formatDuration = (ms: number): string => {
-  const minutes = Math.max(0, Math.round(ms / MINUTE));
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ${minutes % 60}m`;
-  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
-};
+/** 25m, 1h, 1h 54m, 2d 3h (lib/format formatDuration, a zero remainder dropped) */
+const durationOf = (ms: number): string => formatDuration(ms / MINUTE);
 
 /** Within this many days a due time shows as "Thu 09:00" (the weekday is unambiguous) */
 const WEEKDAY_WINDOW_MS = 6 * 24 * 60 * MINUTE;
 
-/** "16:14" today, "Thu 09:00" within 6 days, otherwise "Sat, 14 Nov, 16:14" (SAST) */
+/** "16:14" today, "Thu 09:00" within 6 days, otherwise "Sat 14 Nov, 16:14" (SAST) */
 const formatDue = (ms: number, now: number): string => {
   if (formatSast(ms, "day") === formatSast(now, "day")) return formatSast(ms, "time");
-  if (Math.abs(ms - now) <= WEEKDAY_WINDOW_MS) return `${formatSast(ms, "day").split(",")[0]} ${formatSast(ms, "time")}`;
+  if (Math.abs(ms - now) <= WEEKDAY_WINDOW_MS) return `${formatSast(ms, "day").split(" ")[0]} ${formatSast(ms, "time")}`;
   return formatSast(ms);
 };
 
@@ -90,24 +84,24 @@ export function SlaChip({ due, met, start, paused = false, className }: SlaChipP
   if (metMs !== null && dueMs !== null) {
     if (metMs <= dueMs) {
       state = "met";
-      label = startMs !== null ? `Met ${formatDuration(metMs - startMs)}` : "Met";
+      label = startMs !== null ? `Met ${durationOf(metMs - startMs)}` : "Met";
     } else {
       state = "breached";
-      label = `Breached ${formatDuration(metMs - dueMs)}`;
+      label = `Breached ${durationOf(metMs - dueMs)}`;
     }
   } else if (paused || dueMs === null) {
     state = "paused";
     label = "Paused";
   } else if (now > dueMs) {
     state = "breached";
-    label = `Breached ${formatDuration(now - dueMs)}`;
+    label = `Breached ${durationOf(now - dueMs)}`;
   } else {
     const left = dueMs - now;
     const soonWithin =
       startMs !== null && dueMs > startMs ? (dueMs - startMs) * 0.25 : DEFAULT_SOON_MS;
     if (left <= soonWithin) {
       state = "soon";
-      label = `Due in ${formatDuration(left)}`;
+      label = `Due in ${durationOf(left)}`;
     } else {
       state = "due";
       label = `Due ${formatDue(dueMs, now)}`;

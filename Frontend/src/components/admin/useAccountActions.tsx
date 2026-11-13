@@ -5,7 +5,7 @@ import { setUserActive } from "@/services/users";
 import { toApiError } from "@/services/apiClient";
 import type { User } from "@/types/api";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
-import { firstNameOf, fullNameOf } from "@/components/admin/users";
+import { givenNameOf, fullNameOf } from "@/components/admin/users";
 
 /**
  * Deactivate / reactivate for a user row, each behind an AlertDialog (briefing p.61, S1:
@@ -49,7 +49,7 @@ export function useAccountActions(onSaved: (user: User) => void) {
   };
 
   const name = pending ? fullNameOf(pending.user) : "";
-  const first = pending ? firstNameOf(pending.user) : "";
+  const first = pending ? givenNameOf(pending.user) : "";
   const deactivating = pending?.kind !== "reactivate";
 
   const dialogs = (

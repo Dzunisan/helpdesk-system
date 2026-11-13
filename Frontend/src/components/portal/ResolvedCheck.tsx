@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { firstNameOf } from "./portalText";
+import { firstNameOf } from "@/lib/format";
 
 interface ResolvedCheckProps {
   ticket: Ticket;

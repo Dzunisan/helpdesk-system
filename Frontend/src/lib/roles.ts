@@ -18,7 +18,3 @@ export const profilePathFor = (role: Role | undefined): string =>
 export const fullName = (user: Pick<User, "name" | "surname"> | null | undefined): string =>
   user ? `${user.name ?? ""} ${user.surname ?? ""}`.trim() || "User" : "User";
 
-export const initials = (user: Pick<User, "name" | "surname"> | null | undefined): string => {
-  const letters = `${user?.name?.[0] ?? ""}${user?.surname?.[0] ?? ""}`.toUpperCase();
-  return letters || "U";
-};

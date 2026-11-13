@@ -11,7 +11,7 @@ import ErrorState from "@/components/app/ErrorState";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import NewRequestSteps from "@/components/request/NewRequestSteps";
 import CategoryIcon from "@/components/request/CategoryIcon";
-import { useApiData } from "@/components/portal/useApiData";
+import { useApiData } from "@/hooks/useApiData";
 import { promiseTime } from "@/components/portal/portalText";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -62,7 +62,7 @@ export default function RequestSubmitted() {
         title="Request submitted"
         description={
           <>
-            Your reference is <span className="font-mono font-medium text-foreground">{ref}</span>. We've emailed you a copy.
+            Your reference is <span className="font-mono font-medium text-foreground">{ref}</span>. Keep it to follow up; it's also under My requests.
           </>
         }
         actions={
@@ -109,11 +109,11 @@ export default function RequestSubmitted() {
           <div
             className={cn(
               "flex items-start gap-3 rounded-xl border px-4 py-4",
-              pending ? "border-violet-200 bg-violet-50/60" : "border-primary/15 bg-primary/5",
+              pending ? "border-pending-border bg-pending-muted/60" : "border-primary/15 bg-primary/5",
             )}
           >
             {pending ? (
-              <Hourglass className="mt-0.5 size-5 shrink-0 text-violet-700" aria-hidden />
+              <Hourglass className="mt-0.5 size-5 shrink-0 text-pending" aria-hidden />
             ) : (
               <Clock className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
             )}

@@ -8,7 +8,7 @@ import { toApiError } from "@/services/apiClient";
 import type { User } from "@/types/api";
 import UserAvatar from "@/components/app/UserAvatar";
 import EmptyState from "@/components/app/EmptyState";
-import { firstNameOf, fullNameOf } from "@/components/admin/users";
+import { givenNameOf, fullNameOf } from "@/components/admin/users";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -206,10 +206,10 @@ export default function AppointLeadDialog({
         {selected && department && (
           <p className="rounded-lg bg-muted/60 px-3.5 py-3 text-xs text-pretty text-muted-foreground">
             {selected.promote
-              ? `${firstNameOf(selected.user)}'s role changes from Agent to Department lead, and they lead ${name} from now on.`
+              ? `${givenNameOf(selected.user)}'s role changes from Agent to Department lead, and they lead ${name} from now on.`
               : selected.moves
-                ? `${firstNameOf(selected.user)}'s department changes from ${selected.moves} to ${name}, and they lead it from now on.`
-                : `${firstNameOf(selected.user)} leads ${name} from now on, and their department is set to ${name}.`}
+                ? `${givenNameOf(selected.user)}'s department changes from ${selected.moves} to ${name}, and they lead it from now on.`
+                : `${givenNameOf(selected.user)} leads ${name} from now on, and their department is set to ${name}.`}
             {department.lead_name && ` ${department.lead_name} stays a Department lead but no longer leads ${name}.`}
           </p>
         )}
@@ -227,7 +227,7 @@ export default function AppointLeadDialog({
           </Button>
           <Button className="h-10 sm:h-9" onClick={appoint} disabled={!selected || saving}>
             {saving && <Spinner data-icon="inline-start" />}
-            {selected ? `Appoint ${firstNameOf(selected.user)}` : "Appoint lead"}
+            {selected ? `Appoint ${givenNameOf(selected.user)}` : "Appoint lead"}
           </Button>
         </DialogFooter>
       </DialogContent>

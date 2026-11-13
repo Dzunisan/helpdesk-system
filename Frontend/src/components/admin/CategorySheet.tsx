@@ -358,14 +358,14 @@ function CategoryForm({ category, departments, defaultDepartmentId, onSaved, bus
           orientation="horizontal"
           className={cn(
             "rounded-lg border px-4 py-3 transition-colors",
-            needsApproval ? "border-violet-200 bg-violet-50" : "border-border",
+            needsApproval ? "border-pending-border bg-pending-muted" : "border-border",
           )}
         >
           <FieldContent>
-            <FieldLabel htmlFor="category-approval" className={cn(needsApproval && "text-violet-800")}>
+            <FieldLabel htmlFor="category-approval" className={cn(needsApproval && "text-pending-strong")}>
               Needs approval
             </FieldLabel>
-            <FieldDescription className={cn("text-xs", needsApproval && "text-violet-700")}>
+            <FieldDescription className={cn("text-xs", needsApproval && "text-pending")}>
               {needsApproval
                 ? active
                   ? "Starts as Pending approval, not in the queue. Approvals arrive in Sprint 2 (S6): keep it inactive until then."

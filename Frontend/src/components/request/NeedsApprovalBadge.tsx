@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  */
 export default function NeedsApprovalBadge({ className }: { className?: string }) {
   return (
-    <Badge variant="outline" className={cn("border-violet-200 bg-violet-50 text-violet-700", className)}>
+    <Badge variant="outline" className={cn("border-pending-border bg-pending-muted text-pending", className)}>
       Needs approval
     </Badge>
   );

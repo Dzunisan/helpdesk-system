@@ -52,7 +52,7 @@ export function ActiveBadge({
 /** A department without a lead: needs the System Admin's attention */
 export function NoLeadBadge({ className }: { className?: string }) {
   return (
-    <Badge variant="outline" className={cn("border-amber-200 bg-amber-50 text-amber-800", className)}>
+    <Badge variant="outline" className={cn("border-warning-border bg-warning-muted text-warning-strong", className)}>
       No lead
     </Badge>
   );
@@ -74,19 +74,13 @@ export function AccountStatusBadge({ status, className }: { status: AccountStatu
   return <ActiveBadge active={status === "active"} className={className} />;
 }
 
-/** A category whose requests start in Pending approval: the same violet as that status (p.31, p.63) */
-export function NeedsApprovalBadge({ className }: { className?: string }) {
-  return (
-    <Badge variant="outline" className={cn("border-violet-200 bg-violet-50 text-violet-700", className)}>
-      Needs approval
-    </Badge>
-  );
-}
+/** The violet "Needs approval" tag: one component for the request tiles and the admin pages */
+export { default as NeedsApprovalBadge } from "@/components/request/NeedsApprovalBadge";
 
 /** A Sprint 2 stretch feature shown greyed out on a Sprint 1 page: "Coming with S11" */
 export function ComingBadge({ feature, className }: { feature: string; className?: string }) {
   return (
-    <Badge variant="outline" className={cn("border-amber-200 bg-amber-50 text-amber-800", className)}>
+    <Badge variant="outline" className={cn("border-warning-border bg-warning-muted text-warning-strong", className)}>
       Coming with {feature}
     </Badge>
   );

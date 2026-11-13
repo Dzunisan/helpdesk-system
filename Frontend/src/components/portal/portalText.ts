@@ -1,7 +1,7 @@
 /**
  * Plain-words helpers for the employee portal (briefing p.37-41, p.45). Every time is SAST.
  */
-import { formatAge, formatAgo, formatSast, type DateInput } from "@/lib/format";
+import { firstNameOf, formatAge, formatAgo, formatSast, type DateInput } from "@/lib/format";
 import type { CategoryField, Ticket, TicketImpact, TicketStatus } from "@/types/api";
 
 const DAY_MS = 86_400_000;
@@ -12,7 +12,7 @@ const toMs = (value: DateInput): number | null => {
   return Number.isNaN(ms) ? null : ms;
 };
 
-/** "18:14 today", "11:30 tomorrow", otherwise "Fri, 20 Nov, 09:00" (SAST) */
+/** "18:14 today", "11:30 tomorrow", otherwise "Fri 20 Nov, 09:00" (SAST) */
 export function promiseTime(value: DateInput, now = Date.now()): string {
   const ms = toMs(value);
   if (ms === null) return "—";
@@ -22,20 +22,6 @@ export function promiseTime(value: DateInput, now = Date.now()): string {
   return formatSast(ms);
 }
 
-/** "Thabo" from "Thabo Nkosi" */
-export const firstNameOf = (name: string | null | undefined, fallback = "The team"): string =>
-  name?.trim().split(/\s+/)[0] || fallback;
-
-/** "4 h", "30 min", "1 day", "3 days" for SLA targets */
-export function durationWords(minutes: number): string {
-  if (minutes < 60) return `${minutes} min`;
-  if (minutes < 60 * 24 || minutes % (60 * 24) !== 0) {
-    const hours = Math.round((minutes / 60) * 10) / 10;
-    return `${hours} h`;
-  }
-  const days = minutes / (60 * 24);
-  return days === 1 ? "1 day" : `${days} days`;
-}
 
 /** The clock the employee is waiting on right now: first reply until someone replies, then the fix */
 export function nextDueAt(ticket: Ticket): string | null {
@@ -53,7 +39,7 @@ export function nextPromise(ticket: Ticket, now = Date.now()): { text: string; t
       return { text: `Waiting for approval · ${formatAge(ticket.created_at, now)}`, tone: "muted" };
     case "Waiting on employee":
       return {
-        text: `${firstNameOf(ticket.assignee_name)} asked a question · ${formatAgo(ticket.updated_at)}`,
+        text: `${firstNameOf(ticket.assignee_name, "The team")} asked a question · ${formatAgo(ticket.updated_at)}`,
         tone: "waiting",
       };
     case "Resolved":

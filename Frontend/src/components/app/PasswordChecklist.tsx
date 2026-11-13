@@ -17,7 +17,7 @@ export default function PasswordChecklist({ password, confirm, className }: Pass
           key={rule.id}
           className={cn(
             "flex items-center gap-1.5",
-            rule.met ? "text-emerald-700" : "text-muted-foreground",
+            rule.met ? "text-success" : "text-muted-foreground",
           )}
         >
           {rule.met ? (

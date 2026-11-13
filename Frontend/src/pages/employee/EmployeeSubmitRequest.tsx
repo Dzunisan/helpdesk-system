@@ -9,7 +9,7 @@ import EmptyState from "@/components/app/EmptyState";
 import ErrorState from "@/components/app/ErrorState";
 import CategoryTiles, { CategoryTilesSkeleton } from "@/components/request/CategoryTiles";
 import NewRequestSteps from "@/components/request/NewRequestSteps";
-import { useApiData } from "@/components/portal/useApiData";
+import { useApiData } from "@/hooks/useApiData";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {

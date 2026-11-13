@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Category } from "@/types/api";
-import { durationWords } from "@/components/portal/portalText";
+import { formatDurationWords } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 interface WhatHappensNextProps {
@@ -16,7 +16,7 @@ interface WhatHappensNextProps {
  */
 export default function WhatHappensNext({ category, firstReplyMins, className }: WhatHappensNextProps) {
   const team = category.department_name;
-  const within = firstReplyMins ? ` First reply within ${durationWords(firstReplyMins)}.` : "";
+  const within = firstReplyMins ? ` First reply within ${formatDurationWords(firstReplyMins)}.` : "";
   const steps = category.needs_approval
     ? [
         {

@@ -18,12 +18,14 @@ export interface ApiData<T> {
   refreshing: boolean;
   /** Load again without blanking the page (after a reply, a status change, "Try again") */
   reload: () => void;
-  /** Replace the data with a fresh copy the server just returned (e.g. the ticket from a transition) */
-  setData: (data: T) => void;
+  /** Replace the data with a fresh copy the server just returned (e.g. the ticket from a transition),
+   *  or update it from the current value */
+  setData: (data: T | ((current: T | null) => T | null)) => void;
 }
 
 /**
- * Loads one thing from the Sprint 1 API clients and keeps it while it reloads.
+ * The one data-loading hook: loads one thing from the Sprint 1 API clients (src/services) and keeps
+ * it on screen while it reloads. Errors come back as ApiError.
  * `key` identifies what is loaded (e.g. the ticket id): a new key shows the loading state again.
  * @example const ticket = useApiData(() => getTicket(id), `ticket-${id}`);
  */
@@ -58,7 +60,12 @@ export function useApiData<T>(load: () => Promise<T>, key: string): ApiData<T> {
 
   const reload = useCallback(() => setVersion((v) => v + 1), []);
   const setData = useCallback(
-    (data: T) => setResult((current) => (current ? { ...current, data, error: null } : current)),
+    (next: T | ((current: T | null) => T | null)) =>
+      setResult((current) => {
+        if (!current) return current;
+        const data = typeof next === "function" ? (next as (c: T | null) => T | null)(current.data) : next;
+        return { ...current, data, error: null };
+      }),
     [],
   );
 

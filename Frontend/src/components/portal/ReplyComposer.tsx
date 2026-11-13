@@ -50,12 +50,12 @@ export default function ReplyComposer({ replyTo, waiting, focusOnMount, onSend, 
       aria-label="Reply"
       className={cn(
         "scroll-mt-28 overflow-hidden rounded-xl border bg-background transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30",
-        waiting ? "border-amber-300" : "border-input",
+        waiting ? "border-warning-border" : "border-input",
         className,
       )}
     >
       {waiting && (
-        <p className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-800">
+        <p className="border-b border-warning-border bg-warning-muted px-4 py-2 text-xs font-medium text-warning-strong">
           {replyTo ?? "The team"} is waiting for your answer. Replying moves the request back to them.
         </p>
       )}

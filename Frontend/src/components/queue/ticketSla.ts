@@ -1,4 +1,5 @@
 import type { Ticket } from "@/types/api";
+import { formatDuration } from "@/lib/format";
 
 export interface SlaClock {
   /** Which promise the chip is about */
@@ -60,15 +61,8 @@ export function nextDueMs(ticket: ClockTicket): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-/** "30m", "1h", "4h 30m", "3d": an SLA target length */
-export function formatTarget(minutes: number): string {
-  const m = Math.max(0, Math.round(minutes));
-  if (m < 60) return `${m}m`;
-  if (m < 24 * 60) return m % 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m / 60}h`;
-  const days = Math.floor(m / (24 * 60));
-  const hours = Math.floor((m % (24 * 60)) / 60);
-  return hours ? `${days}d ${hours}h` : `${days}d`;
-}
+/** "30m", "1h", "4h 30m", "3d": an SLA target length (lib/format formatDuration) */
+export const formatTarget = formatDuration;
 
 /** Minutes between two timestamps */
 export const minutesBetween = (from: string | number | Date, to: string | number | Date) =>

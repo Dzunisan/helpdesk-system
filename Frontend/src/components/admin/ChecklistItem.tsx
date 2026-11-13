@@ -21,7 +21,7 @@ export default function ChecklistItem({ state, icon, children, action }: Checkli
       <span
         className={cn(
           "-mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full",
-          state === "done" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600",
+          state === "done" ? "bg-success-muted text-success" : "bg-warning-muted text-warning-solid",
         )}
       >
         <Icon className="size-3.5" aria-hidden />
@@ -51,7 +51,7 @@ export function CapabilityItem({ can, children }: { can: boolean; children: Reac
       <span
         className={cn(
           "-mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full",
-          can ? "bg-emerald-50 text-emerald-600" : "bg-muted text-muted-foreground",
+          can ? "bg-success-muted text-success" : "bg-muted text-muted-foreground",
         )}
       >
         {can ? <Check className="size-3.5" aria-label="Can" /> : <Minus className="size-3.5" aria-label="Can't" />}

@@ -9,14 +9,14 @@ const TIME_ZONE = "Africa/Johannesburg";
 export type DateInput = string | number | Date | null | undefined;
 
 /**
- * - `dateTime` "Fri, 13 Nov, 09:02" (default; lists, timelines)
- * - `day`      "Fri, 13 Nov"        (submitted / created columns)
+ * - `dateTime` "Fri 13 Nov, 09:02" (default; lists, timelines)
+ * - `day`      "Fri 13 Nov"         (submitted / created columns)
  * - `date`     "13 Nov 2026"        (profiles, "member since")
  * - `time`     "09:02"
- * - `full`     "Fri, 13 Nov 2026, 09:02" (detail panels, tooltips)
+ * - `full`     "Fri 13 Nov 2026, 09:02" (detail panels, tooltips)
  * - `long`     "Friday, 13 November"     (page subtitles, greetings)
- * - `smart`    "Today, 09:02" / "Yesterday, 16:40" / "Fri, 13 Nov, 09:02" /
- *              "Fri, 13 Nov 2025, 09:02" (older than this year)
+ * - `smart`    "Today, 09:02" / "Yesterday, 16:40" / "Fri 13 Nov, 09:02" /
+ *              "Fri 13 Nov 2025, 09:02" (older than this year)
  */
 export type SastStyle = "dateTime" | "day" | "date" | "time" | "full" | "long" | "smart";
 
@@ -81,15 +81,15 @@ const render = (p: SastParts, style: Exclude<SastStyle, "smart">): string => {
   const time = `${p.hour}:${p.minute}`;
   switch (style) {
     case "dateTime":
-      return `${p.weekday}, ${p.day} ${p.month}, ${time}`;
+      return `${p.weekday} ${p.day} ${p.month}, ${time}`;
     case "day":
-      return `${p.weekday}, ${p.day} ${p.month}`;
+      return `${p.weekday} ${p.day} ${p.month}`;
     case "date":
       return `${p.day} ${p.month} ${p.year}`;
     case "time":
       return time;
     case "full":
-      return `${p.weekday}, ${p.day} ${p.month} ${p.year}, ${time}`;
+      return `${p.weekday} ${p.day} ${p.month} ${p.year}, ${time}`;
     case "long":
       return `${p.weekdayLong}, ${p.day} ${p.monthLong}`;
   }
@@ -97,8 +97,8 @@ const render = (p: SastParts, style: Exclude<SastStyle, "smart">): string => {
 
 /**
  * Format a date in SAST. Returns `fallback` ("—") for missing or invalid dates.
- * @example formatSast(ticket.created_at)          // "Fri, 13 Nov, 09:02"
- * @example formatSast(ticket.created_at, "day")   // "Fri, 13 Nov"
+ * @example formatSast(ticket.created_at)          // "Tue 10 Nov, 09:02" (the house format, p.13/p.31)
+ * @example formatSast(ticket.created_at, "day")   // "Tue 10 Nov"
  */
 export function formatSast(value: DateInput, style: SastStyle = "dateTime", fallback = "—"): string {
   const date = toDate(value);
@@ -150,6 +150,37 @@ export function formatAgo(value: DateInput, fallback = "—"): string {
   if (days < 7) return `${days}d ago`;
   return formatSast(date, "date", fallback);
 }
+
+/**
+ * Compact duration for chips and targets, a zero remainder dropped: "25m", "1h", "1h 54m", "3d", "2d 3h".
+ * @example formatDuration(240) // "4h"
+ */
+export function formatDuration(minutes: number): string {
+  const m = Math.max(0, Math.round(minutes));
+  if (m < 60) return `${m}m`;
+  if (m < 24 * 60) return m % 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m / 60}h`;
+  const days = Math.floor(m / (24 * 60));
+  const hours = Math.floor((m % (24 * 60)) / 60);
+  return hours ? `${days}d ${hours}h` : `${days}d`;
+}
+
+/**
+ * A duration in words, for sentences: "30 min", "1 hour", "4 hours", "1 h 30 min", "1 day", "3 days".
+ * @example formatDurationWords(1440) // "1 day"
+ */
+export function formatDurationWords(minutes: number): string {
+  const m = Math.max(0, Math.round(minutes));
+  if (m < 60) return `${m} min`;
+  if (m >= 1440 && m % 1440 === 0) return m === 1440 ? "1 day" : `${m / 1440} days`;
+  const hours = Math.floor(m / 60);
+  const rest = m % 60;
+  if (rest === 0) return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+  return `${hours} h ${rest} min`;
+}
+
+/** First name only: "Thabo Nkosi" -> "Thabo"; `fallback` when there is no name */
+export const firstNameOf = (name: string | null | undefined, fallback = ""): string =>
+  name?.trim().split(/\s+/)[0] || fallback;
 
 /** "HD-1048": the one way a ticket number is written */
 export const formatTicketRef = (id: number | string): string => `HD-${id}`;
