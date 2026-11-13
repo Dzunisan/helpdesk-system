@@ -6,10 +6,14 @@
 import { api, call } from "./apiClient";
 import type {
   AddCommentRequest,
+  Assignee,
+  AssigneeListResponse,
   AssignTicketRequest,
   ChangePriorityRequest,
   CommentResponse,
   CreateTicketRequest,
+  FeedbackResponse,
+  SubmitFeedbackRequest,
   Ticket,
   TicketActionsResponse,
   TicketListParams,
@@ -18,6 +22,7 @@ import type {
   TimelineResponse,
   TransitionRequest,
   Comment,
+  TicketFeedback,
 } from "@/types/api";
 
 /** Query params for GET /api/tickets: status lists go comma-separated */
@@ -45,6 +50,10 @@ export const createTicket = async (body: CreateTicketRequest): Promise<Ticket> =
 /** POST /api/tickets/:id/claim (S2): owner = me, status Open. 409 when someone else got it first. */
 export const claimTicket = async (id: number): Promise<Ticket> =>
   (await call(() => api.post<TicketResponse>(`/tickets/${id}/claim`), "Couldn't claim this ticket.")).ticket;
+
+/** GET /api/tickets/agents (S2): the people the lead may assign to; Agents and Leads only */
+export const listAssignees = async (): Promise<Assignee[]> =>
+  (await call(() => api.get<AssigneeListResponse>("/tickets/agents"), "Couldn't load the team.")).agents;
 
 /** PATCH /api/tickets/:id/assign (S2): the lead assigns or reassigns */
 export const assignTicket = async (id: number, body: AssignTicketRequest): Promise<Ticket> =>
@@ -82,3 +91,7 @@ export const editComment = async (commentId: number, body: string): Promise<Comm
 /** DELETE /api/comments/:id (S4): soft delete, the timeline keeps a "Message removed" marker */
 export const deleteComment = async (commentId: number): Promise<Comment> =>
   (await call(() => api.delete<CommentResponse>(`/comments/${commentId}`), "Couldn't delete the message.")).comment;
+
+/** POST /api/tickets/:id/feedback: the requester rates a Resolved or Closed ticket once */
+export const submitFeedback = async (ticketId: number, body: SubmitFeedbackRequest): Promise<TicketFeedback> =>
+  (await call(() => api.post<FeedbackResponse>(`/tickets/${ticketId}/feedback`, body), "Couldn't send your rating.")).feedback;

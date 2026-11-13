@@ -2,10 +2,10 @@
  * Types for the older ticket client (services/ticketService.ts). The vocabulary and the ticket
  * shape come from types/api.ts, the Sprint 1 contract, so both clients agree.
  */
-import type { Ticket as ApiTicket, TicketPriority, TicketStatus } from "./api";
+import type { Ticket as ApiTicket, TicketFeedback, TicketPriority, TicketStatus } from "./api";
 import { TICKET_PRIORITIES, TICKET_STATUSES } from "./api";
 
-export type { TicketPriority, TicketStatus };
+export type { TicketFeedback, TicketPriority, TicketStatus };
 export const VALID_PRIORITIES: TicketPriority[] = TICKET_PRIORITIES;
 export const VALID_STATUSES: TicketStatus[] = TICKET_STATUSES;
 
@@ -24,17 +24,6 @@ export interface TicketComment {
   author_role?: string;
 }
 
-export interface TicketFeedback {
-  feedback_id: number;
-  ticket_id: number;
-  user_id: string;
-  rating: number;
-  comment?: string | null;
-  created_at: string;
-  updated_at?: string;
-  user_name?: string;
-  user_email?: string;
-}
 
 export interface AgentUser {
   user_id: string;
@@ -48,7 +37,6 @@ export interface AgentUser {
 
 export interface Ticket extends ApiTicket {
   comments?: TicketComment[];
-  feedback?: TicketFeedback | null;
 }
 
 export interface CreateTicketPayload {

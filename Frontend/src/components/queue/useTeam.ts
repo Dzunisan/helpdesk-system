@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchAgents } from "@/services/ticketService";
-import { listTickets } from "@/services/tickets";
-import type { AgentUser } from "@/types/ticket.types";
+import { listAssignees, listTickets } from "@/services/tickets";
 
 export interface TeamMember {
   user_id: string;
@@ -25,16 +23,16 @@ export function useTeam(enabled = true) {
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    Promise.all([fetchAgents(), listTickets({ status: ["Open", "Waiting on employee"], limit: 100 })])
+    Promise.all([listAssignees(), listTickets({ status: ["Open", "Waiting on employee"], limit: 100 })])
       .then(([agents, work]) => {
         if (cancelled) return;
         const load: Record<string, number> = {};
         for (const t of work.tickets) if (t.assignee_id) load[t.assignee_id] = (load[t.assignee_id] ?? 0) + 1;
         setMembers(
           agents
-            .map((a: AgentUser) => ({
+            .map((a) => ({
               user_id: String(a.user_id),
-              name: `${a.name} ${a.surname ?? ""}`.trim(),
+              name: `${a.name} ${a.surname}`.trim(),
               role: a.role,
               open: load[String(a.user_id)] ?? 0,
             }))

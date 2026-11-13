@@ -92,6 +92,30 @@ export interface Ticket {
   resolution_due_at: string | null;
   first_response_at: string | null;
   sla_state: SlaState;
+  /** GET /api/tickets/:id only: the requester's rating once the ticket is closed (null until rated) */
+  feedback?: TicketFeedback | null;
+}
+
+/** The requester's 1-5 rating of a finished ticket (POST /api/tickets/:id/feedback; CSAT reports are S10) */
+export interface TicketFeedback {
+  feedback_id: number;
+  ticket_id: number;
+  user_id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+  updated_at: string;
+  user_name: string | null;
+}
+
+/** POST /api/tickets/:id/feedback */
+export interface SubmitFeedbackRequest {
+  rating: number;
+  comment?: string;
+}
+
+export interface FeedbackResponse {
+  feedback: TicketFeedback;
 }
 
 export interface Pagination {
@@ -147,6 +171,21 @@ export interface AssignTicketRequest {
   assignee_id: string;
   /** Why it moved, shown in the timeline ("reassigned: Thabo is on leave") */
   note?: string;
+}
+
+/** GET /api/tickets/agents: who a ticket can be assigned to (active Agents and Leads of the caller's department) */
+export interface Assignee {
+  user_id: string;
+  name: string;
+  surname: string;
+  email: string;
+  role: Role;
+  department_id: number | null;
+  department_name: string | null;
+}
+
+export interface AssigneeListResponse {
+  agents: Assignee[];
 }
 
 /** POST /api/tickets/:id/transition */

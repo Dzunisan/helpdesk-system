@@ -9,6 +9,7 @@ import {
   getTicket,
   getTicketActions,
   getTimeline,
+  submitFeedback,
   transitionTicket,
 } from "@/services/tickets";
 import { listCategories } from "@/services/categories";
@@ -31,6 +32,7 @@ import PublicTimeline from "@/components/portal/PublicTimeline";
 import ReplyComposer from "@/components/portal/ReplyComposer";
 import ResolvedCheck from "@/components/portal/ResolvedCheck";
 import CancelRequestButton from "@/components/portal/CancelRequestButton";
+import { FeedbackForm, FeedbackSummary } from "@/components/tickets/TicketFeedback";
 import { IMPACT_LABEL, firstNameOf, nextDueAt } from "@/components/portal/portalText";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -181,6 +183,19 @@ export default function RequestDetail() {
     }
   };
 
+  /** "How did Thabo do?" once the request is closed: one rating per request */
+  const rate = async (rating: number, comment: string) => {
+    try {
+      const feedback = await submitFeedback(ticketId, { rating, comment: comment || undefined });
+      if (ticket) ticketQ.setData({ ...ticket, feedback });
+      toast.success("Thanks for rating this request");
+      return true;
+    } catch (error) {
+      fail("Couldn't send your rating", error);
+      return false;
+    }
+  };
+
   const remove = async (commentId: number) => {
     try {
       await deleteComment(commentId);
@@ -262,6 +277,8 @@ export default function RequestDetail() {
             />
           )}
 
+          {status === "Closed" && !ticket.feedback && <FeedbackForm ticket={ticket} onSubmit={rate} />}
+
           <section aria-label="Timeline" className="flex flex-col gap-3">
             {timeline}
           </section>
@@ -295,6 +312,8 @@ export default function RequestDetail() {
           <SectionCard title="Details">
             <KeyValueList items={detailItems(ticket, actionsQ.data?.reopen_until ?? null)} />
           </SectionCard>
+
+          {ticket.feedback && <FeedbackSummary feedback={ticket.feedback} isMine />}
 
           {actionsQ.error && !actionsQ.data ? (
             <ErrorState

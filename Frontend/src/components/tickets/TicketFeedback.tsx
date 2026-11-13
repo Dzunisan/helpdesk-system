@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Star } from "lucide-react";
-import type { Ticket, TicketFeedback } from "@/types/ticket.types";
+import type { Ticket, TicketFeedback } from "@/types/api";
 import { formatSast } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import SectionCard from "@/components/app/SectionCard";
@@ -27,7 +27,7 @@ function Stars({ value, className }: { value: number; className?: string }) {
 }
 
 interface FeedbackFormProps {
-  ticket: Ticket;
+  ticket: Pick<Ticket, "assignee_name" | "department_name">;
   onSubmit: (rating: number, comment: string) => Promise<boolean>;
 }
 
