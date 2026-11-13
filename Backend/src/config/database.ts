@@ -9,9 +9,10 @@ export const pool = new Pool({
     database: process.env.DB_DATABASE,
     password: process.env.DB_PASSWORD,
     port: parseInt(process.env.DB_PORT || "26131"),
-      ssl: process.env.DB_HOST === 'localhost' ? false : {
-         rejectUnauthorized: false
-      }
+    // A local Postgres (localhost or 127.0.0.1, as in the db scripts) has no SSL
+    ssl: ['localhost', '127.0.0.1'].includes(process.env.DB_HOST || '') ? false : {
+       rejectUnauthorized: false
+    }
 })
 
 

@@ -11,7 +11,8 @@ const handleError = (res: Response, error: any) => {
     return res.status(400).json({ message: "The selected lead does not exist." });
   }
   console.error("Department error:", error);
-  return res.status(500).json({ message: error.message, detail: error.code });
+  // The database error text stays in the server log; the browser only gets a generic message
+  return res.status(500).json({ message: "An unexpected error occurred" });
 };
 
 export const create = async (req: Request, res: Response) => {
