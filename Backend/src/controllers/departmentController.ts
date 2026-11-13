@@ -4,19 +4,51 @@ import * as departmentService from "../services/departmentService";
 const STATUSES = ["active", "inactive"];
 
 const handleError = (res: Response, error: any) => {
+  if (error.code === "23505" && error.constraint === "department_lead_unique") {
+    return res.status(409).json({ message: "That person already leads another department." });
+  }
   if (error.code === "23505") {
     return res.status(409).json({ message: "A department with that name already exists." });
   }
   if (error.code === "23503") {
     return res.status(400).json({ message: "The selected lead does not exist." });
   }
+  // users_department_required (S1): Employees, Agents and Leads always belong to a department
+  if (error.code === "23514" && error.constraint === "users_department_required") {
+    return res.status(409).json({
+      message: "Employees, agents and leads must belong to a department. Move them to another department instead.",
+    });
+  }
   console.error("Department error:", error);
   // The database error text stays in the server log; the browser only gets a generic message
   return res.status(500).json({ message: "An unexpected error occurred" });
 };
 
+/** The lead id from the body: `lead_id` (contract) or `leadId` (older screens) */
+const leadIdFrom = (body: any) => (body?.lead_id !== undefined ? body.lead_id : body?.leadId);
+
+/**
+ * Checks a lead named on department create/update against the S1 rule (an active Department Lead
+ * who leads no other department). Sends 404/409 itself and returns false when it did.
+ * departmentId is null for a department that doesn't exist yet.
+ */
+const checkLead = async (res: Response, leadId: string, departmentId: number | null): Promise<boolean> => {
+  const user = await departmentService.getUserForLead(leadId);
+  if (!user) {
+    res.status(404).json({ message: "User not found." });
+    return false;
+  }
+  const problem = departmentService.leadProblem(user, departmentId ?? -1);
+  if (problem) {
+    res.status(409).json({ message: problem });
+    return false;
+  }
+  return true;
+};
+
 export const create = async (req: Request, res: Response) => {
-  const { name, description, status, leadId } = req.body;
+  const { name, description, status } = req.body;
+  const leadId = leadIdFrom(req.body);
   const errors: string[] = [];
 
   if (!name || typeof name !== "string" || name.trim().length === 0) {
@@ -39,12 +71,10 @@ export const create = async (req: Request, res: Response) => {
   }
 
    try {
-    const department = await departmentService.createDepartment(
-      name.trim(),
-      description || null,
-      status || "active",
-      leadId !== undefined && leadId !== null && String(leadId).trim() !== "" ? String(leadId).trim() : null
-    );
+    const lead = leadId !== undefined && leadId !== null && String(leadId).trim() !== "" ? String(leadId).trim() : null;
+    if (lead && !(await checkLead(res, lead, null))) return;
+    const created = await departmentService.createDepartment(name.trim(), description || null, status || "active", lead);
+    const department = await departmentService.getDepartmentById(created.department_id);
     return res.status(201).json({ department });
   } catch (error) {
     return handleError(res, error);
@@ -97,7 +127,8 @@ export const update = async (req: Request, res: Response) => {
     return res.status(400).json({ message: "Invalid department ID." });
   }
 
-  const { name, description, status, leadId } = req.body;
+  const { name, description, status } = req.body;
+  const leadId = leadIdFrom(req.body);
   const errors: string[] = [];
 
   if (name !== undefined) {
@@ -124,16 +155,24 @@ export const update = async (req: Request, res: Response) => {
   }
 
   try {
-    const department = await departmentService.updateDepartment(
+    const lead = leadId !== undefined ? (leadId && String(leadId).trim() !== "" ? String(leadId).trim() : null) : undefined;
+    if (lead) {
+      if (!(await departmentService.getDepartmentById(Number(idParam)))) {
+        return res.status(404).json({ message: "Department not found." });
+      }
+      if (!(await checkLead(res, lead, Number(idParam)))) return;
+    }
+    const updated = await departmentService.updateDepartment(
       Number(idParam),
       name !== undefined ? name.trim() : undefined,
       description !== undefined ? (description !== null ? String(description).trim() : null) : undefined,
       status !== undefined ? status : undefined,
-      leadId !== undefined ? (leadId && String(leadId).trim() !== "" ? String(leadId).trim() : null) : undefined
+      lead
     );
-    if (!department) {
+    if (!updated) {
       return res.status(404).json({ message: "Department not found." });
     }
+    const department = await departmentService.getDepartmentById(Number(idParam));
     return res.status(200).json({ department });
   } catch (error) {
     return handleError(res, error);
@@ -159,40 +198,34 @@ export const remove = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * PUT /api/departments/:id/lead { lead_id } (leadId still accepted) -> { department }
+ * S1 (page 10, 62): only an active Department Lead who leads no other department (409 otherwise).
+ * Also sets the lead's users.department_id to this department, in the same transaction.
+ */
 export const assignLead = async (req: Request, res: Response) => {
   const idParam = req.params.id as string;
 
-  if (!/^\d+$/.test(idParam)) {
+  if (!/^\d+$/.test(idParam) || Number(idParam) > 2147483647) {
     return res.status(400).json({ message: "Invalid department ID." });
   }
 
-  const { leadId } = req.body;
-
-  if (leadId === undefined || leadId === null || !/^\d+$/.test(String(leadId))) {
-    return res.status(400).json({ message: "A valid leadId (user ID) is required." });
+  const leadId = leadIdFrom(req.body);
+  if (leadId === undefined || leadId === null || !/^\d{1,18}$/.test(String(leadId).trim())) {
+    return res.status(400).json({ message: "Choose who should lead this department (lead_id)." });
   }
+  const lead = String(leadId).trim();
 
   try {
-    const department = await departmentService.getDepartmentById(Number(idParam));
-    if (!department) {
+    const existing = await departmentService.getDepartmentById(Number(idParam));
+    if (!existing) {
       return res.status(404).json({ message: "Department not found." });
     }
+    if (!(await checkLead(res, lead, Number(idParam)))) return;
 
-    const user = await departmentService.getUserForLead(String(leadId));
-    if (!user) {
-      return res.status(404).json({ message: "User not found." });
-    }
-    if (user.active !== true) {
-      return res.status(400).json({ message: "The selected user is not active." });
-    }
-  
-    const updated = await departmentService.assignDepartmentLead(
-      Number(idParam),
-      String(leadId)
-    );
-
-    return res.status(200).json({ message: "Department lead assigned.", updated});
-
+    await departmentService.assignDepartmentLead(Number(idParam), lead);
+    const department = await departmentService.getDepartmentById(Number(idParam));
+    return res.status(200).json({ message: "Department lead appointed.", department });
   } catch (error) {
     return handleError(res, error);
   }
