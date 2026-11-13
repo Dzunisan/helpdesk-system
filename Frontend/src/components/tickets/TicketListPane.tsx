@@ -69,9 +69,9 @@ function PaneRow({ ticket, to, state, selected }: { ticket: Ticket; to: string; 
   const meta = [ticket.requester_name, ticket.category_name].filter(Boolean).join(" · ");
   return (
     <ListRow grid="" to={to} state={state} selected={selected} className="gap-1.5 px-4 py-3.5" aria-label={`${ticket.title}`}>
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-2">
-          <TicketRef id={ticket.ticket_id} />
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+        <span className="flex shrink-0 items-center gap-2">
+          <TicketRef id={ticket.ticket_id} className="whitespace-nowrap" />
           <PriorityBadge priority={ticket.ticket_priority} className="h-5 px-1.5 text-[11px]" />
         </span>
         {clock ? <SlaChip due={clock.due} met={clock.met} start={clock.start} className="h-5 text-[11px]" /> : <StatusBadge status={ticket.ticket_status} />}

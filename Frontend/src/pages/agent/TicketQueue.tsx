@@ -43,6 +43,9 @@ export default function TicketQueue() {
   return <AgentQueue key={view} view={view} />;
 }
 
+/** "Waiting for an owner…" -> "waiting for an owner…" after "7 tickets ·" (sentence case) */
+const lowerFirst = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+
 const claimable = (t: Ticket) => t.ticket_status === "New" && !t.assignee_id;
 
 function AgentQueue({ view: key }: { view: AgentQueueView }) {
@@ -74,7 +77,7 @@ function AgentQueue({ view: key }: { view: AgentQueueView }) {
   const description =
     loading || error || outOf === 0
       ? withTeam(view.description, team)
-      : `${plural(outOf, "ticket")} · ${withTeam(view.description, team)}`;
+      : `${plural(outOf, "ticket")} · ${lowerFirst(withTeam(view.description, team))}`;
   const EmptyIcon = EMPTY_ICON[key];
 
   return (

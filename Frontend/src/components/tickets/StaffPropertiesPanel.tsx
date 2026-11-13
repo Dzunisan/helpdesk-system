@@ -99,6 +99,7 @@ export default function StaffPropertiesPanel({
                 onAssign={onAssign}
                 assigning={pending === "assign"}
                 disabled={disabled}
+                fullName
                 className="-mr-2 h-10 border-transparent px-2 hover:bg-muted sm:h-7 xl:w-auto"
               />
             ) : ticket.assignee_name ? (

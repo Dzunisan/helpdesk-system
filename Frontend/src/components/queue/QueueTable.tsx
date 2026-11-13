@@ -44,7 +44,7 @@ interface QueueTableProps {
   viewId: string;
   /** Finished work: "Updated" instead of "Age" */
   finished?: boolean;
-  /** Show the status under the title (views that mix statuses) */
+  /** Show the status next to the requester (views that mix statuses); plain Open needs no badge */
   showStatus?: boolean;
   /** Last column: Claim button (agent) or Assign menu (lead). Leave out for a chevron. */
   trailing?: (ticket: Ticket) => ReactNode;
@@ -196,7 +196,7 @@ function QueueRow({
             {ticket.requester_name || "Unknown requester"}
             {category && <span className="hidden xl:inline 2xl:hidden"> · {category}</span>}
           </span>
-          {showStatus && <StatusBadge status={ticket.ticket_status} className="shrink-0" />}
+          {showStatus && ticket.ticket_status !== "Open" && <StatusBadge status={ticket.ticket_status} className="shrink-0" />}
         </span>
       </div>
 
@@ -221,7 +221,7 @@ function QueueRow({
           </TooltipTrigger>
           <TooltipContent>{whenTitle}</TooltipContent>
         </Tooltip>
-        <div className="ml-auto flex min-w-0 shrink-0 justify-end xl:ml-0">
+        <div className={cn("ml-auto flex min-w-0 shrink-0 justify-end xl:ml-0", lead && "xl:justify-start")}>
           {trailing ?? (
             <ChevronRight
               className="hidden size-4 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 xl:block"

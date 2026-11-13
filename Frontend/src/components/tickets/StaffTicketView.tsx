@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { ChevronLeft, Lock, SearchX } from "lucide-react";
 import { toast } from "sonner";
@@ -113,7 +113,14 @@ export default function StaffTicketView() {
 
   const { state, reload, retry, setTicket } = useStaffTicket(id);
   const ticket = state.status === "ready" ? state.ticket : null;
-  const view = viewById((location.state as TicketLinkState | null)?.view) ?? defaultView(lead, ticket, userId);
+  // The left pane shows the list the link came from; without one, the list the ticket was in
+  // when it opened, kept while the agent works on it (claiming must not swap the list away)
+  const linkedView = viewById((location.state as TicketLinkState | null)?.view);
+  const [opened, setOpened] = useState<{ forId: number; view: TicketView } | null>(null);
+  if (!linkedView && ticket && opened?.forId !== ticket.ticket_id) {
+    setOpened({ forId: ticket.ticket_id, view: defaultView(lead, ticket, userId) });
+  }
+  const view = linkedView ?? (opened && opened.forId === ticket?.ticket_id ? opened.view : defaultView(lead, ticket, userId));
   // The sidebar lights up the list this ticket came from
   useNavHighlight(lead ? "/department-lead/all-tickets" : view.path);
 
@@ -473,7 +480,7 @@ export default function StaffTicketView() {
               <h1 className="text-lg leading-snug font-semibold tracking-tight text-balance text-foreground">{ticket.title}</h1>
               {actionBar}
             </header>
-            <ScrollArea>{timelineNode}</ScrollArea>
+            <ScrollArea resetKey={`${ticket.ticket_id}:${timeline ? "ready" : "loading"}`}>{timelineNode}</ScrollArea>
             {composer && <div className="shrink-0 border-t border-border bg-background px-6 py-4">{composer}</div>}
           </div>
         </ResizablePanel>
@@ -489,8 +496,18 @@ export default function StaffTicketView() {
   );
 }
 
-function ScrollArea({ children }: { children: ReactNode }) {
-  return <div className="min-h-0 flex-1 overflow-y-auto bg-muted/20 px-6 py-6">{children}</div>;
+/** The timeline's scroller: opens at the latest message, just above the composer */
+function ScrollArea({ resetKey, children }: { resetKey: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [resetKey]);
+  return (
+    <div ref={ref} className="min-h-0 flex-1 overflow-y-auto bg-muted/20 px-6 py-6">
+      {children}
+    </div>
+  );
 }
 
 /** Loading state shaped like the three panes */

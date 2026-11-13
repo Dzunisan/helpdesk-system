@@ -30,6 +30,8 @@ interface AssignMenuProps {
   /** Replace the default trigger (e.g. "Reassign" in the ticket's action bar) */
   trigger?: ReactNode;
   align?: "start" | "end";
+  /** Never shorten the owner's name in the trigger (roomy places like the properties panel) */
+  fullName?: boolean;
   className?: string;
 }
 
@@ -49,6 +51,7 @@ export default function AssignMenu({
   disabled,
   trigger,
   align = "end",
+  fullName,
   className,
 }: AssignMenuProps) {
   const ref = formatTicketRef(ticket.ticket_id);
@@ -77,7 +80,7 @@ export default function AssignMenu({
               ) : (
                 <UserRoundPlus className="size-3.5" aria-hidden />
               )}
-              <span className="truncate">{assigning ? "Assigning" : owner ? ticket.assignee_name || "Assigned" : "Unassigned"}</span>
+              <span className={fullName ? "whitespace-nowrap" : "truncate"}>{assigning ? "Assigning" : owner ? ticket.assignee_name || "Assigned" : "Unassigned"}</span>
             </span>
             <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           </Button>

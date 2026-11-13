@@ -136,7 +136,7 @@ export default function AgentDashboard() {
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-5 lg:items-start">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5 lg:items-start">
         <SectionCard
           className="lg:col-span-3"
           title="My tickets, due soonest"
@@ -171,7 +171,7 @@ export default function AgentDashboard() {
           )}
         </SectionCard>
 
-        <div className="flex flex-col gap-6 lg:col-span-2">
+        <div className="flex min-w-0 flex-col gap-6 lg:col-span-2">
           <SectionCard
             title="Next in queue"
             description={queue.loading || queue.error ? `Unassigned in ${team}` : `${queue.total} unassigned in ${team}`}
@@ -235,7 +235,7 @@ function MiniStat({ label, value, loading, muted }: { label: string; value: Reac
 
 const linkState = (view: string): TicketLinkState => ({ view });
 
-/** One of my tickets: ref · title + requester/category · SLA chip */
+/** One of my tickets: ref · title + requester/category (· Waiting) · SLA chip */
 function MyTicketRow({ ticket }: { ticket: Ticket }) {
   const clock = rowClock(ticket);
   const meta = [ticket.requester_name, ticket.category_name].filter(Boolean).join(" · ");
@@ -251,12 +251,12 @@ function MyTicketRow({ ticket }: { ticket: Ticket }) {
       <div className="flex min-w-0 flex-col gap-1">
         <TicketRef id={ticket.ticket_id} className="sm:hidden" />
         <span className="line-clamp-2 text-sm font-medium text-foreground sm:truncate">{ticket.title}</span>
-        <span className="truncate text-xs text-muted-foreground">{meta || "No details"}</span>
+        <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <span className="truncate">{meta || "No details"}</span>
+          {waiting && <StatusBadge status={ticket.ticket_status} className="shrink-0" />}
+        </span>
       </div>
-      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-        {waiting && <StatusBadge status={ticket.ticket_status} />}
-        {clock && <SlaChip due={clock.due} met={clock.met} start={clock.start} />}
-      </div>
+      <div className="flex sm:justify-end">{clock && <SlaChip due={clock.due} met={clock.met} start={clock.start} />}</div>
     </ListRow>
   );
 }
@@ -275,12 +275,11 @@ function QueueRow({
 }) {
   const clock = rowClock(ticket);
   return (
-    <ListRow grid="" className="flex-row items-center gap-4 py-4">
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <div className="flex flex-wrap items-center gap-2">
+    <ListRow grid="" className="flex-row items-start gap-4 py-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex items-center gap-2">
           <TicketRef id={ticket.ticket_id} />
           <PriorityBadge priority={ticket.ticket_priority} />
-          {clock && <SlaChip due={clock.due} met={clock.met} start={clock.start} />}
         </div>
         <ListRowLink to={`${BASE}/tickets/${ticket.ticket_id}`} state={linkState(AGENT_VIEWS.unassigned.id)} className="min-w-0 rounded-sm">
           <span className="line-clamp-2 text-sm font-medium text-foreground">{ticket.title}</span>
@@ -289,7 +288,10 @@ function QueueRow({
           {[ticket.requester_name || "Unknown requester", ticket.category_name].filter(Boolean).join(" · ")}
         </span>
       </div>
-      <ClaimButton ticketId={ticket.ticket_id} onClaim={onClaim} claiming={claiming} disabled={disabled} />
+      <div className="flex shrink-0 flex-col items-end gap-2">
+        {clock && <SlaChip due={clock.due} met={clock.met} start={clock.start} />}
+        <ClaimButton ticketId={ticket.ticket_id} onClaim={onClaim} claiming={claiming} disabled={disabled} />
+      </div>
     </ListRow>
   );
 }
