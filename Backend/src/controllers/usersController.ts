@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 import * as userServices from "../services/userService";
 import { sendTempPasswordEmail } from "../utils/emailService";
+import { passwordProblem } from "../utils/passwordRules";
 
 // Helper to determine which roles a logged-in admin can create/view/manage
 const getAllowedTargetRoles = (adminRole: string): string[] => {
@@ -97,8 +98,9 @@ export const updateUser = async (req: Request, res: Response, next: NextFunction
         if (password !== undefined && password !== null) {
             const trimmedPassword = password.toString().trim();
             if (trimmedPassword !== "") {
-                if (trimmedPassword.length < 6) {
-                    return res.status(400).json({ message: "Password must be at least 6 characters long." });
+                const problem = passwordProblem(trimmedPassword);
+                if (problem) {
+                    return res.status(400).json({ message: problem });
                 }
                 updatePayload.password = trimmedPassword;
             }

@@ -1,5 +1,6 @@
 
 import { Request, Response, NextFunction } from "express";
+import { passwordProblem } from "../utils/passwordRules";
 
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
@@ -21,25 +22,9 @@ export const validateRegister = (req: Request, res: Response, next: NextFunction
      errors.push("Please provide a valid email address.");
   }
 
-  if (!password || typeof password !== "string" || password.length === 0) {
-     errors.push("Password is required.");
-
-  } else {
-    if (password.length < 8) {
-      errors.push("Password must be at least 8 characters long.");
-    }
-
-    if (!/[A-Z]/.test(password)) {
-      errors.push("Password must contain at least one uppercase letter.");
-    }
-
-    if (!/[a-z]/.test(password)) {
-      errors.push("Password must contain at least one lowercase letter.");
-    }
-    
-    if (!/[0-9]/.test(password)) {
-      errors.push("Password must contain at least one number.");
-    }
+  const passwordError = passwordProblem(password);
+  if (passwordError) {
+    errors.push(passwordError);
   }
 
   if (errors.length > 0) {

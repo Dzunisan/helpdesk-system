@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import { sendPasswordResetEmail } from "../utils/mailer";
 import crypto from "crypto";
 import { JWT_SECRET } from "../config/env";
+import { passwordProblem } from "../utils/passwordRules";
 
 const COOKIE_NAME = "session";
 const COOKIE_OPTIONS = {
@@ -101,13 +102,32 @@ export const forgotPassword = async (req: Request, res: Response) => {
   return res.status(200).json(genericResponse);
 };
 
+/**
+ * Lets the reset page check its link on load (briefing p.36), so a missing or expired
+ * token shows "This link has expired" before the user types anything.
+ * Returns the account email only to the holder of a valid token.
+ */
+export const verifyResetToken = async (req: Request, res: Response, next: NextFunction) => {
+  const { token } = req.body;
+  try {
+    const user = token ? await userServices.findUserByResetToken(token) : null;
+    if (!user || !user.reset_token_expiry || new Date(user.reset_token_expiry) < new Date()) {
+      return res.status(400).json({ message: "Invalid or expired reset token." });
+    }
+    return res.status(200).json({ email: user.email });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const resetPassword = async (req: Request, res: Response) => {
   const { token, newPassword } = req.body;
   if (!token || !newPassword) {
     return res.status(400).json({ message: "Token and new password are required." });
   }
-  if (newPassword.length < 8) {
-    return res.status(400).json({ message: "Password must be at least 8 characters long." });
+  const problem = passwordProblem(newPassword);
+  if (problem) {
+    return res.status(400).json({ message: problem });
   }
 
   const user = await userServices.findUserByResetToken(token);
