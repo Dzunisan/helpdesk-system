@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { ShieldCheck, UserRoundCheck, UserRoundX } from "lucide-react";
-import { useUsers } from "@/context/UsersContext";
+import { listUsers } from "@/services/users";
 import { formatSast } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import PageHeader from "@/components/app/PageHeader";
@@ -12,8 +12,9 @@ import UserAvatar from "@/components/app/UserAvatar";
 import EmptyState from "@/components/app/EmptyState";
 import ErrorState from "@/components/app/ErrorState";
 import { ListBody, ListHeaderRow, ListRow, LoadingRows } from "@/components/app/ListCard";
-import { ActiveBadge } from "@/components/admin/AdminBadges";
-import { fullNameOf, userIdOf } from "@/components/admin/useAccountActions";
+import { AccountStatusBadge } from "@/components/admin/AdminBadges";
+import { useLoader } from "@/components/admin/useLoader";
+import { accountStatusOf, byActiveThenName, fullNameOf } from "@/components/admin/users";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 
@@ -31,15 +32,14 @@ const SCOPE: { can: boolean; text: string }[] = [
  * manages the system (System Admin accounts), never tickets, comments or notes.
  */
 export default function PlatformOverview() {
-  // For a Platform Admin, UsersContext is already scoped to System Admins
-  const { users: systemAdmins, loading, error, fetchUsers } = useUsers();
-  const firstLoad = loading && systemAdmins.length === 0;
-  const loadFailed = !!error && !loading && systemAdmins.length === 0;
+  // For a Platform Admin, GET /api/users returns System Admins only (docs/api-sprint-1.md S1)
+  const users = useLoader(() => listUsers());
+  const systemAdmins = users.data ?? [];
+  const firstLoad = users.loading && users.data === null;
+  const loadFailed = !!users.error && users.data === null;
   const active = systemAdmins.filter((u) => u.active).length;
   const deactivated = systemAdmins.length - active;
-  const sorted = [...systemAdmins].sort(
-    (a, b) => Number(b.active) - Number(a.active) || fullNameOf(a).localeCompare(fullNameOf(b)),
-  );
+  const sorted = [...systemAdmins].sort(byActiveThenName);
 
   return (
     <div className="flex flex-col gap-8">
@@ -54,7 +54,7 @@ export default function PlatformOverview() {
       </Alert>
 
       {loadFailed ? (
-        <ErrorState title="Couldn't load the system admins" onRetry={() => fetchUsers()} retrying={loading} />
+        <ErrorState title="Couldn't load the system admins" onRetry={users.reload} retrying={users.loading} />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
@@ -114,13 +114,13 @@ export default function PlatformOverview() {
               ) : (
                 <ListBody>
                   {sorted.map((admin) => (
-                    <ListRow key={userIdOf(admin)} grid={GRID} className="py-4">
+                    <ListRow key={admin.user_id} grid={GRID} className="py-4">
                       <div className={cn("min-w-0", !admin.active && "opacity-60")}>
                         <UserAvatar name={fullNameOf(admin)} description={admin.email} />
                       </div>
                       <div className="flex items-center justify-between gap-3 pl-[2.625rem] sm:contents">
                         <div className="flex">
-                          <ActiveBadge active={admin.active} />
+                          <AccountStatusBadge status={accountStatusOf(admin)} />
                         </div>
                         <span className="text-xs text-muted-foreground tabular-nums sm:text-sm">
                           <span className="sm:hidden">Added </span>

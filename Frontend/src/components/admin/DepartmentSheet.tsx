@@ -1,31 +1,27 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { useUsers } from "@/context/UsersContext";
 import type { Department, DepartmentPayload } from "@/hooks/useDepartments";
 import FormSheet, { FormSheetBody } from "@/components/admin/FormSheet";
-import { fullNameOf, userIdOf } from "@/components/admin/useAccountActions";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-
-const NO_LEAD = "none";
 
 interface DepartmentSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The department being edited; null for "New department" */
   department: Department | null;
-  /** Every department, to show who already leads one */
-  departments: Department[];
   /** Same calls as before (useDepartments createDepartment / updateDepartment) */
   onCreate: (data: DepartmentPayload) => Promise<unknown>;
   onUpdate: (id: string | number, data: DepartmentPayload) => Promise<unknown>;
   submitting?: boolean;
 }
 
-/** "New department" / "Edit department" drawer (briefing p.62) */
+/**
+ * "New department" / "Edit department" drawer (briefing p.62): name, description and status.
+ * The lead is appointed with the Appoint lead dialog, which only offers eligible people (S1).
+ */
 export default function DepartmentSheet({ open, onOpenChange, submitting, ...form }: DepartmentSheetProps) {
   return (
     <FormSheet open={open} onOpenChange={onOpenChange} busy={submitting}>
@@ -37,38 +33,14 @@ export default function DepartmentSheet({ open, onOpenChange, submitting, ...for
 type DepartmentFormProps = Omit<DepartmentSheetProps, "open" | "onOpenChange"> & { onDone: () => void };
 
 /** Mounted each time the drawer opens, so it always starts from the department as it is now */
-function DepartmentForm({ department, departments, onCreate, onUpdate, submitting, onDone }: DepartmentFormProps) {
+function DepartmentForm({ department, onCreate, onUpdate, submitting, onDone }: DepartmentFormProps) {
   const isEdit = department !== null;
-  const { users } = useUsers();
 
   const [name, setName] = useState(department?.department_name ?? "");
   const [description, setDescription] = useState(department?.description ?? "");
-  const [leadId, setLeadId] = useState(
-    department?.lead_id != null && department.lead_id !== "" ? String(department.lead_id) : NO_LEAD,
-  );
   const [status, setStatus] = useState(department?.status === "inactive" ? "inactive" : "active");
   const [submitted, setSubmitted] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
-
-  /** Lead id -> the other department they already lead */
-  const leading = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const d of departments) {
-      if (d.lead_id != null && String(d.department_id) !== String(department?.department_id)) {
-        map.set(String(d.lead_id), d.department_name);
-      }
-    }
-    return map;
-  }, [departments, department]);
-
-  const leads = useMemo(
-    () =>
-      users
-        .filter((u) => u.role === "Department Lead" && u.active)
-        .sort((a, b) => fullNameOf(a).localeCompare(fullNameOf(b))),
-    [users],
-  );
-  const currentLeadMissing = leadId !== NO_LEAD && !leads.some((l) => userIdOf(l) === leadId);
 
   const trimmed = name.trim();
   const nameError = !submitted
@@ -90,7 +62,7 @@ function DepartmentForm({ department, departments, onCreate, onUpdate, submittin
     const payload: DepartmentPayload = {
       name: trimmed,
       description: description.trim(),
-      leadId: leadId === NO_LEAD ? null : leadId,
+      ...(isEdit ? {} : { leadId: null }),
       status,
     };
     try {
@@ -111,7 +83,9 @@ function DepartmentForm({ department, departments, onCreate, onUpdate, submittin
     <FormSheetBody
       title={isEdit ? "Edit department" : "New department"}
       description={
-        isEdit ? `Change the details, lead or status of ${department.department_name}.` : "Each department is a private queue with its own lead and agents."
+        isEdit
+          ? `Change the name, description or status of ${department.department_name}.`
+          : "Each department is a private queue. Appoint its lead from the row menu once it exists."
       }
       submitLabel={isEdit ? "Save changes" : "Create department"}
       submitting={submitting}
@@ -146,39 +120,6 @@ function DepartmentForm({ department, departments, onCreate, onUpdate, submittin
             onChange={(e) => setDescription(e.target.value)}
           />
           <FieldDescription className="text-xs">One line about what this department looks after.</FieldDescription>
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor="department-lead">Department lead</FieldLabel>
-          <Select value={leadId} onValueChange={setLeadId}>
-            <SelectTrigger id="department-lead" className="h-10 w-full sm:h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent position="popper" align="start">
-              <SelectItem value={NO_LEAD}>
-                <span className="text-muted-foreground">No lead yet</span>
-              </SelectItem>
-              {(leads.length > 0 || currentLeadMissing) && <SelectSeparator />}
-              {currentLeadMissing && (
-                <SelectItem value={leadId}>{department?.departmentLead || "Current lead"}</SelectItem>
-              )}
-              {leads.map((lead) => {
-                const id = userIdOf(lead);
-                const other = leading.get(id);
-                return (
-                  <SelectItem key={id} value={id}>
-                    {fullNameOf(lead)}
-                    {other && <span className="text-xs text-muted-foreground">· leads {other}</span>}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-          <FieldDescription className="text-xs">
-            {leads.length === 0
-              ? "No one has the Department lead role yet. Add one on the Users page first."
-              : "Only people with the Department lead role are listed."}
-          </FieldDescription>
         </Field>
 
         {isEdit && (

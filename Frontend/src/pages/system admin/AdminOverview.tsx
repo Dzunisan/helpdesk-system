@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Building2, Inbox, UserRoundX, Users } from "lucide-react";
+import { Building2, Inbox, Shapes, Timer, UserRoundX, Users } from "lucide-react";
 import { fetchAdminOverview, type AdminOverview as Overview } from "@/services/reportService";
+import { listCategories } from "@/services/categories";
+import { listSlaPolicies } from "@/services/slaPolicies";
+import type { Category, SlaPolicy } from "@/types/api";
 import { cn } from "@/lib/utils";
 import PageHeader from "@/components/app/PageHeader";
 import StatCard from "@/components/app/StatCard";
@@ -13,6 +16,7 @@ import ErrorState from "@/components/app/ErrorState";
 import { ListBody, ListHeaderRow, ListRow, LoadingRows } from "@/components/app/ListCard";
 import { ActiveBadge, NoLeadBadge } from "@/components/admin/AdminBadges";
 import ChecklistItem from "@/components/admin/ChecklistItem";
+import { useLoader } from "@/components/admin/useLoader";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -23,6 +27,8 @@ const GRID = "sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_4rem_4rem] sm:
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+const loadCategories = async () => (await listCategories({ includeInactive: true })).categories;
+
 /**
  * System Admin home (briefing p.60): organisation totals, the department table
  * (counts only, so HR stays private) and a set-up checklist for broken configuration.
@@ -30,6 +36,9 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export default function AdminOverview() {
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
+  // The checklist also checks routing and SLA targets; if either fails, those lines are left out
+  const categories = useLoader(loadCategories);
+  const policies = useLoader(listSlaPolicies);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +53,8 @@ export default function AdminOverview() {
   const retry = () => {
     setState({ status: "loading" });
     setReloadKey((key) => key + 1);
+    categories.reload();
+    policies.reload();
   };
 
   const data = state.status === "ready" ? state.data : null;
@@ -86,7 +97,11 @@ export default function AdminOverview() {
 
           <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
             <DepartmentsCard data={data} />
-            <ChecklistCard data={data} />
+            <ChecklistCard
+              data={data}
+              categories={categories.loading ? undefined : categories.data}
+              policies={policies.loading ? undefined : policies.data}
+            />
           </div>
         </>
       )}
@@ -155,8 +170,15 @@ function DepartmentsCard({ data }: { data: Overview | null }) {
   );
 }
 
-function ChecklistCard({ data }: { data: Overview | null }) {
-  if (!data) {
+interface ChecklistCardProps {
+  data: Overview | null;
+  /** undefined while loading, null when it couldn't be loaded (the check is skipped) */
+  categories: Category[] | null | undefined;
+  policies: SlaPolicy[] | null | undefined;
+}
+
+function ChecklistCard({ data, categories, policies }: ChecklistCardProps) {
+  if (!data || categories === undefined || policies === undefined) {
     return (
       <SectionCard title="Set-up checklist">
         <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading">
@@ -172,7 +194,17 @@ function ChecklistCard({ data }: { data: Overview | null }) {
   }
 
   const { departments_without_lead: noLead, users_without_department: noDept } = data.checklist;
-  const todo = noLead.length + (noDept > 0 ? 1 : 0);
+
+  // Routing (S5): every active category must route to an active department, and every active
+  // department needs at least one active category or employees can't send it anything
+  const activeDepartments = data.departments.filter((d) => d.status === "active");
+  const activeIds = new Set(activeDepartments.map((d) => d.department_id));
+  const misrouted = (categories ?? []).filter((c) => c.active && !activeIds.has(c.department_id));
+  const withCategories = new Set((categories ?? []).filter((c) => c.active).map((c) => c.department_id));
+  const noCategories = categories ? activeDepartments.filter((d) => !withCategories.has(d.department_id)) : [];
+  const slaMissing = policies ? 4 - policies.length : 0;
+
+  const todo = noLead.length + (noDept > 0 ? 1 : 0) + misrouted.length + noCategories.length + (slaMissing > 0 ? 1 : 0);
 
   return (
     <SectionCard
@@ -200,6 +232,41 @@ function ChecklistCard({ data }: { data: Overview | null }) {
             {plural(noDept, "user has", "users have")} no department, so they can&apos;t submit or claim tickets
           </ChecklistItem>
         )}
+        {categories &&
+          (misrouted.length === 0 && noCategories.length === 0 ? (
+            <ChecklistItem state="done">Every category routes to an active department</ChecklistItem>
+          ) : (
+            <>
+              {misrouted.map((c) => (
+                <ChecklistItem
+                  key={`c-${c.category_id}`}
+                  state="todo"
+                  icon={Shapes}
+                  action={{ label: "Set route", to: `/system-admin/categories?department=${c.department_id}` }}
+                >
+                  &ldquo;{c.category_name}&rdquo; routes to {c.department_name}, which is inactive
+                </ChecklistItem>
+              ))}
+              {noCategories.map((d) => (
+                <ChecklistItem
+                  key={`d-${d.department_id}`}
+                  state="todo"
+                  icon={Shapes}
+                  action={{ label: "Add category", to: `/system-admin/categories?department=${d.department_id}` }}
+                >
+                  {d.department_name} has no active categories, so employees can&apos;t send it requests
+                </ChecklistItem>
+              ))}
+            </>
+          ))}
+        {policies &&
+          (slaMissing <= 0 ? (
+            <ChecklistItem state="done">SLA policies set for all 4 priorities</ChecklistItem>
+          ) : (
+            <ChecklistItem state="todo" icon={Timer} action={{ label: "Set targets", to: "/system-admin/sla" }}>
+              {plural(slaMissing, "priority has", "priorities have")} no SLA targets
+            </ChecklistItem>
+          ))}
       </ul>
     </SectionCard>
   );

@@ -1,85 +1,79 @@
 import { useState } from "react";
-import { Trash2, UserRoundX } from "lucide-react";
+import { UserRoundCheck, UserRoundX } from "lucide-react";
 import { toast } from "sonner";
-import { useUsers, type User } from "@/context/UsersContext";
+import { setUserActive } from "@/services/users";
+import { toApiError } from "@/services/apiClient";
+import type { User } from "@/types/api";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
-
-export const fullNameOf = (u: Pick<User, "name" | "surname">) => `${u.name ?? ""} ${u.surname ?? ""}`.trim() || u.name || "This user";
-export const userIdOf = (u: User) => u.user_id || u.id || "";
+import { firstNameOf, fullNameOf } from "@/components/admin/users";
 
 /**
- * Deactivate / reactivate / delete for a user row, with the confirmations (briefing p.61:
- * "Deactivate / Reactivate replaces Delete"; Delete is kept, behind its own warning).
- * Same calls as before: toggleUserStatus and deleteUser from UsersContext.
+ * Deactivate / reactivate for a user row, each behind an AlertDialog (briefing p.61, S1:
+ * "Deactivate / Reactivate replaces Delete"; there is no hard delete).
+ * PATCH /api/users/:id/active. A deactivated user gets 401 on their very next request.
  *
- * @example const actions = useAccountActions(); … actions.requestDeactivate(user) … {actions.dialogs}
+ * @example const actions = useAccountActions(onSaved); … actions.request("deactivate", user) … {actions.dialogs}
  */
-export function useAccountActions() {
-  const { toggleUserStatus, deleteUser, actionLoading } = useUsers();
+export function useAccountActions(onSaved: (user: User) => void) {
   // The target stays set while the dialog animates closed, so its text doesn't flicker
-  const [pending, setPending] = useState<{ kind: "deactivate" | "delete"; user: User } | null>(null);
+  const [pending, setPending] = useState<{ kind: "deactivate" | "reactivate"; user: User } | null>(null);
   const [open, setOpen] = useState(false);
-  const ask = (kind: "deactivate" | "delete", user: User) => {
+  const [busy, setBusy] = useState(false);
+
+  const request = (kind: "deactivate" | "reactivate", user: User) => {
     setPending({ kind, user });
     setOpen(true);
-  };
-
-  const reactivate = async (user: User) => {
-    const updated = await toggleUserStatus(userIdOf(user), false);
-    if (updated) toast.success(`${fullNameOf(user)} can sign in again`);
-    else toast.error(`Couldn't reactivate ${fullNameOf(user)}`, { description: "Please try again." });
   };
 
   const confirm = async () => {
     if (!pending) return;
     const { kind, user } = pending;
-    setOpen(false);
     const name = fullNameOf(user);
-    if (kind === "deactivate") {
-      const updated = await toggleUserStatus(userIdOf(user), true);
-      if (updated) toast.success(`${name} was deactivated`, { description: "They can't sign in until you reactivate them." });
-      else toast.error(`Couldn't deactivate ${name}`, { description: "Please try again." });
-    } else {
-      const ok = await deleteUser(userIdOf(user));
-      if (ok) toast.success(`${name} was deleted`);
-      else toast.error(`Couldn't delete ${name}`, { description: "Please try again." });
+    setOpen(false);
+    setBusy(true);
+    try {
+      const saved = await setUserActive(user.user_id, kind === "reactivate");
+      onSaved(saved);
+      if (kind === "deactivate") {
+        toast.success(`${name} was deactivated`, { description: "They're signed out on their next click and can't sign in again." });
+      } else {
+        toast.success(`${name} can sign in again`);
+      }
+    } catch (err) {
+      toast.error(kind === "deactivate" ? `Couldn't deactivate ${name}` : `Couldn't reactivate ${name}`, {
+        description: toApiError(err).message,
+      });
+    } finally {
+      setBusy(false);
     }
   };
 
   const name = pending ? fullNameOf(pending.user) : "";
-  const firstName = pending?.user.name || name;
+  const first = pending ? firstNameOf(pending.user) : "";
+  const deactivating = pending?.kind !== "reactivate";
 
   const dialogs = (
     <ConfirmDialog
       open={open}
       onOpenChange={setOpen}
-      icon={pending?.kind === "delete" ? Trash2 : UserRoundX}
-      destructive
-      title={pending?.kind === "delete" ? `Delete ${name}?` : `Deactivate ${name}?`}
+      icon={deactivating ? UserRoundX : UserRoundCheck}
+      destructive={deactivating}
+      title={deactivating ? `Deactivate ${name}?` : `Reactivate ${name}?`}
       description={
-        pending?.kind === "delete" ? (
+        deactivating ? (
           <>
-            Their account is removed for good. This can&apos;t be undone. If {firstName} might come back, deactivate
-            the account instead.
+            {first} is signed out straight away and can&apos;t sign in until you reactivate the account. Their tickets
+            and history stay as they are.
           </>
         ) : (
-          <>
-            {firstName} can&apos;t sign in until you reactivate the account. Their tickets and history stay as they
-            are.
-          </>
+          <>{first} can sign in again with their existing password, with the same role and department as before.</>
         )
       }
-      cancelLabel={pending?.kind === "delete" ? "Keep user" : "Cancel"}
-      confirmLabel={pending?.kind === "delete" ? "Delete user" : "Deactivate"}
+      cancelLabel="Cancel"
+      confirmLabel={deactivating ? "Deactivate" : "Reactivate"}
       onConfirm={confirm}
     />
   );
 
-  return {
-    busy: actionLoading,
-    requestDeactivate: (user: User) => ask("deactivate", user),
-    requestDelete: (user: User) => ask("delete", user),
-    reactivate,
-    dialogs,
-  };
+  return { busy, request, dialogs };
 }

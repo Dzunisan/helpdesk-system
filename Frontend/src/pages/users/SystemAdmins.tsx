@@ -1,6 +1,8 @@
-import { Clock, KeyRound, MailCheck, Plus, ShieldCheck, Trash2, UserRoundCheck, UserRoundX } from "lucide-react";
+import { useState } from "react";
+import { Clock, KeyRound, MailCheck, Pencil, Plus, ShieldCheck, UserRoundCheck, UserRoundX } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useUsers, type User } from "@/context/UsersContext";
+import { listUsers } from "@/services/users";
+import type { User } from "@/types/api";
 import { formatSast } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import PageHeader from "@/components/app/PageHeader";
@@ -8,37 +10,49 @@ import UserAvatar from "@/components/app/UserAvatar";
 import EmptyState from "@/components/app/EmptyState";
 import ErrorState from "@/components/app/ErrorState";
 import { ListBody, ListCaption, ListCard, ListHeaderRow, ListRow, LoadingRows } from "@/components/app/ListCard";
-import { ActiveBadge } from "@/components/admin/AdminBadges";
-import AddUserSheet from "@/components/admin/AddUserSheet";
+import { AccountStatusBadge } from "@/components/admin/AdminBadges";
 import RowMenu from "@/components/admin/RowMenu";
-import { fullNameOf, useAccountActions, userIdOf } from "@/components/admin/useAccountActions";
+import UserSheet from "@/components/admin/UserSheet";
+import { useAccountActions } from "@/components/admin/useAccountActions";
+import { useLoader } from "@/components/admin/useLoader";
+import { accountStatusOf, byActiveThenName, fullNameOf } from "@/components/admin/users";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
-import { useState } from "react";
 
-const GRID = "lg:grid lg:grid-cols-[minmax(0,1fr)_8rem_8rem_9.5rem] lg:items-center lg:gap-6";
+/* Name · Status · Last sign-in · Added · actions */
+const GRID = "lg:grid lg:grid-cols-[minmax(0,1fr)_7rem_9rem_7rem_9.5rem] lg:items-center lg:gap-6";
 
 /** Platform-wide rules, as the server enforces them today (backend utils/passwordRules, 1-hour session cookie) */
 const POLICIES: { icon: LucideIcon; title: string; body: string }[] = [
   { icon: KeyRound, title: "Password policy", body: "8+ characters, upper- and lower-case letters and a number. The same everywhere." },
-  { icon: Clock, title: "Session length", body: "1 hour, then sign in again. Deactivating an account blocks its next sign-in." },
-  { icon: MailCheck, title: "New accounts", body: "Get a temporary password by email and can reset it from the sign-in page." },
+  { icon: Clock, title: "Session length", body: "1 hour, then sign in again. Deactivating an account blocks its very next request." },
+  { icon: MailCheck, title: "New accounts", body: "Get a temporary password by email and choose their own at first sign-in." },
 ];
 
 /** Platform Admin › System admins (briefing p.67): the short list of people who configure Helpdesk. */
 export default function SystemAdmins() {
-  const { users: admins, loading, error, fetchUsers } = useUsers();
-  const actions = useAccountActions();
-  const [addOpen, setAddOpen] = useState(false);
+  // For a Platform Admin, GET /api/users returns System Admins only (docs/api-sprint-1.md S1)
+  const users = useLoader(() => listUsers());
+  const [sheet, setSheet] = useState<{ open: boolean; user: User | null }>({ open: false, user: null });
 
-  const firstLoad = loading && admins.length === 0;
-  const loadFailed = !!error && !loading && admins.length === 0;
-  const sorted = [...admins].sort((a, b) => Number(b.active) - Number(a.active) || fullNameOf(a).localeCompare(fullNameOf(b)));
+  const upsert = (saved: User) =>
+    users.setData((list) => {
+      const current = list ?? [];
+      return current.some((u) => u.user_id === saved.user_id)
+        ? current.map((u) => (u.user_id === saved.user_id ? saved : u))
+        : [saved, ...current];
+    });
+  const actions = useAccountActions(upsert);
+
+  const admins = users.data ?? [];
+  const firstLoad = users.loading && users.data === null;
+  const loadFailed = !!users.error && users.data === null;
+  const sorted = [...admins].sort(byActiveThenName);
   const active = admins.filter((a) => a.active).length;
 
   const addButton = (
-    <Button onClick={() => setAddOpen(true)}>
+    <Button onClick={() => setSheet({ open: true, user: null })}>
       <Plus data-icon="inline-start" />
       Add system admin
     </Button>
@@ -53,18 +67,24 @@ export default function SystemAdmins() {
       />
 
       {loadFailed ? (
-        <ErrorState title="Couldn't load the system admins" onRetry={() => fetchUsers()} retrying={loading} />
+        <ErrorState
+          title="Couldn't load the system admins"
+          description={users.error?.message}
+          onRetry={users.reload}
+          retrying={users.loading}
+        />
       ) : (
         <div className="flex flex-col gap-3">
           <ListCard>
             <ListHeaderRow grid={GRID}>
               <span>Name</span>
               <span>Status</span>
+              <span>Last sign-in</span>
               <span>Added</span>
               <span className="sr-only">Actions</span>
             </ListHeaderRow>
             {firstLoad ? (
-              <LoadingRows grid={GRID} breakpoint="lg" columns={["avatar", "badge", "meta", "button"]} />
+              <LoadingRows grid={GRID} breakpoint="lg" columns={["person", "badge", "meta", "meta", "button"]} />
             ) : sorted.length === 0 ? (
               <EmptyState
                 icon={ShieldCheck}
@@ -76,12 +96,12 @@ export default function SystemAdmins() {
               <ListBody>
                 {sorted.map((admin) => (
                   <AdminRow
-                    key={userIdOf(admin)}
+                    key={admin.user_id}
                     admin={admin}
                     busy={actions.busy}
-                    onDeactivate={() => actions.requestDeactivate(admin)}
-                    onReactivate={() => actions.reactivate(admin)}
-                    onDelete={() => actions.requestDelete(admin)}
+                    onEdit={() => setSheet({ open: true, user: admin })}
+                    onDeactivate={() => actions.request("deactivate", admin)}
+                    onReactivate={() => actions.request("reactivate", admin)}
                   />
                 ))}
               </ListBody>
@@ -109,7 +129,13 @@ export default function SystemAdmins() {
         ))}
       </section>
 
-      <AddUserSheet open={addOpen} onOpenChange={setAddOpen} />
+      <UserSheet
+        open={sheet.open}
+        onOpenChange={(open) => setSheet((s) => ({ ...s, open }))}
+        user={sheet.user}
+        scope="admins"
+        onSaved={upsert}
+      />
       {actions.dialogs}
     </div>
   );
@@ -118,13 +144,14 @@ export default function SystemAdmins() {
 interface AdminRowProps {
   admin: User;
   busy: boolean;
+  onEdit: () => void;
   onDeactivate: () => void;
   onReactivate: () => void;
-  onDelete: () => void;
 }
 
-function AdminRow({ admin, busy, onDeactivate, onReactivate, onDelete }: AdminRowProps) {
+function AdminRow({ admin, busy, onEdit, onDeactivate, onReactivate }: AdminRowProps) {
   const name = fullNameOf(admin);
+  const status = accountStatusOf(admin);
   return (
     <ListRow grid={GRID} className="relative">
       <div className={cn("flex min-w-0 items-center gap-3 pr-10 lg:pr-0", !admin.active && "opacity-60")}>
@@ -137,8 +164,21 @@ function AdminRow({ admin, busy, onDeactivate, onReactivate, onDelete }: AdminRo
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-11 lg:contents">
         <div>
-          <ActiveBadge active={admin.active} />
+          <AccountStatusBadge status={status} />
         </div>
+        <span className="text-xs text-muted-foreground tabular-nums lg:text-sm">
+          {admin.last_login_at ? (
+            <>
+              <span className="lg:hidden">Last sign-in </span>
+              {formatSast(admin.last_login_at, "smart")}
+            </>
+          ) : (
+            <>
+              <span className="lg:hidden">Never signed in</span>
+              <span className="hidden lg:inline">Never</span>
+            </>
+          )}
+        </span>
         <span className="text-xs text-muted-foreground tabular-nums lg:text-sm">
           <span className="lg:hidden">Added </span>
           {formatSast(admin.created_at, "date")}
@@ -157,8 +197,13 @@ function AdminRow({ admin, busy, onDeactivate, onReactivate, onDelete }: AdminRo
         </Button>
         <RowMenu label={`Actions for ${name}`} disabled={busy}>
           <DropdownMenuLabel className="truncate text-xs font-normal text-muted-foreground">{name}</DropdownMenuLabel>
+          <DropdownMenuItem onSelect={onEdit}>
+            <Pencil />
+            Edit details
+          </DropdownMenuItem>
+          <DropdownMenuSeparator className="lg:hidden" />
           {admin.active ? (
-            <DropdownMenuItem onSelect={onDeactivate} className="lg:hidden">
+            <DropdownMenuItem variant="destructive" onSelect={onDeactivate} className="lg:hidden">
               <UserRoundX />
               Deactivate
             </DropdownMenuItem>
@@ -168,11 +213,6 @@ function AdminRow({ admin, busy, onDeactivate, onReactivate, onDelete }: AdminRo
               Reactivate
             </DropdownMenuItem>
           )}
-          <DropdownMenuSeparator className="lg:hidden" />
-          <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-            <Trash2 />
-            Delete account
-          </DropdownMenuItem>
         </RowMenu>
       </div>
     </ListRow>
