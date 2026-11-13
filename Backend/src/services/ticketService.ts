@@ -20,7 +20,8 @@ import {
   ticketScopeCondition
 } from "./ticketAccess";
 
-const TICKET_SELECT_FIELDS = `
+/** Ticket list/detail columns (alias t; joins in TICKET_JOINS). Shared by the approvals list (S6). */
+export const TICKET_SELECT_FIELDS = `
   t.ticket_id,
   t.title,
   t.description,
@@ -42,6 +43,7 @@ const TICKET_SELECT_FIELDS = `
   t.first_response_due_at,
   t.resolution_due_at,
   t.first_response_at,
+  t.moved_count,
   d.department_name,
   c.category_name,
   c.icon AS category_icon,
@@ -52,7 +54,7 @@ const TICKET_SELECT_FIELDS = `
   asg_u.email AS assignee_email
 `;
 
-const TICKET_JOINS = `
+export const TICKET_JOINS = `
   LEFT JOIN department d ON t.ticket_department_id = d.department_id
   LEFT JOIN category c ON t.ticket_category_id = c.category_id
   LEFT JOIN users req_u ON t.requester_id = req_u.user_id
@@ -71,7 +73,7 @@ export const COMMENT_SELECT = `
   LEFT JOIN department ud ON ud.department_id = u.department_id`;
 
 /** Adds the computed sla_state to a ticket row */
-const withSla = <T extends Ticket>(ticket: T, now = new Date()): T => ({ ...ticket, sla_state: slaState(ticket, now) });
+export const withSla = <T extends Ticket>(ticket: T, now = new Date()): T => ({ ...ticket, sla_state: slaState(ticket, now) });
 
 /** GET /api/tickets query, already validated by the controller (docs/api-sprint-1.md "S1") */
 export interface TicketListFilters {
