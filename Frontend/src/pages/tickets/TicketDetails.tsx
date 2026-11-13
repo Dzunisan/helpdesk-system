@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { ChevronLeft, SearchX } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import {
   fetchTicketById,
@@ -22,6 +23,16 @@ import type {
 } from "../../types/ticket.types";
 import { toast } from "sonner";
 import ReasonDialog from "@/components/app/ReasonDialog";
+import { Button as ShadButton } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { homePathFor } from "@/lib/roles";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -65,9 +76,12 @@ export default function TicketDetails() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth() as any;
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
+  // 404 and 403 look the same on purpose: it never reveals that a ticket exists (briefing p.69)
+  const [notFound, setNotFound] = useState(false);
   const [comments, setComments] = useState<TicketComment[]>([]);
   const [feedback, setFeedback] = useState<TicketFeedback | null>(null);
   const [agents, setAgents] = useState<AgentUser[]>([]);
@@ -136,8 +150,12 @@ export default function TicketDetails() {
         }
       }
     } catch (err: any) {
-      console.error("Failed to load ticket:", err);
-      toast.error(err.message || "Failed to load ticket details");
+      if ([400, 403, 404].includes(err.statusCode)) {
+        setNotFound(true);
+      } else {
+        console.error("Failed to load ticket:", err);
+        toast.error(err.message || "Failed to load ticket details");
+      }
     } finally {
       setLoading(false);
     }
@@ -375,18 +393,31 @@ export default function TicketDetails() {
   }
 
   if (!ticket) {
+    // Back to where the user came from; straight to their home when the link was opened directly
+    const goBack = () =>
+      location.key !== "default" ? navigate(-1) : navigate(homePathFor(user?.role));
+    const reference = /^\d+$/.test(id ?? "") ? `HD-${id}` : "This ticket";
+
     return (
-      <div className="p-6 max-w-4xl mx-auto text-center py-12">
-        <p className="text-gray-600 text-lg">
-          Ticket not found or you are not authorized to view it.
-        </p>
-        <button
-          onClick={() => navigate(-1)}
-          className="mt-4 inline-flex items-center text-sm font-medium text-blue-600 hover:underline"
-        >
-          ← Go Back
-        </button>
-      </div>
+      <Empty className="min-h-[60vh]">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <SearchX />
+          </EmptyMedia>
+          <EmptyTitle>{notFound ? "Ticket not found" : "Couldn't load this ticket"}</EmptyTitle>
+          <EmptyDescription>
+            {notFound
+              ? `${reference} doesn't exist or isn't in your department. If someone sent you this link, ask them to check the reference.`
+              : "Something went wrong while loading it. Check your connection and try again."}
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <ShadButton variant="outline" onClick={goBack}>
+            <ChevronLeft />
+            Back
+          </ShadButton>
+        </EmptyContent>
+      </Empty>
     );
   }
 

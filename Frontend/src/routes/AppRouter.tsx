@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 import SignInPage from "../pages/Auth pages/SignInPage";
 import ProtectedRoute from "../components/ProtectedRoute";
@@ -25,6 +25,7 @@ import UserProfile from "../pages/user profile/UserProfile";
 
 import ForgotPasswordPage from "../pages/Auth pages/ForgotPasswordPage";
 import ResetPasswordPage from "../pages/Auth pages/ResetPasswordPage";
+import NotFound from "../pages/NotFound";
 
 const AppRouter = () => {
   return (
@@ -92,8 +93,8 @@ const AppRouter = () => {
           </Route>
         </Route>
 
-        {/* Fallback Route */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* Unknown URLs: a real 404, inside the user's own layout when signed in (briefing p.69) */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   );

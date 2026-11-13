@@ -91,7 +91,14 @@ export const fetchTicketById = async (id: number): Promise<Ticket> => {
     const response = await api.get<{ ticket: Ticket }>(`/tickets/${id}`);
     return response.data.ticket;
   } catch (error) {
-    throw new Error(extractErrorMessage(error));
+    // Carry the HTTP status so the page can show "Ticket not found" for 404 / 403
+    const enrichedError = new Error(extractErrorMessage(error), { cause: error }) as Error & {
+      statusCode?: number;
+    };
+    if (error instanceof AxiosError && error.response) {
+      enrichedError.statusCode = error.response.status;
+    }
+    throw enrichedError;
   }
 };
 
