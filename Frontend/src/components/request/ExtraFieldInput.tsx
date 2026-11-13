@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group";
 import { cn } from "@/lib/utils";
+import DatePicker from "@/components/app/DatePicker";
 
 interface ExtraFieldInputProps {
   field: CategoryField;
@@ -24,7 +25,8 @@ function groupThousands(value: string): string {
 
 /**
  * One of the category's own questions (briefing p.39), rendered from its `fields` JSON:
- * text -> Input, number -> Input with the unit inside ("ZAR"), long_text -> Textarea, date -> date Input.
+ * text -> Input, number -> Input with the unit inside ("ZAR"), long_text -> Textarea, date -> DatePicker
+ * (Popover + Calendar).
  */
 export default function ExtraFieldInput({ field, value, onChange, error, className }: ExtraFieldInputProps) {
   const id = `extra-${field.key}`;
@@ -72,11 +74,23 @@ export default function ExtraFieldInput({ field, value, onChange, error, classNa
         )}
       </InputGroup>
     );
+  } else if (field.type === "date") {
+    control = (
+      <DatePicker
+        id={id}
+        value={value}
+        onChange={onChange}
+        fromDate={new Date()}
+        aria-invalid={common["aria-invalid"]}
+        aria-describedby={describedBy}
+        className="scroll-mt-28"
+      />
+    );
   } else {
     control = (
       <Input
         {...common}
-        type={field.type === "date" ? "date" : "text"}
+        type="text"
         autoComplete="off"
         onChange={(e) => onChange(e.target.value)}
         className="h-10 scroll-mt-28"

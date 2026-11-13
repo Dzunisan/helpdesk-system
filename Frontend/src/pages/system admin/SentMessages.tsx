@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Inbox, Play, SearchX, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Inbox, Play, SearchX } from "lucide-react";
 import { toast } from "sonner";
 import { listOutbox, runJobsNow } from "@/services/admin";
 import type { JobsResult, OutboxMessage, OutboxStatus } from "@/types/api";
@@ -7,6 +7,7 @@ import { useApiData } from "@/hooks/useApiData";
 import { formatSast } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import PageHeader from "@/components/app/PageHeader";
+import DatePicker from "@/components/app/DatePicker";
 import EmptyState from "@/components/app/EmptyState";
 import ErrorState from "@/components/app/ErrorState";
 import TicketRef from "@/components/app/TicketRef";
@@ -17,7 +18,6 @@ import OutboxStatusBadge from "@/components/admin/OutboxStatusBadge";
 import { OUTBOX_STATUS } from "@/components/admin/outboxStatus";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
 
 type Filter = "all" | OutboxStatus;
@@ -105,27 +105,18 @@ export default function SentMessages() {
             onValueChange={changeFilter}
             items={FILTERS.map((f) => ({ ...f, count: f.value === "all" ? total : counts?.[f.value] }))}
           />
-          <InputGroup className="h-10 w-full sm:h-9 sm:w-52">
-            <InputGroupAddon>
-              <span className="text-xs text-muted-foreground">Day</span>
-            </InputGroupAddon>
-            <InputGroupInput
-              type="date"
-              aria-label="Show messages from one day"
-              value={date}
-              onChange={(e) => {
-                setDate(e.target.value);
-                setPage(1);
-              }}
-            />
-            {date && (
-              <InputGroupAddon align="inline-end">
-                <InputGroupButton size="icon-xs" aria-label="Show every day" onClick={() => setDate("")}>
-                  <X />
-                </InputGroupButton>
-              </InputGroupAddon>
-            )}
-          </InputGroup>
+          <DatePicker
+            className="w-full sm:w-56"
+            aria-label="Show messages from one day"
+            placeholder="Any day"
+            value={date}
+            clearable
+            toDate={new Date()}
+            onChange={(day) => {
+              setDate(day);
+              setPage(1);
+            }}
+          />
         </Toolbar>
 
         {outbox.error && !outbox.data ? (

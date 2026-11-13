@@ -14,7 +14,8 @@ import UserAvatar from "@/components/app/UserAvatar";
 import { ListBody, ListCaption, ListCard, ListHeaderRow, ListRow, LoadingRows } from "@/components/app/ListCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import DateRangePicker from "@/components/app/DateRangePicker";
+import { inDayRange, lastDays, rangeLabel, type DayRange } from "@/lib/dayRange";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import QueueFilters from "@/components/queue/QueueFilters";
@@ -24,13 +25,8 @@ import { AGENT_VIEWS, type TicketLinkState } from "@/components/queue/queueViews
 import { plural } from "@/components/queue/queueUtils";
 import { csatOf, useTicketRatings } from "./useTicketRatings";
 
-const DAY_MS = 86_400_000;
-const PERIODS = [
-  { value: "7", label: "Last 7 days" },
-  { value: "30", label: "Last 30 days" },
-  { value: "90", label: "Last 90 days" },
-] as const;
-type Period = (typeof PERIODS)[number]["value"];
+/** Quick picks in the period picker (p.53); any other range comes from its calendar */
+const PRESETS = [7, 30, 90] as const;
 
 /** Ref · Subject + requester · Resolved · Resolution time · Rating · Reopened · chevron (p.53) */
 const GRID =
@@ -47,22 +43,22 @@ export default function ResolvedByMe() {
   const { user } = useAuth();
   const view = AGENT_VIEWS.resolved;
   const team = useDepartmentName(user?.department_id ?? undefined) ?? "your department";
-  const [period, setPeriod] = useState<Period>("30");
+  const [period, setPeriod] = useState<DayRange>(() => lastDays(30));
 
   const filters = useQueueFilters();
   const categories = useDepartmentCategories(user?.department_id);
   const list = useTicketList({ ...view.params, ...filters.params, limit: 100 });
 
-  const [now] = useState(() => Date.now());
-  const tickets = useMemo(() => {
-    const since = now - Number(period) * DAY_MS;
-    return list.tickets
-      .filter((t) => {
-        const at = resolvedAt(t);
-        return at ? new Date(at).getTime() >= since : false;
-      })
-      .sort((a, b) => Date.parse(resolvedAt(b)!) - Date.parse(resolvedAt(a)!));
-  }, [list.tickets, period, now]);
+  const tickets = useMemo(
+    () =>
+      list.tickets
+        .filter((t) => {
+          const at = resolvedAt(t);
+          return at ? inDayRange(at, period) : false;
+        })
+        .sort((a, b) => Date.parse(resolvedAt(b)!) - Date.parse(resolvedAt(a)!)),
+    [list.tickets, period],
+  );
 
   const { ratings, loading: ratingsLoading } = useTicketRatings(tickets);
   const summary = useMemo(() => {
@@ -71,7 +67,7 @@ export default function ResolvedByMe() {
     return { withinPct: timed.length ? Math.round((within / timed.length) * 100) : null, csat: csatOf(ratings.values()) };
   }, [tickets, ratings]);
 
-  const periodLabel = PERIODS.find((p) => p.value === period)!.label;
+  const periodLabel = rangeLabel(period, PRESETS);
   const description =
     list.loading || list.error
       ? `${periodLabel} · tickets you resolved`
@@ -91,18 +87,7 @@ export default function ResolvedByMe() {
         description={description}
         actions={
           <>
-            <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
-              <SelectTrigger aria-label="Period" className="h-10 w-40 sm:h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="end">
-                {PERIODS.map((p) => (
-                  <SelectItem key={p.value} value={p.value}>
-                    {p.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <DateRangePicker aria-label="Period" value={period} onChange={setPeriod} presets={PRESETS} className="w-44" />
             <Button variant="outline" onClick={() => void list.refetch()} disabled={list.loading || list.refetching} className="h-10 sm:h-9">
               <RotateCw data-icon="inline-start" className={list.refetching ? "animate-spin" : undefined} />
               Refresh
@@ -148,8 +133,8 @@ export default function ResolvedByMe() {
             ) : (
               <EmptyState
                 icon={CircleCheck}
-                title={`Nothing resolved in the ${periodLabel.toLowerCase()}`}
-                description={period === "90" ? view.empty.description : "Try a longer period, or resolve a ticket from My open."}
+                title={periodLabel.startsWith("Last") ? `Nothing resolved in the ${periodLabel.toLowerCase()}` : `Nothing resolved ${periodLabel}`}
+                description={periodLabel === "Last 90 days" ? view.empty.description : "Try a longer period, or resolve a ticket from My open."}
               />
             )
           ) : (
