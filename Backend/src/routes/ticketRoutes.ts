@@ -1,6 +1,5 @@
 import { Router } from "express";
 import {
-  createTicket,
   fetchTickets,
   getTicketById,
   updateTicket,
@@ -21,6 +20,7 @@ import { requireAuth } from "../middleware/authMiddlware";
 import { claimTicket, getTicketActions, transitionTicket } from "../controllers/lifecycleController";
 import { changePriority } from "../controllers/triageController";
 import { getTimeline } from "../controllers/timelineController";
+import { createTicket } from "../services/ticketCreate";
 
 const router = Router();
 

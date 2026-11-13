@@ -290,18 +290,6 @@ export interface TicketDetail extends Ticket {
   feedback?: TicketFeedback | null;
 }
 
-export interface CreateTicketDto {
-  title: string;
-  description?: string | null;
-  category_id: number;
-  department_id: number;
-  priority: TicketPriority;
-  status: TicketStatus;
-  impact?: TicketImpact | null;
-  extra_fields?: Record<string, unknown>;
-  requester_id: string;
-}
-
 export interface UpdateTicketDto {
   title?: string;
   description?: string | null;

@@ -1,17 +1,15 @@
-import { pool, query, withTransaction } from "../config/database";
+import { pool, query } from "../config/database";
 import {
   Ticket,
   TicketDetail,
   TicketPriority,
   TicketStatus,
-  CreateTicketDto,
   UpdateTicketDto,
   PaginatedTicketsResult,
   TicketComment,
   TicketFeedback
 } from "../types/ticket.types";
-import { logEvent } from "./events";
-import { DUE_SOON_SHARE, SQL_IS_BREACHED, SQL_NEXT_DUE, computeDueTimes, loadSlaPolicies, slaState } from "./sla";
+import { DUE_SOON_SHARE, SQL_IS_BREACHED, SQL_NEXT_DUE, slaState } from "./sla";
 import { User } from "../types/user.types";
 import {
   TicketAccessUser,
@@ -50,7 +48,7 @@ const TICKET_SELECT_FIELDS = `
   c.kind AS category_kind,
   TRIM(CONCAT(req_u.name, ' ', req_u.surname)) AS requester_name,
   req_u.email AS requester_email,
-  TRIM(CONCAT(asg_u.name, ' ', asg_u.surname)) AS assignee_name,
+  NULLIF(TRIM(CONCAT(asg_u.name, ' ', asg_u.surname)), '') AS assignee_name,
   asg_u.email AS assignee_email
 `;
 
@@ -87,26 +85,6 @@ export const checkCategoryExists = async (categoryId: number): Promise<boolean> 
   return (result.rowCount ?? 0) > 0;
 };
 
-/** What a category decides about a new ticket (briefing p.14 S5): department, priority, approval */
-export interface CategoryRouting {
-  category_id: number;
-  category_name: string;
-  department_id: number;
-  default_priority: TicketPriority;
-  needs_approval: boolean;
-  active: boolean;
-  fields: unknown[];
-}
-
-export const getCategoryRouting = async (categoryId: number): Promise<CategoryRouting | null> => {
-  const result = await query(
-    `SELECT category_id, category_name, department_id, default_priority, needs_approval, active, fields
-     FROM category WHERE category_id = $1`,
-    [categoryId]
-  );
-  return result.rows[0] ?? null;
-};
-
 // LEGACY BRIDGE until S5 ships the category form: the old request form only sends a department, so
 // its ticket goes to that department's "Something else" category (else its first active category).
 export const getFallbackCategoryId = async (departmentId: number): Promise<number | null> => {
@@ -118,47 +96,6 @@ export const getFallbackCategoryId = async (departmentId: number): Promise<numbe
     [departmentId]
   );
   return result.rows[0]?.category_id ?? null;
-};
-
-// Inserts the ticket with both SLA due times and its "created" event in one transaction
-export const createTicket = async (dto: CreateTicketDto): Promise<Ticket> => {
-  const ticketId = await withTransaction(async (client) => {
-    const policies = await loadSlaPolicies(client);
-    const now = new Date();
-    // Pending approval has no clock yet: the team can't act until the lead approves (S6 sets them then)
-    const due =
-      dto.status === "Pending approval"
-        ? { first_response_due_at: null, resolution_due_at: null }
-        : computeDueTimes(now, dto.priority, policies);
-    const insertResult = await client.query(
-      `INSERT INTO ticket (
-        title, description, ticket_department_id, ticket_category_id, ticket_priority, ticket_status,
-        impact, extra_fields, requester_id, first_response_due_at, resolution_due_at, created_at, updated_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
-      RETURNING ticket_id`,
-      [
-        dto.title,
-        dto.description ?? null,
-        dto.department_id,
-        dto.category_id,
-        dto.priority,
-        dto.status,
-        dto.impact ?? null,
-        JSON.stringify(dto.extra_fields ?? {}),
-        dto.requester_id,
-        due.first_response_due_at,
-        due.resolution_due_at,
-        now
-      ]
-    );
-    const id: number = insertResult.rows[0].ticket_id;
-    await logEvent(client, { ticketId: id, actorId: dto.requester_id, type: "created", to: dto.status });
-    return id;
-  });
-
-  const fullTicket = await getTicketById(ticketId, false);
-  return fullTicket!;
 };
 
 /** Adds the computed sla_state to a ticket row */

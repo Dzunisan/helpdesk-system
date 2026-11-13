@@ -4,17 +4,12 @@ import {
   canListTickets,
   departmentsOf,
   loadTicketAccess,
-  NO_TICKET_ACCESS_ROLES,
   STAFF_ROLES
 } from "../services/ticketAccess";
 import {
-  TicketImpact,
-  TicketPriority,
   TicketStatus,
-  VALID_IMPACTS,
   VALID_PRIORITIES,
   VALID_STATUSES,
-  CreateTicketDto,
   UpdateTicketDto
 } from "../types/ticket.types";
 import * as lifecycle from "../services/ticketLifecycle";
@@ -26,13 +21,6 @@ import { HttpError, parseIntId, sendError } from "../utils/httpError";
 const normalizeStatus = (val?: string): TicketStatus | null => {
   if (!val) return null;
   const match = VALID_STATUSES.find(s => s.toLowerCase() === val.trim().toLowerCase());
-  return match || null;
-};
-
-// Helper for normalizing priority strings case-insensitively
-const normalizePriority = (val?: string): TicketPriority | null => {
-  if (!val) return null;
-  const match = VALID_PRIORITIES.find(p => p.toLowerCase() === val.trim().toLowerCase());
   return match || null;
 };
 
@@ -54,159 +42,6 @@ const handleError = (res: Response, error: any) => {
   }
   // The database error text stays in the server log; the browser only gets a generic message
   return res.status(500).json({ message: "An unexpected error occurred" });
-};
-
-
-export const createTicket = async (req: Request, res: Response) => {
-  const user = req.user;
-  if (!user) {
-    return res.status(401).json({ message: "Not authenticated" });
-  }
-
-  // System Admin and Platform Admin have no ticket access (ticketAccess), so they don't raise tickets
-  if (NO_TICKET_ACCESS_ROLES.includes(user.role)) {
-    return res.status(403).json({ message: "Forbidden: Administrators cannot create tickets." });
-  }
-
-  // The category decides department, default priority and status (briefing p.14 S5); the browser
-  // can't override them. Employees send title, description, category, impact and extra fields;
-  // staff may also set priority and raise a ticket for someone else.
-  const isStaff = STAFF_ROLES.includes(user.role);
-  const {
-    title,
-    description,
-    category_id,
-    ticket_category_id,
-    department_id,
-    ticket_department_id,
-    impact,
-    extra_fields
-  } = req.body;
-  const priority = isStaff ? req.body.priority : undefined;
-  const requester_id = isStaff ? req.body.requester_id : undefined;
-
-  const errors: string[] = [];
-
-  // Title validation
-  if (!title || typeof title !== "string" || title.trim().length === 0) {
-    errors.push("Title is required.");
-  } else if (title.trim().length > 255) {
-    errors.push("Title must be 255 characters or fewer.");
-  }
-
-  // Description validation
-  if (description !== undefined && description !== null && typeof description !== "string") {
-    errors.push("Description must be a string.");
-  }
-
-  // Priority validation (staff only; everyone else gets the category's default priority)
-  let staffPriority: TicketPriority | null = null;
-  if (priority !== undefined && priority !== null) {
-    const norm = normalizePriority(String(priority));
-    if (!norm) {
-      errors.push(`Priority must be one of: ${VALID_PRIORITIES.join(", ")}.`);
-    } else {
-      staffPriority = norm;
-    }
-  }
-
-  // Impact ("How is this affecting you?")
-  let parsedImpact: TicketImpact | null = null;
-  if (impact !== undefined && impact !== null && impact !== "") {
-    if (!VALID_IMPACTS.includes(impact)) {
-      errors.push(`Impact must be one of: ${VALID_IMPACTS.join(", ")}.`);
-    } else {
-      parsedImpact = impact;
-    }
-  }
-
-  // Extra fields: a plain object of answers keyed by the category's field keys (S5 validates them)
-  if (extra_fields !== undefined && extra_fields !== null && (typeof extra_fields !== "object" || Array.isArray(extra_fields))) {
-    errors.push("extra_fields must be an object.");
-  }
-
-  // Category ID validation
-  const targetCatId = category_id !== undefined ? category_id : ticket_category_id;
-  let parsedCatId: number | null = null;
-  if (targetCatId !== undefined && targetCatId !== null && String(targetCatId).trim() !== "") {
-    if (!isIntId(String(targetCatId))) {
-      errors.push("Category ID must be a valid integer.");
-    } else {
-      parsedCatId = Number(targetCatId);
-    }
-  }
-
-  // Department: only used by the legacy bridge below when no category is sent
-  const targetDeptId = department_id !== undefined ? department_id : ticket_department_id;
-  let legacyDeptId: number | null = null;
-  if (parsedCatId === null && targetDeptId !== undefined && targetDeptId !== null && String(targetDeptId).trim() !== "") {
-    if (!isIntId(String(targetDeptId))) {
-      errors.push("Department ID must be a valid integer.");
-    } else {
-      legacyDeptId = Number(targetDeptId);
-    }
-  }
-
-  if (parsedCatId === null && legacyDeptId === null && errors.length === 0) {
-    errors.push("Choose a category.");
-  }
-
-  // Requester resolution: Employees can only create tickets as themselves
-  let resolvedRequesterId = String(user.user_id);
-  if (requester_id !== undefined && requester_id !== null && String(requester_id).trim() !== "") {
-    if (!isUserId(String(requester_id))) {
-      errors.push("Requester ID must be a valid user ID.");
-    } else {
-      resolvedRequesterId = String(requester_id).trim();
-    }
-  }
-
-  if (errors.length > 0) {
-    return res.status(400).json({ message: "Validation failed", errors });
-  }
-
-  try {
-    // LEGACY BRIDGE (until S5): a department-only request goes to that department's fallback category
-    if (parsedCatId === null && legacyDeptId !== null) {
-      parsedCatId = await ticketService.getFallbackCategoryId(legacyDeptId);
-      if (parsedCatId === null) {
-        return res.status(400).json({ message: "Choose a category." });
-      }
-    }
-
-    const category = await ticketService.getCategoryRouting(parsedCatId!);
-    if (!category) {
-      return res.status(400).json({ message: "Category not found with the provided ID." });
-    }
-    if (!category.active) {
-      return res.status(400).json({ message: "This category is no longer offered. Please choose another." });
-    }
-
-    if (resolvedRequesterId !== String(user.user_id)) {
-      const requesterExists = await ticketService.checkUserExists(resolvedRequesterId);
-      if (!requesterExists) {
-        return res.status(400).json({ message: "Requester user not found." });
-      }
-    }
-
-    const newTicketDto: CreateTicketDto = {
-      title: title.trim(),
-      description: description ? description.trim() : null,
-      category_id: category.category_id,
-      department_id: category.department_id,
-      priority: staffPriority ?? category.default_priority,
-      // Purchase and access requests start in Pending approval; everything else starts as New
-      status: category.needs_approval ? "Pending approval" : "New",
-      impact: parsedImpact,
-      extra_fields: extra_fields ?? {},
-      requester_id: resolvedRequesterId
-    };
-
-    const ticket = await ticketService.createTicket(newTicketDto);
-    return res.status(201).json({ message: "Ticket created successfully", ticket });
-  } catch (error) {
-    return handleError(res, error);
-  }
 };
 
 
