@@ -11,6 +11,14 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
+import {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 function NotFoundMessage({ homeHref, homeLabel }: { homeHref: string; homeLabel: string }) {
   return (
@@ -21,9 +29,25 @@ function NotFoundMessage({ homeHref, homeLabel }: { homeHref: string; homeLabel:
         <EmptyDescription>The link may be old, or you may not have access to it.</EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
-        <Button asChild>
-          <Link to={homeHref}>{homeLabel}</Link>
-        </Button>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Button asChild>
+            <Link to={homeHref}>{homeLabel}</Link>
+          </Button>
+          {/* Same IT desk number as the sign-in page */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline">Contact IT</Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64">
+              <PopoverHeader>
+                <PopoverTitle>IT desk</PopoverTitle>
+                <PopoverDescription>
+                  Call <span className="font-medium text-foreground tabular-nums">011 555 0142</span>.
+                </PopoverDescription>
+              </PopoverHeader>
+            </PopoverContent>
+          </Popover>
+        </div>
       </EmptyContent>
     </Empty>
   );
