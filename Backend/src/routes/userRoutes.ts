@@ -1,25 +1,23 @@
 import { Router } from "express";
-import { createUser, fetchUser, updateUser, deleteUser, deactivateUser } from "../controllers/usersController";
+import { createUser, fetchUser, updateUser, setUserActive, updateUserLegacy } from "../controllers/usersController";
 import { requireAuth } from "../middleware/authMiddlware";
 
 const router = Router();
 
-// Create
-router.post("/create", requireAuth, createUser);
+router.use(requireAuth);
 
-// Read
-router.get("/", requireAuth, fetchUser);
-router.get("/getUser", requireAuth, fetchUser); // legacy/compatibility endpoint
-router.get("/:id", requireAuth, fetchUser);
+// S1 (docs/api-sprint-1.md). There is no DELETE: deactivate with PATCH /:id/active instead.
+router.get("/", fetchUser);
+router.get("/getUser", fetchUser); // legacy alias of GET /, declared before /:id
+router.post("/", createUser);
+router.get("/:id", fetchUser);
+router.patch("/:id", updateUser);
+router.patch("/:id/active", setUserActive);
 
-// Update
-router.put("/update", requireAuth, updateUser);
-router.put("/update/:id", requireAuth, updateUser);
-router.put("/:id", requireAuth, updateUser);
-router.patch("/:id/deactivate", requireAuth, deactivateUser);
-
-// Delete
-router.delete("/delete/:id", requireAuth, deleteUser);
-router.delete("/:id", requireAuth, deleteUser);
+// Legacy addresses still called by UsersContext / the profile page until they move to services/users.ts
+router.post("/create", createUser);
+router.put("/update", updateUserLegacy);
+router.put("/update/:id", updateUserLegacy);
+router.put("/:id", updateUserLegacy);
 
 export default router;

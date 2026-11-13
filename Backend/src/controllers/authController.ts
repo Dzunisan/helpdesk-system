@@ -38,7 +38,9 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
         const token = jwt.sign({id: user.user_id, email: user.email, role: user.role}, JWT_SECRET, {expiresIn: "1h"})
         res.cookie(COOKIE_NAME, token, COOKIE_OPTIONS);
 
-        res.status(200).json({ user: userServices.toPublicUser(user) })
+        // S1: stamp last_login_at. must_change_password in the response sends a first sign-in to /change-password
+        const signedIn = (await userServices.stampLastLogin(user.user_id)) ?? user;
+        res.status(200).json({ user: userServices.toPublicUser(signedIn) })
     } 
     catch (error) {
 
@@ -138,4 +140,40 @@ export const resetPassword = async (req: Request, res: Response) => {
   await userServices.updatePasswordAndClearToken(user.user_id, hashed);
 
   return res.status(200).json({ message: "Password has been reset successfully." });
+};
+
+/**
+ * POST /api/auth/change-password { current_password, new_password } -> { user }
+ * Any signed-in user (requireAuth). The first sign-in with a temporary password ends here (S1):
+ * it clears must_change_password. 400 for a wrong current password or a weak new one.
+ */
+export const changePassword = async (req: Request, res: Response, next: NextFunction) => {
+  const { current_password, new_password } = req.body ?? {};
+  if (typeof current_password !== "string" || current_password === "") {
+    return res.status(400).json({ message: "Enter your current password.", errors: ["Enter your current password."] });
+  }
+  const problem = passwordProblem(new_password);
+  if (problem) {
+    return res.status(400).json({ message: problem, errors: [problem] });
+  }
+  if (new_password === current_password) {
+    const message = "Choose a new password that is different from the current one.";
+    return res.status(400).json({ message, errors: [message] });
+  }
+
+  try {
+    const user = await userServices.findById(String(req.user!.user_id));
+    if (!user || !user.active) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+    const matches = await bcrypt.compare(current_password, user.password || "");
+    if (!matches) {
+      const message = "Your current password is wrong.";
+      return res.status(400).json({ message, errors: [message] });
+    }
+    const updated = await userServices.setOwnPassword(user.user_id, new_password);
+    return res.status(200).json({ user: userServices.toPublicUser(updated ?? user) });
+  } catch (error) {
+    next(error);
+  }
 };

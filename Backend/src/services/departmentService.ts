@@ -1,4 +1,4 @@
-import { pool } from "../config/database";
+import { pool, withTransaction } from "../config/database";
 
 export const createDepartment = async (
   name: string,
@@ -6,13 +6,19 @@ export const createDepartment = async (
   status: string,
   leadId: string | null
 ) => {
-  const result = await pool.query(
-    `INSERT INTO department (department_name, description, status, lead_id)
-     VALUES ($1, $2, $3, $4)
-     RETURNING *`,
-    [name, description, status, leadId]
-  );
-  return result.rows[0];
+  // A lead named on create also moves into the new department (same rule as PUT /:id/lead)
+  return withTransaction(async (client) => {
+    const result = await client.query(
+      `INSERT INTO department (department_name, description, status, lead_id)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [name, description, status, leadId]
+    );
+    if (leadId) {
+      await client.query("UPDATE users SET department_id = $1 WHERE user_id = $2", [result.rows[0].department_id, leadId]);
+    }
+    return result.rows[0];
+  });
 };
 
 export const getDepartments = async (
@@ -94,14 +100,20 @@ export const updateDepartment = async (
   fields.push(`updated_at = NOW()`);
   values.push(id);
 
-  const result = await pool.query(
-    `UPDATE department
-     SET ${fields.join(", ")}
-     WHERE department_id = $${paramIndex}
-     RETURNING *`,
-    values
-  );
-  return result.rows[0];
+  return withTransaction(async (client) => {
+    const result = await client.query(
+      `UPDATE department
+       SET ${fields.join(", ")}
+       WHERE department_id = $${paramIndex}
+       RETURNING *`,
+      values
+    );
+    // A newly named lead moves into the department (same rule as PUT /:id/lead)
+    if (result.rows[0] && leadId) {
+      await client.query("UPDATE users SET department_id = $1 WHERE user_id = $2", [id, leadId]);
+    }
+    return result.rows[0];
+  });
 };
 
 export const softDeleteDepartment = async (id: number) => {
@@ -114,21 +126,57 @@ export const softDeleteDepartment = async (id: number) => {
 
 export const getUserForLead = async (userId: string) => {
   const result = await pool.query(
-    "SELECT user_id, email, role, active FROM users WHERE user_id = $1",
+    `SELECT u.user_id::text AS user_id, u.name, u.surname, u.email, u.role, u.active, u.department_id,
+            (SELECT d.department_id FROM department d WHERE d.lead_id = u.user_id LIMIT 1) AS led_department_id,
+            (SELECT d.department_name FROM department d WHERE d.lead_id = u.user_id LIMIT 1) AS led_department_name
+     FROM users u WHERE u.user_id = $1`,
     [userId]
   );
   return result.rows[0];
 };
 
+export type LeadCandidate = {
+  user_id: string;
+  name: string;
+  surname: string;
+  role: string;
+  active: boolean;
+  department_id: number | null;
+  led_department_id: number | null;
+  led_department_name: string | null;
+};
+
+/**
+ * Why this user can't lead department `departmentId` (S1, page 10): only an active Department Lead
+ * who leads no other department. Null when they can.
+ */
+export const leadProblem = (user: LeadCandidate, departmentId: number): string | null => {
+  const name = `${user.name} ${user.surname}`.trim();
+  if (user.role !== "Department Lead") return `${name} isn't a Department Lead. Change their role first.`;
+  if (user.active !== true) return `${name} is deactivated.`;
+  if (user.led_department_id !== null && Number(user.led_department_id) !== departmentId) {
+    return `${name} already leads ${user.led_department_name}.`;
+  }
+  return null;
+};
+
+/**
+ * Makes `leadId` the department's lead and moves the lead into that department
+ * (users.department_id), in one transaction. The department.lead_id UNIQUE constraint backs the
+ * one-department-per-lead rule if two admins race.
+ */
 export const assignDepartmentLead = async (departmentId: number, leadId: string) => {
-  const result = await pool.query(
-    `UPDATE department
-     SET lead_id = $1, updated_at = NOW()
-     WHERE department_id = $2
-     RETURNING *`,
-    [leadId, departmentId]
-  );
-  return result.rows[0];
+  return withTransaction(async (client) => {
+    const result = await client.query(
+      `UPDATE department
+       SET lead_id = $1, updated_at = NOW()
+       WHERE department_id = $2
+       RETURNING *`,
+      [leadId, departmentId]
+    );
+    await client.query("UPDATE users SET department_id = $1 WHERE user_id = $2", [departmentId, leadId]);
+    return result.rows[0];
+  });
 };
 
 export const removeDepartmentLead = async (departmentId: number) => {
