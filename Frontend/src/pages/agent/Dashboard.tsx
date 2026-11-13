@@ -22,6 +22,8 @@ import { useClaim, useClaimNextShortcut } from "@/components/queue/useClaim";
 import { useTicketList } from "@/components/queue/useTicketList";
 import { AGENT_VIEWS, agentQueuePath, type TicketLinkState } from "@/components/queue/queueViews";
 import { plural, sastDayKey } from "@/components/queue/queueUtils";
+import { Button } from "@/components/ui/button";
+import { csatOf, useTicketRatings } from "./useTicketRatings";
 
 const BASE = "/agent";
 const MY_TICKETS_SHOWN = 6;
@@ -80,6 +82,10 @@ export default function AgentDashboard() {
       : null;
     return { resolved: week.tickets.length, avgFirstReply: avg };
   }, [week.tickets]);
+
+  // S10: CSAT of this week's resolved tickets that the requester has rated (4-5 stars / all)
+  const { ratings, loading: ratingsLoading } = useTicketRatings(week.tickets);
+  const csat = useMemo(() => csatOf(ratings.values()), [ratings]);
 
   const next = queue.tickets[0];
   const claimNext = () => {
@@ -203,7 +209,23 @@ export default function AgentDashboard() {
 
           <SectionCard
             title="My last 7 days"
-            footer="Satisfaction scores arrive with ratings in Sprint 2 (S10)."
+            action={<CardLink to={agentQueuePath("resolved")}>Resolved by me</CardLink>}
+            footer={
+              week.error ? (
+                <span className="flex flex-wrap items-center gap-x-2">
+                  Couldn't load your week.
+                  <Button variant="link" size="sm" onClick={() => void week.refetch()} className="h-auto p-0 text-xs">
+                    Try again
+                  </Button>
+                </span>
+              ) : week.loading || ratingsLoading ? (
+                "Tickets you resolved, their first replies and ratings"
+              ) : csat.responses > 0 ? (
+                `CSAT from ${plural(csat.responses, "rating")} (4 or 5 stars count as happy)`
+              ) : (
+                "No ratings yet this week. Requesters rate a ticket when it closes."
+              )
+            }
           >
             <dl className="grid grid-cols-3 gap-4 text-center">
               <MiniStat label="Resolved" loading={week.loading} value={week.error ? "—" : lastWeek.resolved} />
@@ -212,7 +234,12 @@ export default function AgentDashboard() {
                 loading={week.loading}
                 value={week.error || lastWeek.avgFirstReply === null ? "—" : formatTarget(lastWeek.avgFirstReply)}
               />
-              <MiniStat label="CSAT" loading={false} value="—" muted />
+              <MiniStat
+                label="CSAT"
+                loading={week.loading || ratingsLoading}
+                value={week.error || csat.pct === null ? "—" : `${csat.pct}%`}
+                muted={!week.error && csat.pct === null}
+              />
             </dl>
           </SectionCard>
         </div>
