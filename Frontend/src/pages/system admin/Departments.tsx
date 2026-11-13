@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Building2, CirclePower, Pencil, Plus, RotateCw, SearchX, UserRoundPlus } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Building2, CirclePower, Pencil, Plus, RotateCw, SearchX, Shapes, UserRoundPlus, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 import { useDepartments, type Department } from "@/hooks/useDepartments";
-import { useUsers } from "@/context/UsersContext";
 import { fetchAdminOverview, type AdminOverviewDepartment } from "@/services/reportService";
+import { listUsers } from "@/services/users";
+import { listCategories } from "@/services/categories";
 import { cn } from "@/lib/utils";
 import PageHeader from "@/components/app/PageHeader";
 import UserAvatar from "@/components/app/UserAvatar";
@@ -13,17 +15,28 @@ import { FilterTabs, SearchInput, Toolbar } from "@/components/app/Toolbar";
 import { ListBody, ListCaption, ListCard, ListHeaderRow, ListRow, LoadingRows } from "@/components/app/ListCard";
 import { ActiveBadge, NoLeadBadge } from "@/components/admin/AdminBadges";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import AppointLeadDialog, { type LeadTarget } from "@/components/admin/AppointLeadDialog";
 import DepartmentSheet from "@/components/admin/DepartmentSheet";
 import RowMenu from "@/components/admin/RowMenu";
+import { useLoader } from "@/components/admin/useLoader";
+import { fullNameOf } from "@/components/admin/users";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 
 type Tab = "all" | "active" | "inactive";
 
-/* Department · Lead · Agents · Open tickets · Status · menu. Below xl the rows stack. */
-const GRID = "xl:grid xl:grid-cols-[minmax(0,1fr)_13rem_4.5rem_6rem_7rem_2rem] xl:items-center xl:gap-6";
+/* Department · Lead · Agents · Categories · Open tickets · Status · menu. Below xl the rows stack. */
+const GRID = "xl:grid xl:grid-cols-[minmax(0,1fr)_13rem_4rem_5.5rem_6rem_6.5rem_2rem] xl:items-center xl:gap-6";
 
 const isActive = (d: Department) => d.status !== "inactive";
+
+/** Category count per department, inactive categories included */
+const loadCategoryCounts = async () => {
+  const { categories } = await listCategories({ includeInactive: true });
+  const counts = new Map<number, number>();
+  for (const c of categories) counts.set(c.department_id, (counts.get(c.department_id) ?? 0) + 1);
+  return counts;
+};
 
 /** System Admin › Departments (briefing p.62) */
 export default function Departments() {
@@ -39,7 +52,9 @@ export default function Departments() {
     refetch,
     error,
   } = useDepartments();
-  const { users } = useUsers();
+  // Everyone the System Admin manages: lead names and the Appoint lead candidates
+  const users = useLoader(() => listUsers());
+  const categoryCounts = useLoader(loadCategoryCounts);
 
   const [tab, setTab] = useState<Tab>("all");
   const [search, setSearch] = useState("");
@@ -47,6 +62,8 @@ export default function Departments() {
   const [editing, setEditing] = useState<Department | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deactivating, setDeactivating] = useState<Department | null>(null);
+  const [leadOpen, setLeadOpen] = useState(false);
+  const [leadTarget, setLeadTarget] = useState<LeadTarget | null>(null);
 
   // Agent and open-ticket counts come from the overview report (counts only, so HR stays private)
   const [counts, setCounts] = useState<Map<string, AdminOverviewDepartment> | null>(null);
@@ -64,12 +81,21 @@ export default function Departments() {
       if (d.departmentLead?.trim()) return d.departmentLead.trim();
       if (d.lead_name || d.lead_surname) return `${d.lead_name ?? ""} ${d.lead_surname ?? ""}`.trim();
       if (d.lead_id != null) {
-        const match = users.find((u) => String(u.user_id) === String(d.lead_id) || String(u.id) === String(d.lead_id));
-        if (match) return `${match.name} ${match.surname ?? ""}`.trim();
+        const match = users.data?.find((u) => u.user_id === String(d.lead_id));
+        if (match) return fullNameOf(match);
       }
       return null;
     },
-    [users],
+    [users.data],
+  );
+
+  const departmentNames = useMemo(
+    () => new Map(departments.map((d) => [Number(d.department_id), d.department_name])),
+    [departments],
+  );
+  const leaderIds = useMemo(
+    () => new Set(departments.filter((d) => d.lead_id != null && d.lead_id !== "").map((d) => String(d.lead_id))),
+    [departments],
   );
 
   const tabCounts = useMemo(
@@ -96,6 +122,15 @@ export default function Departments() {
   const openEdit = (d: Department) => {
     setEditing(d);
     setSheetOpen(true);
+  };
+  const openAppoint = (d: Department) => {
+    setLeadTarget({
+      department_id: Number(d.department_id),
+      department_name: d.department_name,
+      lead_id: d.lead_id != null && d.lead_id !== "" ? String(d.lead_id) : null,
+      lead_name: leadNameOf(d),
+    });
+    setLeadOpen(true);
   };
   const askDeactivate = (d: Department) => {
     setDeactivating(d);
@@ -132,6 +167,8 @@ export default function Departments() {
   const refreshAll = () => {
     refetch();
     loadCounts();
+    users.reload();
+    categoryCounts.reload();
   };
 
   const loadFailed = !!error && !loading && departments.length === 0;
@@ -181,13 +218,14 @@ export default function Departments() {
             <span>Department</span>
             <span>Lead</span>
             <span className="text-right">Agents</span>
+            <span className="text-right">Categories</span>
             <span className="text-right">Open tickets</span>
             <span className="pl-2">Status</span>
             <span className="sr-only">Actions</span>
           </ListHeaderRow>
 
           {loading ? (
-            <LoadingRows grid={GRID} breakpoint="xl" rows={4} columns={["title", "avatar", "meta", "meta", "badge", "icon"]} />
+            <LoadingRows grid={GRID} breakpoint="xl" rows={4} columns={["title", "avatar", "meta", "meta", "meta", "badge", "icon"]} />
           ) : visible.length === 0 ? (
             departments.length === 0 ? (
               <EmptyState
@@ -222,8 +260,16 @@ export default function Departments() {
                   department={d}
                   leadName={leadNameOf(d)}
                   stats={counts ? counts.get(String(d.department_id)) ?? null : undefined}
+                  categories={
+                    categoryCounts.data
+                      ? categoryCounts.data.get(Number(d.department_id)) ?? 0
+                      : categoryCounts.error
+                        ? null
+                        : undefined
+                  }
                   busy={actionLoading}
                   onEdit={() => openEdit(d)}
+                  onAppoint={() => openAppoint(d)}
                   onDeactivate={() => askDeactivate(d)}
                   onReactivate={() => reactivate(d)}
                 />
@@ -243,7 +289,6 @@ export default function Departments() {
         open={sheetOpen}
         onOpenChange={setSheetOpen}
         department={editing}
-        departments={departments}
         submitting={actionLoading}
         onCreate={async (data) => {
           await createDepartment(data);
@@ -252,6 +297,20 @@ export default function Departments() {
         onUpdate={async (id, data) => {
           await updateDepartment(id, data);
           loadCounts();
+        }}
+      />
+
+      <AppointLeadDialog
+        open={leadOpen}
+        onOpenChange={setLeadOpen}
+        department={leadTarget}
+        users={users.data}
+        departmentNames={departmentNames}
+        leaderIds={leaderIds}
+        onAppointed={() => {
+          refetch();
+          loadCounts();
+          users.reload();
         }}
       />
 
@@ -274,16 +333,30 @@ interface DepartmentRowProps {
   leadName: string | null;
   /** undefined while counts load, null if they aren't available */
   stats: AdminOverviewDepartment | null | undefined;
+  /** Category count: undefined while loading, null if unavailable */
+  categories: number | null | undefined;
   busy: boolean;
   onEdit: () => void;
+  onAppoint: () => void;
   onDeactivate: () => void;
   onReactivate: () => void;
 }
 
-function DepartmentRow({ department: d, leadName, stats, busy, onEdit, onDeactivate, onReactivate }: DepartmentRowProps) {
+function DepartmentRow({
+  department: d,
+  leadName,
+  stats,
+  categories,
+  busy,
+  onEdit,
+  onAppoint,
+  onDeactivate,
+  onReactivate,
+}: DepartmentRowProps) {
   const active = isActive(d);
   const agents = stats === undefined ? "…" : stats ? stats.agents : "—";
   const open = stats === undefined ? "…" : stats ? stats.open_tickets : "—";
+  const cats = categories === undefined ? "…" : categories === null ? "—" : categories;
 
   return (
     <ListRow grid={GRID} className={cn("relative", !active && "bg-muted/30")}>
@@ -304,9 +377,10 @@ function DepartmentRow({ department: d, leadName, stats, busy, onEdit, onDeactiv
         </div>
         {/* Phones: one quiet line of counts. Wide screens: two right-aligned number columns. */}
         <span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums xl:hidden">
-          {agents} {agents === 1 ? "agent" : "agents"} · {open} open
+          {agents} {agents === 1 ? "agent" : "agents"} · {cats} {cats === 1 ? "category" : "categories"} · {open} open
         </span>
         <span className="hidden text-right text-sm tabular-nums xl:block">{agents}</span>
+        <span className="hidden text-right text-sm tabular-nums xl:block">{cats}</span>
         <span className="hidden text-right text-sm tabular-nums xl:block">{open}</span>
         <div className={cn("flex xl:pl-2", active && "hidden xl:flex")}>
           <ActiveBadge active={active} inactiveLabel="Inactive" />
@@ -320,9 +394,21 @@ function DepartmentRow({ department: d, leadName, stats, busy, onEdit, onDeactiv
             <Pencil />
             Edit department
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onEdit}>
+          <DropdownMenuItem onSelect={onAppoint} disabled={!active}>
             <UserRoundPlus />
             {leadName ? "Change lead" : "Appoint lead"}
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to={`/system-admin/users?department=${d.department_id}`}>
+              <UsersRound />
+              People
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to={`/system-admin/categories?department=${d.department_id}`}>
+              <Shapes />
+              Categories
+            </Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           {active ? (
