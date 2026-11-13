@@ -43,6 +43,11 @@ export const departmentsOf = (user: TicketAccessUser): number[] => {
   return [...ids];
 };
 
+// The departments whose lead powers (assign, approve, reject) this user holds: department.lead_id
+// is them (filled in by loadTicketAccess). Used by the S6 approvals queue.
+export const ledDepartmentsOf = (user: TicketAccessUser): number[] =>
+  [...new Set((user.led_department_ids ?? []).map(Number))];
+
 // Adds the departments a Department Lead leads (department.lead_id) to the user. Call once per
 // request before canView / canWork / ticketScopeCondition.
 export const loadTicketAccess = async (user: User | TicketAccessUser): Promise<TicketAccessUser> => {
