@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { sendPasswordResetEmail } from "../utils/mailer";
 import crypto from "crypto";
+import { JWT_SECRET } from "../config/env";
 
 const COOKIE_NAME = "session";
 const COOKIE_OPTIONS = {
@@ -12,35 +13,6 @@ const COOKIE_OPTIONS = {
     sameSite: "lax" as const,
     maxAge: 1000 * 60 * 60, 
 };
-
-export const register = async (req: Request, res: Response, next: NextFunction) => {
-    const {name, surname, email, password, role, department_id} = req.body
-    if(!name || !surname || !email || !password || !role) {
-        return res.status(400).json({message: "All fields are required"})
-    }
-
-    try {
-        const existingUser = await userServices.findUserByEmail(email);
-        if(existingUser) {
-            return res.status(409).json({message: "User already exists"})
-        }
-        const user_id = Date.now().toString();
-        const newUser = await userServices.createUser({
-            user_id,
-            name,
-            surname,
-            email,
-            password,
-            role,
-            active: true,
-            department_id
-        })
-        const { password: _, ...userWithoutPassword } = newUser;
-        res.status(201).json({message: "User created successfully", user: userWithoutPassword})
-    } catch (error) {
-        next(error)
-    }
-}
 
 export const login = async (req: Request, res: Response, next: NextFunction) => {
     const {email, password} = req.body
@@ -56,16 +28,13 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
 
            return invalidCredentials()
         }
-        if(!user.active) {
-
-            return res.status(403).json({message: "User is inactive"})
-        }
         const isPasswordValid = await bcrypt.compare(password, user.password || "");
-        if(!isPasswordValid) {
+        // Same generic message for unknown, wrong or deactivated, so the response never reveals which
+        if(!isPasswordValid || !user.active) {
 
             return invalidCredentials()
         }
-        const token = jwt.sign({id: user.user_id, email: user.email, role: user.role}, process.env.JWT_SECRET || "secret", {expiresIn: "1h"})
+        const token = jwt.sign({id: user.user_id, email: user.email, role: user.role}, JWT_SECRET, {expiresIn: "1h"})
         res.cookie(COOKIE_NAME, token, COOKIE_OPTIONS);
 
         const { password: _, ...userWithoutPassword } = user;
@@ -93,10 +62,10 @@ export const me = async (req: Request, res: Response, next: NextFunction) => {
     }
 
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret") as { id: string; email: string; role: string };
+        const decoded = jwt.verify(token, JWT_SECRET) as { id: string; email: string; role: string };
         const user = await userServices.findUserByEmail(decoded.email);
 
-        if(!user) {
+        if(!user || !user.active) {
             return res.status(401).json({message: "Not authenticated"})
         }
         const { password: _, ...userWithoutPassword } = user;
@@ -116,20 +85,17 @@ export const forgotPassword = async (req: Request, res: Response) => {
 
    try {
     const user = await userServices.findUserByEmail(email);
-    console.log("Forgot password: user found?", !!user, "for email:", email);
 
     if (user) {
       const token = crypto.randomBytes(32).toString("hex");
       const expiry = new Date(Date.now() + 1000 * 60 * 30);
 
       await userServices.setResetToken(user.user_id, token, expiry);
-      console.log("Forgot password: token saved, sending email to", user.email);
 
-      const info = await sendPasswordResetEmail(user.email, token);
-      console.log("Forgot password: email sent", info);
+      await sendPasswordResetEmail(user.email, token);
     }
   } catch (error) {
-    console.error("Forgot password error:", error);
+    console.error("Forgot password: could not send the reset email.");
   }
 
   return res.status(200).json(genericResponse);

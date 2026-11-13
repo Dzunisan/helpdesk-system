@@ -1,3 +1,5 @@
+// Must be first: loads .env and exits with a clear error if JWT_SECRET is missing
+import "./src/config/env";
 import express from "express";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
@@ -16,6 +18,11 @@ const PORT = process.env.SERVER_PORT || 5000;
 
 app.use(cors({origin: process.env.CLIENT_URL || "http://localhost:5173", credentials: true}));
 app.use(express.json());
+// Express 5 leaves req.body undefined when a request has no body (e.g. PUT /tickets/:id/assign)
+app.use((req, _res, next) => {
+  if (req.body === undefined) req.body = {};
+  next();
+});
 app.use(cookieParser());
 app.get("/", (req, res) => {
   res.send("Helpdesk System API is running");

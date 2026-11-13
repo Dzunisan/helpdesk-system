@@ -59,8 +59,6 @@ export const createUser = async (req: Request, res: Response, next: NextFunction
 
         await sendTempPasswordEmail(email, tempPassword);
 
-        console.log("tempPass: ", tempPassword);
-
         const { password: _, ...userWithoutPassword } = newUser;
         res.status(201).json({ message: "User created successfully", user: userWithoutPassword });
     } catch (error) {
