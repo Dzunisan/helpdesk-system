@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { changePassword, updateOwnName } from "@/services/users";
@@ -28,6 +29,14 @@ export default function UserProfile() {
   const [editingName, setEditingName] = useState(false);
   const [saving, setSaving] = useState<Action | null>(null);
   const [error, setError] = useState<{ action: Action; message: string } | null>(null);
+
+  // The bell's "Notification settings" link lands on profile#notifications (p.51, p.68)
+  const { hash } = useLocation();
+  const notificationsRef = useRef<HTMLDivElement>(null);
+  const hasUser = Boolean(user);
+  useEffect(() => {
+    if (hash === "#notifications" && hasUser) notificationsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [hash, hasUser]);
 
   // Refresh the session user so name and department are current
   useEffect(() => {
@@ -110,7 +119,9 @@ export default function UserProfile() {
             setEditingName(true);
           }}
         />
-        <NotificationPrefsCard />
+        <div id="notifications" ref={notificationsRef} className="scroll-mt-24">
+          <NotificationPrefsCard />
+        </div>
         </div>
 
         <ChangePasswordCard
