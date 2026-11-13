@@ -142,7 +142,13 @@ export function EventLine({
         </div>
       </div>
       {note && (
-        <blockquote className="ml-11 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm break-words whitespace-pre-wrap text-foreground">
+        <blockquote
+          className={cn(
+            "ml-11 rounded-lg border px-3 py-2 text-sm break-words whitespace-pre-wrap text-foreground",
+            // A staff-only note (e.g. the reason for a move) reads amber, like internal notes
+            staffOnly ? "border-warning-border bg-warning-muted" : "border-border bg-muted/40",
+          )}
+        >
           {note}
         </blockquote>
       )}
