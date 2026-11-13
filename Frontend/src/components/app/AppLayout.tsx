@@ -23,6 +23,7 @@ import { useAuth, type Role, type User } from "@/context/AuthContext";
 import { useDepartmentName } from "@/hooks/useDepartmentName";
 import { fullName, homePathFor, initials, profilePathFor } from "@/lib/roles";
 import { cn } from "@/lib/utils";
+import BrandMark from "@/components/app/BrandMark";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -139,14 +140,8 @@ const isActive = (pathname: string, item: NavItem) =>
 /** Logo mark + "Helpdesk / Mzansi Freight" */
 function Brand({ to }: { to: string }) {
   return (
-    <NavLink to={to} className="flex min-w-0 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-        <Inbox className="size-4" />
-      </span>
-      <span className="grid min-w-0 leading-tight">
-        <span className="truncate text-sm font-semibold">Helpdesk</span>
-        <span className="truncate text-xs text-muted-foreground">Mzansi Freight</span>
-      </span>
+    <NavLink to={to} className="flex min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <BrandMark />
     </NavLink>
   );
 }

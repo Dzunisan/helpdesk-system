@@ -15,12 +15,14 @@ const STYLE: Record<Status, string> = {
 
 interface StatusBadgeProps {
   /** The ticket's status as stored (legacy names are mapped in lib/ticketVocabulary) */
-  status: string | null | undefined;
+  status?: string | null;
+  /** A display key, for samples that aren't database values (e.g. the sign-in panel) */
+  kind?: Status;
   className?: string;
 }
 
-export function StatusBadge({ status, className }: StatusBadgeProps) {
-  const key = toStatus(status);
+export function StatusBadge({ status, kind, className }: StatusBadgeProps) {
+  const key = kind ?? toStatus(status);
   return (
     <Badge variant="outline" className={cn(STYLE[key], className)}>
       <span aria-hidden className="size-1.5 rounded-full bg-current" />
