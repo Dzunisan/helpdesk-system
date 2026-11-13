@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, CircleCheck, Gauge, UserCheck, UserRoundX, Users, Zap } from "lucide-react";
-import { fetchAgents } from "@/services/ticketService";
-import { fetchAllTickets } from "@/components/lead/fetchAllTickets";
-import type { AgentUser, Ticket } from "@/types/ticket.types";
+import { listAllTickets, listAssignees } from "@/services/tickets";
+import type { Assignee as AgentUser, Ticket } from "@/types/api";
 import { useAuth } from "@/context/AuthContext";
 import { useDepartmentName } from "@/hooks/useDepartmentName";
 import { cn } from "@/lib/utils";
@@ -95,7 +94,7 @@ export default function TeamAgents() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchAgents(), fetchAllTickets()])
+    Promise.all([listAssignees(), listAllTickets()])
       .then(([list, all]) => {
         if (cancelled) return;
         setAgents(list);

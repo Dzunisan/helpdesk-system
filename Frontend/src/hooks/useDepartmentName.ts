@@ -1,11 +1,27 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import { listDepartments } from "@/services/departments";
 
-const API = `${import.meta.env.VITE_API_URL}/api`;
+/** Department names change rarely: one shared request per minute for every label on screen */
+const TTL_MS = 60_000;
+let cached: { at: number; names: Promise<Map<string, string>> } | null = null;
+
+const departmentNames = (): Promise<Map<string, string>> => {
+  if (cached && Date.now() - cached.at < TTL_MS) return cached.names;
+  const names = listDepartments({ limit: 100 }).then(
+    (res) => new Map(res.departments.map((d) => [String(d.department_id), d.department_name])),
+  );
+  cached = { at: Date.now(), names };
+  // A failed load is forgotten so the next label tries again
+  names.catch(() => {
+    if (cached?.names === names) cached = null;
+  });
+  return names;
+};
 
 /**
  * The name of a department, for labels such as "Agent · IT Support".
- * Uses GET /api/departments (open to every signed-in user); null until loaded or when unknown.
+ * Uses GET /api/departments (open to every signed-in user), shared by every caller; null until
+ * loaded or when unknown.
  */
 export const useDepartmentName = (departmentId: number | string | null | undefined) => {
   const [loaded, setLoaded] = useState<{ id: string; name: string | null } | null>(null);
@@ -14,16 +30,8 @@ export const useDepartmentName = (departmentId: number | string | null | undefin
   useEffect(() => {
     if (key === null) return;
     let cancelled = false;
-    axios
-      .get<{ departments?: { department_id: number | string; department_name: string }[] }>(
-        `${API}/departments`,
-        { params: { limit: 100 }, withCredentials: true },
-      )
-      .then((res) => {
-        if (cancelled) return;
-        const match = res.data.departments?.find((d) => String(d.department_id) === key);
-        setLoaded({ id: key, name: match?.department_name ?? null });
-      })
+    departmentNames()
+      .then((names) => !cancelled && setLoaded({ id: key, name: names.get(key) ?? null }))
       .catch(() => {
         // A label is not worth an error message; the layout just shows the role
       });

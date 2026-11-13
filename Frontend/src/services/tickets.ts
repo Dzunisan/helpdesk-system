@@ -40,6 +40,23 @@ const listQuery = (params: TicketListParams): Record<string, string | number> =>
 export const listTickets = (params: TicketListParams = {}) =>
   call(() => api.get<TicketListResponse>("/tickets", { params: listQuery(params) }), "Couldn't load tickets.");
 
+/**
+ * How many tickets a list holds (pagination.total of a 1-row request). The sidebar and the page's
+ * tabs ask for the same counts at the same moment, so identical requests within a few seconds
+ * share one answer; `fresh` skips that after a change (claim, assign, reply).
+ */
+const COUNT_TTL_MS = 3_000;
+const countCache = new Map<string, { at: number; total: Promise<number> }>();
+export const countTickets = (params: TicketListParams, { fresh = false } = {}): Promise<number> => {
+  const key = JSON.stringify(listQuery({ ...params, limit: 1 }));
+  const hit = countCache.get(key);
+  if (!fresh && hit && Date.now() - hit.at < COUNT_TTL_MS) return hit.total;
+  const total = listTickets({ ...params, limit: 1 }).then((r) => r.pagination?.total ?? r.tickets.length);
+  countCache.set(key, { at: Date.now(), total });
+  total.catch(() => countCache.get(key)?.total === total && countCache.delete(key));
+  return total;
+};
+
 /** GET /api/tickets/:id: 404 when the ticket doesn't exist or the caller may not see it */
 export const getTicket = async (id: number): Promise<Ticket> =>
   (await call(() => api.get<TicketResponse>(`/tickets/${id}`), "Couldn't load this ticket.")).ticket;
@@ -96,3 +113,25 @@ export const deleteComment = async (commentId: number): Promise<Comment> =>
 /** POST /api/tickets/:id/feedback: the requester rates a Resolved or Closed ticket once */
 export const submitFeedback = async (ticketId: number, body: SubmitFeedbackRequest): Promise<TicketFeedback> =>
   (await call(() => api.post<FeedbackResponse>(`/tickets/${ticketId}/feedback`, body), "Couldn't send your rating.")).feedback;
+
+/**
+ * Every ticket the caller may see, 100 per page, up to 10 pages (the lead's dashboard and team
+ * page count on the client). The server scopes a lead to their department.
+ */
+export const listAllTickets = async (params: TicketListParams = {}): Promise<Ticket[]> => {
+  const first = await listTickets({ ...params, limit: 100, page: 1 });
+  const pages = Math.min(first.pagination?.totalPages ?? 1, 10);
+  if (pages <= 1) return first.tickets;
+  const rest = await Promise.all(
+    Array.from({ length: pages - 1 }, (_, i) => listTickets({ ...params, limit: 100, page: i + 2 })),
+  );
+  return [first, ...rest].flatMap((r) => r.tickets);
+};
+
+/** POST /api/tickets/:id/approve { note? }: the department's lead; the SLA clocks start now (S6) */
+export const approveTicket = async (id: number, note?: string): Promise<Ticket> =>
+  (await call(() => api.post<TicketResponse>(`/tickets/${id}/approve`, { note }), "Couldn't approve the request.")).ticket;
+
+/** POST /api/tickets/:id/reject { reason }: the department's lead; the requester sees the reason (S6) */
+export const rejectTicket = async (id: number, reason: string): Promise<Ticket> =>
+  (await call(() => api.post<TicketResponse>(`/tickets/${id}/reject`, { reason }), "Couldn't reject the request.")).ticket;

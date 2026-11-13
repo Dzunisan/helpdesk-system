@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listTickets } from "@/services/tickets";
+import { countTickets, listTickets } from "@/services/tickets";
 import { toApiError, type ApiError } from "@/services/apiClient";
 import type { Ticket, TicketListParams } from "@/types/api";
 
@@ -92,8 +92,9 @@ export function useTicketCount(params: TicketListParams, enabled = true) {
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    listTickets({ ...(JSON.parse(key) as TicketListParams), limit: 1 })
-      .then((r) => !cancelled && setCount(r.pagination?.total ?? r.tickets.length))
+    // The first load shares the sidebar's request; a reload (after a change) asks again
+    countTickets(JSON.parse(key) as TicketListParams, { fresh: tick > 0 })
+      .then((total) => !cancelled && setCount(total))
       .catch(() => !cancelled && setCount(null));
     return () => {
       cancelled = true;

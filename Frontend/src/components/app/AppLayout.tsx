@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import { useAuth, type Role, type User } from "@/context/AuthContext";
 import { useDepartmentName } from "@/hooks/useDepartmentName";
-import { listTickets } from "@/services/tickets";
+import { countTickets } from "@/services/tickets";
 import type { TicketListParams } from "@/types/api";
 import { fullName, homePathFor, profilePathFor } from "@/lib/roles";
 import { cn } from "@/lib/utils";
@@ -99,7 +99,8 @@ const STAFF_NAV: Partial<Record<NonNullable<Role>, NavGroup[]>> = {
         { label: "Home", icon: House, href: "/agent", end: true },
         { label: AGENT_QUEUE_LABEL["my-open"], icon: Inbox, href: agentQueuePath("my-open") },
         { label: AGENT_QUEUE_LABEL.unassigned, icon: UserRoundX, href: agentQueuePath("unassigned") },
-        { label: AGENT_QUEUE_LABEL.waiting, icon: Hourglass, href: agentQueuePath("waiting") },
+        // "Waiting" (the mockup's chip word): "Waiting on employee" doesn't fit the 220px sidebar
+        { label: "Waiting", icon: Hourglass, href: agentQueuePath("waiting") },
         { label: AGENT_QUEUE_LABEL.breached, icon: AlarmClock, href: agentQueuePath("breached") },
         { label: AGENT_QUEUE_LABEL.resolved, icon: CircleCheck, href: agentQueuePath("resolved") },
       ],
@@ -164,11 +165,8 @@ const COUNTED_AGENT_VIEWS = ["my-open", "unassigned", "waiting", "breached"] as 
 /** The lead's active work: what "All tickets" counts (Breached overlaps these, so it is left out) */
 const COUNTED_LEAD_TABS = ["unassigned", "open", "waiting", "pending"] as const;
 
-/** pagination.total of one view: the same params as the page it links to, one row fetched */
-const countOf = async (params: TicketListParams): Promise<number> => {
-  const response = await listTickets({ ...params, limit: 1 });
-  return response.pagination?.total ?? response.tickets.length;
-};
+/** pagination.total of one view: the same params as the page it links to (shared with its tabs) */
+const countOf = (params: TicketListParams): Promise<number> => countTickets(params);
 
 /**
  * Work counts beside the nav items (p.46 "My open 5", "Unassigned 12"; p.55 "All tickets 46").

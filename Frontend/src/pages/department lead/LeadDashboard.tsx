@@ -3,11 +3,11 @@ import { Link } from "react-router-dom";
 import { ArrowRight, CircleCheck, ClipboardCheck, Hourglass, Inbox, Layers, UserRoundX, Users } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useDepartmentName } from "@/hooks/useDepartmentName";
-import { fetchAgents } from "@/services/ticketService";
+import { listAllTickets, listAssignees } from "@/services/tickets";
 import { formatAge, formatSast, formatTicketRef } from "@/lib/format";
 import { toPriority, toStatus } from "@/lib/ticketVocabulary";
 import { cn } from "@/lib/utils";
-import type { AgentUser, Ticket } from "@/types/ticket.types";
+import type { Assignee as AgentUser, Ticket } from "@/types/api";
 import PageHeader from "@/components/app/PageHeader";
 import StatCard from "@/components/app/StatCard";
 import SectionCard from "@/components/app/SectionCard";
@@ -22,7 +22,6 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { fetchAllTickets } from "@/components/lead/fetchAllTickets";
 import { byUrgency, plural } from "@/components/queue/queueUtils";
 
 const BASE = "/department-lead";
@@ -60,7 +59,7 @@ export default function LeadDashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchAllTickets(), fetchAgents()])
+    Promise.all([listAllTickets(), listAssignees()])
       .then(([all, team]) => {
         if (cancelled) return;
         setTickets(all);

@@ -1,4 +1,4 @@
-import type { Ticket } from "@/types/ticket.types";
+import type { Ticket } from "@/types/api";
 import { PRIORITY_RANK, toPriority, toStatus, type Status } from "@/lib/ticketVocabulary";
 
 /** Statuses an agent still has to work on (everything but resolved / closed / cancelled) */

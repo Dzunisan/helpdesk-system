@@ -1,8 +1,8 @@
 import { useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, CircleCheck, CircleX } from "lucide-react";
-import type { Ticket } from "@/types/ticket.types";
-import { formatAge, formatSast } from "@/lib/format";
+import type { Ticket } from "@/types/api";
+import { firstNameOf, formatAge, formatSast } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "@/components/app/StatusBadge";
 import { PriorityBadge } from "@/components/app/PriorityBadge";
@@ -29,7 +29,6 @@ interface ApprovalSheetProps {
   busy: boolean;
 }
 
-const firstName = (name: string | null | undefined) => name?.trim().split(/\s+/)[0] || "The requester";
 
 /**
  * The decision drawer for one approval request (briefing p.56): every field the employee
@@ -72,7 +71,7 @@ function ApprovalForm({
   const textRef = useRef<HTMLTextAreaElement>(null);
 
   const requester = ticket.requester_name?.trim() || "Employee";
-  const who = firstName(ticket.requester_name);
+  const who = firstNameOf(ticket.requester_name, "The requester");
   const team = ticket.department_name || "the team";
   const missingReason = decision === "reject" && text.trim().length === 0;
   const showError = touched && missingReason;

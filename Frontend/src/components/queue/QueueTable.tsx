@@ -18,13 +18,14 @@ import type { TicketLinkState } from "./queueViews";
  * The one dense ticket table (briefing p.47 agent queues, p.55 lead All tickets). Rows come
  * sorted by the server (sort=due: breached first, then nearest due). One grid string per
  * variant is shared by the header, the rows and the skeletons so columns line up; below xl the
- * rows stack as cards. The Category column appears from 2xl (it moves under the title before that).
+ * rows stack as cards. The Category column appears from xl on the agent queues (page 47) and from
+ * 2xl on the lead's wider list (it moves under the title before that).
  *
  *   agent: Ref · Subject + requester · (Category) · Priority · SLA · Age · Claim
  *   lead:  [ ] · Ref · Subject + requester · (Category) · Priority · SLA · Age · Assignee
  */
 const AGENT_GRID =
-  "xl:grid xl:grid-cols-[3.75rem_minmax(0,1fr)_6.5rem_10.5rem_4rem_5.5rem] xl:items-center xl:gap-4 2xl:grid-cols-[3.75rem_minmax(0,1fr)_9.5rem_6.5rem_10.5rem_4rem_5.5rem]";
+  "xl:grid xl:grid-cols-[3.75rem_minmax(0,1fr)_8.5rem_6.5rem_10.5rem_4rem_5.5rem] xl:items-center xl:gap-4 2xl:grid-cols-[3.75rem_minmax(0,1fr)_9.5rem_6.5rem_10.5rem_4rem_5.5rem]";
 const LEAD_GRID =
   "xl:grid xl:grid-cols-[1rem_3.75rem_minmax(0,1fr)_6.5rem_10.5rem_3.5rem_9.5rem] xl:items-center xl:gap-4 2xl:grid-cols-[1rem_3.75rem_minmax(0,1fr)_9.5rem_6.5rem_10.5rem_3.5rem_10rem]";
 
@@ -91,7 +92,7 @@ export default function QueueTable({
         )}
         <span>Ref</span>
         <span>Subject</span>
-        <span className="hidden 2xl:block">Category</span>
+        <span className={cn("hidden", lead ? "2xl:block" : "xl:block")}>Category</span>
         <span>Priority</span>
         <span>SLA</span>
         <span>{finished ? "Updated" : "Age"}</span>
@@ -106,7 +107,7 @@ export default function QueueTable({
           columns={
             lead
               ? ["blank", "meta", "title", "badge", "badge", "meta", "button"]
-              : ["meta", "title", "badge", "badge", "meta", "button"]
+              : ["meta", "title", "meta", "badge", "badge", "meta", "button"]
           }
         />
       ) : tickets.length === 0 ? (
@@ -194,14 +195,14 @@ function QueueRow({
           <UserAvatar name={ticket.requester_name || "Unknown"} size="sm" className="data-[size=sm]:size-5" />
           <span className="truncate">
             {ticket.requester_name || "Unknown requester"}
-            {category && <span className="hidden xl:inline 2xl:hidden"> · {category}</span>}
+            {category && lead && <span className="hidden xl:inline 2xl:hidden"> · {category}</span>}
           </span>
           {showStatus && ticket.ticket_status !== "Open" && <StatusBadge status={ticket.ticket_status} className="shrink-0" />}
         </span>
       </div>
 
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 xl:contents">
-        <span className="hidden truncate text-sm text-muted-foreground 2xl:block">{category ?? "—"}</span>
+        <span className={cn("hidden truncate text-sm text-muted-foreground", lead ? "2xl:block" : "xl:block")}>{category ?? "—"}</span>
         <div className="flex shrink-0">
           <PriorityBadge priority={ticket.ticket_priority} />
         </div>

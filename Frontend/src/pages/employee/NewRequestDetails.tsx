@@ -15,7 +15,7 @@ import NewRequestSteps from "@/components/request/NewRequestSteps";
 import CategorySummary from "@/components/request/CategorySummary";
 import ExtraFieldInput from "@/components/request/ExtraFieldInput";
 import WhatHappensNext from "@/components/request/WhatHappensNext";
-import { useApiData } from "@/components/portal/useApiData";
+import { useApiData } from "@/hooks/useApiData";
 import { IMPACT_OPTIONS } from "@/components/portal/portalText";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -285,14 +285,15 @@ function DetailsForm({
                   value={form.impact}
                   onValueChange={(value) => update({ ...form, impact: value as TicketImpact | "" })}
                   aria-labelledby="impact-label"
-                  className="grid w-full grid-cols-3"
+                  // The middle label is the longest: give it more room at 390px so it never touches its borders
+                  className="grid w-full grid-cols-[1fr_1.4fr_1fr] sm:grid-cols-3"
                 >
                   {IMPACT_OPTIONS.map((option) => (
                     <ToggleGroupItem
                       key={option.value}
                       value={option.value}
                       aria-label={`${option.label}: ${option.hint}`}
-                      className="h-11 text-[13px] data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground sm:h-10 sm:text-sm"
+                      className="h-11 min-w-0 px-2 text-[13px] whitespace-normal leading-tight data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground sm:h-10 sm:px-3 sm:text-sm"
                     >
                       {option.label}
                     </ToggleGroupItem>

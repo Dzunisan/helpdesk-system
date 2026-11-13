@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronRight, ClipboardCheck, RotateCw } from "lucide-react";
 import { toast } from "sonner";
-import { fetchTickets, approveTicket, rejectTicket } from "@/services/ticketService";
-import type { Ticket } from "@/types/ticket.types";
+import { approveTicket, listTickets, rejectTicket } from "@/services/tickets";
+import type { Ticket } from "@/types/api";
 import { useAuth } from "@/context/AuthContext";
 import { useDepartmentName } from "@/hooks/useDepartmentName";
 import { formatAge, formatSast } from "@/lib/format";
@@ -41,7 +41,7 @@ export default function Approvals() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchTickets({ status: "Pending approval", limit: 50 })
+    listTickets({ status: "Pending approval", limit: 50 })
       .then((res) => {
         if (cancelled) return;
         setTickets(res.tickets || []);
