@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { cn } from "@/lib/utils";
-import { categoryIcon } from "@/components/admin/categoryIcons";
+import { categoryIcon } from "@/lib/categoryIcons";
 
 /** The lucide icon for a stored category icon name, e.g. "key-round" */
 export function CategoryIcon({ name, className }: { name: string | null | undefined; className?: string }) {

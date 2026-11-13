@@ -9,6 +9,7 @@ import {
   CreditCard,
   FileSpreadsheet,
   FileText,
+  Folder,
   GraduationCap,
   Headphones,
   HeartPulse,
@@ -19,6 +20,7 @@ import {
   Lock,
   Mail,
   Monitor,
+  Phone,
   Package,
   Plane,
   Printer,
@@ -26,6 +28,8 @@ import {
   ShieldCheck,
   Smartphone,
   Truck,
+  Wallet,
+  Users,
   UsersRound,
   Wifi,
   Wrench,
@@ -33,8 +37,9 @@ import {
 } from "lucide-react";
 
 /**
- * The icons a System Admin can pick for a category (briefing p.63). Stored as the lucide name in
- * kebab case (category.icon, e.g. "key-round"); the seeded categories use the first sixteen.
+ * The one map of category icons, shared by the request tiles (p.38) and the System Admin's icon
+ * picker (p.63). Stored as the lucide name in kebab case (category.icon, e.g. "key-round"); the
+ * seeded categories use the first sixteen. Unknown names fall back to a question mark.
  */
 export const CATEGORY_ICONS: Record<string, { icon: LucideIcon; label: string }> = {
   laptop: { icon: Laptop, label: "Laptop" },
@@ -67,6 +72,10 @@ export const CATEGORY_ICONS: Record<string, { icon: LucideIcon; label: string }>
   "graduation-cap": { icon: GraduationCap, label: "Training" },
   "heart-pulse": { icon: HeartPulse, label: "Wellness" },
   lightbulb: { icon: Lightbulb, label: "Idea" },
+  folder: { icon: Folder, label: "Folder" },
+  phone: { icon: Phone, label: "Telephone" },
+  users: { icon: Users, label: "Team" },
+  wallet: { icon: Wallet, label: "Wallet" },
 };
 
 export const CATEGORY_ICON_NAMES = Object.keys(CATEGORY_ICONS);

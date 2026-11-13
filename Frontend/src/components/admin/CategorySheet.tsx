@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { PriorityBadge } from "@/components/app/PriorityBadge";
 import FormSheet, { FormSheetBody } from "@/components/admin/FormSheet";
 import { CategoryIcon } from "@/components/admin/CategoryIconTile";
-import { CATEGORY_ICONS, CATEGORY_ICON_NAMES } from "@/components/admin/categoryIcons";
+import { CATEGORY_ICONS, CATEGORY_ICON_NAMES } from "@/lib/categoryIcons";
 import { Button } from "@/components/ui/button";
 import {
   Field,
