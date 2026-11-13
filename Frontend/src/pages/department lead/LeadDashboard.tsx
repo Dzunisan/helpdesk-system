@@ -6,7 +6,6 @@ import { useDepartmentName } from "@/hooks/useDepartmentName";
 import { useApiData } from "@/hooks/useApiData";
 import { getBreaches, getDaily, getReportSummary, getWorkload } from "@/services/reports";
 import { listApprovals } from "@/services/approvals";
-import { listAllTickets } from "@/services/tickets";
 import { formatDuration, formatSast } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { Ticket } from "@/types/api";
@@ -33,7 +32,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 const BASE = "/department-lead";
 const CATEGORIES_SHOWN = 5;
 const CHART_DAYS = 14;
-const DAY_MS = 86_400_000;
 
 // Ref · title + requester · assignee · priority · clock. Below sm the row stacks.
 const BREACH_GRID =
@@ -41,21 +39,6 @@ const BREACH_GRID =
 
 /** A touch stronger than the default Skeleton so placeholders read on white cards */
 const SK = "bg-foreground/[0.07]";
-
-/** Top categories from the tickets themselves (until GET /api/reports/summary carries top_categories) */
-async function loadTopCategories(days: number) {
-  const tickets = await listAllTickets();
-  const since = Date.now() - days * DAY_MS;
-  const counts = new Map<string, number>();
-  for (const t of tickets) {
-    if (new Date(t.created_at).getTime() < since) continue;
-    const name = t.category_name?.trim() || "Uncategorised";
-    counts.set(name, (counts.get(name) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .map(([category_name, count]) => ({ category_name, count }))
-    .sort((a, b) => b.count - a.count || a.category_name.localeCompare(b.category_name));
-}
 
 /**
  * Department Lead home (briefing p.17, p.54): what is late, what is unowned and who is overloaded.
@@ -71,12 +54,11 @@ export default function LeadDashboard() {
   const breaches = useApiData(() => getBreaches(), "breaches");
   const daily = useApiData(() => getDaily({ days: CHART_DAYS }), "daily");
   const oldestApproval = useApiData(() => listApprovals({ status: "pending", limit: 1 }), "approvals-oldest");
-  const categories = useApiData(() => loadTopCategories(days), `categories-${days}`);
 
   const s = summary.data;
   const team = departmentName ?? s?.department_name ?? null;
   const description = [team, formatSast(new Date(), "long")].filter(Boolean).join(" · ");
-  const topCategories = s?.top_categories ?? categories.data;
+  const topCategories = s?.top_categories ?? null;
 
   const pendingCount = s?.pending_approvals ?? oldestApproval.data?.pagination.total ?? 0;
   const oldest = oldestApproval.data?.approvals[0];
@@ -195,10 +177,10 @@ export default function LeadDashboard() {
           )}
 
           <SectionCard title="Top categories" description={`Requests created in the last ${days} days`}>
-            {!topCategories && categories.loading ? (
+            {!topCategories && summary.loading ? (
               <CategorySkeleton />
             ) : !topCategories ? (
-              <ErrorState stacked title="Couldn't load categories" onRetry={categories.reload} />
+              <ErrorState stacked title="Couldn't load categories" onRetry={summary.reload} />
             ) : topCategories.length === 0 ? (
               <EmptyState
                 size="compact"

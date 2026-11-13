@@ -14,15 +14,11 @@ export const minutesOrDash = (mins: number | null | undefined): string =>
 export const pctOrDash = (pct: number | null | undefined): string =>
   pct === null || pct === undefined || !Number.isFinite(pct) ? "—" : `${Math.round(pct)}%`;
 
-/** Optional fields a report may add on top of the contract shape (shown when present) */
-export type SummaryWithExtras = ReportSummary & {
-  /** Most requested categories in the window, busiest first */
-  top_categories?: { category_id: number; category_name: string; count: number }[];
-};
+/** The summary as the dashboard reads it (top_categories is part of the contract now) */
+export type SummaryWithExtras = ReportSummary;
 
+/** Optional fields a workload row may add later (no leave data in the model yet) */
 export type WorkloadRowWithExtras = WorkloadRow & {
-  /** Average minutes to their first reply in the window */
-  avg_first_response_mins?: number | null;
   /** false when the agent is away (no leave data yet: absent means available) */
   available?: boolean;
   /** "On leave until 12 Nov" */

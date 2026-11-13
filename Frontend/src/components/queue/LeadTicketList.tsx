@@ -47,16 +47,32 @@ export default function LeadTicketList() {
   const tabParam = searchParams.get("tab");
   const tab: LeadTab = isLeadTab(tabParam) ? tabParam : DEFAULT_LEAD_TAB;
   const view = LEAD_VIEWS[tab];
+  // ?assignee=<user_id>: one agent's tickets, from the dashboard workload and Team & workload (p.17, p.57)
+  const assigneeParam = searchParams.get("assignee");
+  const assignee = assigneeParam && /^\d+$/.test(assigneeParam) ? assigneeParam : null;
   const setTab = (next: LeadTab) => {
     setSelected(new Set());
-    setSearchParams(next === DEFAULT_LEAD_TAB ? {} : { tab: next }, { replace: true });
+    const params: Record<string, string> = next === DEFAULT_LEAD_TAB ? {} : { tab: next };
+    if (assignee && next !== "unassigned") params.assignee = assignee;
+    setSearchParams(params, { replace: true });
   };
+  const clearAssignee = () => {
+    setSelected(new Set());
+    setSearchParams(tab === DEFAULT_LEAD_TAB ? {} : { tab }, { replace: true });
+  };
+  // The Unassigned tab has nobody to filter by
+  const assigneeFilter = assignee && tab !== "unassigned" ? assignee : null;
 
   const filters = useQueueFilters();
   const categories = useDepartmentCategories(user?.department_id);
   const { tickets, loading, refetching, error, refetch, refresh } = useTicketList(
     // The view's own SLA filter (Breached) wins over the SLA chip, which is hidden there
-    { ...view.params, ...filters.params, sla: view.params.sla ?? filters.params.sla },
+    {
+      ...view.params,
+      ...filters.params,
+      sla: view.params.sla ?? filters.params.sla,
+      ...(assigneeFilter ? { assignee_id: assigneeFilter } : {}),
+    },
     { filter: view.filter },
   );
 
@@ -123,6 +139,22 @@ export default function LeadTicketList() {
           items={LEAD_TABS.map((t) => ({ value: t, label: LEAD_VIEWS[t].label, count: countOf(t) }))}
         />
         <QueueFilters filters={filters} categories={categories} hideSla={!!view.params.sla || view.finished || tab === "pending"} searchId="lead-ticket-search" />
+        {assigneeFilter && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="secondary" className="h-7 gap-1.5 pr-1 pl-2.5">
+              Assigned to {staff.members.find((m) => m.user_id === assigneeFilter)?.name ?? "one person"}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-5 rounded-full"
+                aria-label="Show everyone's tickets"
+                onClick={clearAssignee}
+              >
+                <X />
+              </Button>
+            </Badge>
+          </div>
+        )}
       </div>
 
       {selectedCount > 0 && <BulkBar count={selectedCount} onClear={() => setSelected(new Set())} />}

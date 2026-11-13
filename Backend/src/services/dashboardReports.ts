@@ -38,6 +38,8 @@ export interface ReportSummary {
   csat_responses: number;
   pending_approvals: number;
   oldest_pending_approval_mins: number | null;
+  /** Most requested categories among tickets created in the window, busiest first (top 5) */
+  top_categories: { category_id: number; category_name: string; count: number }[];
 }
 
 /** The department row, or null when it doesn't exist */
@@ -52,7 +54,7 @@ export const findDepartment = async (
 
 /** GET /api/reports/summary: the KPI tiles */
 export const getReportSummary = async (departmentId: number | null, days: number): Promise<ReportSummary> => {
-  const [live, firstResponse, resolution, csat, department] = await Promise.all([
+  const [live, firstResponse, resolution, csat, department, categories] = await Promise.all([
     // Live tickets now: backlog, unassigned (+ oldest), breached (both clocks), pending approvals
     pool.query(
       `SELECT
@@ -103,6 +105,18 @@ export const getReportSummary = async (departmentId: number | null, days: number
       [departmentId, days]
     ),
     departmentId === null ? Promise.resolve(null) : findDepartment(departmentId),
+    // Top categories: tickets created in the window per category (p.54)
+    pool.query(
+      `SELECT c.category_id, c.category_name, COUNT(*)::int AS count
+       FROM ticket t
+       JOIN category c ON c.category_id = t.ticket_category_id
+       WHERE t.deleted_at IS NULL AND t.created_at >= now() - make_interval(days => $2::int)
+         AND ${inDepartment("t.ticket_department_id", 1)}
+       GROUP BY c.category_id, c.category_name
+       ORDER BY count DESC, c.category_name
+       LIMIT 5`,
+      [departmentId, days]
+    ),
   ]);
   const l = live.rows[0];
   const fr = firstResponse.rows[0];
@@ -127,6 +141,7 @@ export const getReportSummary = async (departmentId: number | null, days: number
     csat_responses: cs.responses,
     pending_approvals: l.pending_approvals,
     oldest_pending_approval_mins: roundOrNull(l.oldest_pending_approval_mins),
+    top_categories: categories.rows,
   };
 };
 
@@ -138,6 +153,8 @@ export interface WorkloadRow {
   waiting: number;
   breached: number;
   resolved_7d: number;
+  /** Average minutes to first response on their tickets created in the window (null: none yet) */
+  avg_first_response_mins: number | null;
   csat_pct: number | null;
 }
 
@@ -165,7 +182,10 @@ export const getWorkload = async (departmentId: number | null, days: number): Pr
               COUNT(*) FILTER (WHERE t.ticket_status IN ('New', 'Open'))::int AS open,
               COUNT(*) FILTER (WHERE t.ticket_status = 'Waiting on employee')::int AS waiting,
               COUNT(*) FILTER (WHERE t.ticket_status::text = ANY($3) AND ${SQL_IS_BREACHED})::int AS breached,
-              COUNT(*) FILTER (WHERE t.resolved_at >= now() - interval '7 days')::int AS resolved_7d
+              COUNT(*) FILTER (WHERE t.resolved_at >= now() - interval '7 days')::int AS resolved_7d,
+              AVG(EXTRACT(EPOCH FROM t.first_response_at - t.created_at) / 60) FILTER (
+                WHERE t.first_response_at IS NOT NULL AND t.created_at >= now() - make_interval(days => $2::int)
+              ) AS avg_first_response_mins
        FROM ticket t
        WHERE t.assignee_id IS NOT NULL AND t.deleted_at IS NULL AND ${inDepartment("t.ticket_department_id", 1)}
        GROUP BY t.assignee_id
@@ -180,6 +200,7 @@ export const getWorkload = async (departmentId: number | null, days: number): Pr
      SELECT u.user_id::text AS user_id, TRIM(CONCAT(u.name, ' ', u.surname)) AS name, u.role,
             COALESCE(tk.open, 0) AS open, COALESCE(tk.waiting, 0) AS waiting,
             COALESCE(tk.breached, 0) AS breached, COALESCE(tk.resolved_7d, 0) AS resolved_7d,
+            tk.avg_first_response_mins,
             COALESCE(r.responses, 0) AS responses, COALESCE(r.satisfied, 0) AS satisfied
      FROM people p
      JOIN users u ON u.user_id = p.user_id
@@ -188,7 +209,11 @@ export const getWorkload = async (departmentId: number | null, days: number): Pr
      ORDER BY COALESCE(tk.open, 0) + COALESCE(tk.waiting, 0) DESC, COALESCE(tk.breached, 0) DESC, name`,
     [departmentId, days, LIVE_STATUSES]
   );
-  return rows.map(({ responses, satisfied, ...row }) => ({ ...row, csat_pct: pct(satisfied, responses) }));
+  return rows.map(({ responses, satisfied, avg_first_response_mins, ...row }) => ({
+    ...row,
+    avg_first_response_mins: roundOrNull(avg_first_response_mins),
+    csat_pct: pct(satisfied, responses),
+  }));
 };
 
 export interface DailyPoint {
