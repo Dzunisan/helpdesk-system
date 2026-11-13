@@ -27,7 +27,8 @@ import {
 } from "lucide-react";
 import { useAuth, type Role, type User } from "@/context/AuthContext";
 import { useDepartmentName } from "@/hooks/useDepartmentName";
-import { fetchTickets } from "@/services/ticketService";
+import { listTickets } from "@/services/tickets";
+import type { TicketListParams } from "@/types/api";
 import { fullName, homePathFor, profilePathFor } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import BrandMark from "@/components/app/BrandMark";
@@ -44,7 +45,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { NavHighlightContext, useNavHighlightHref } from "./navHighlight";
-import { AGENT_QUEUE_LABEL, agentQueuePath } from "@/components/queue/queueViews";
+import { AGENT_QUEUE_LABEL, AGENT_VIEWS, LEAD_VIEWS, agentQueuePath } from "@/components/queue/queueViews";
 import {
   Sidebar,
   SidebarContent,
@@ -107,7 +108,7 @@ const STAFF_NAV: Partial<Record<NonNullable<Role>, NavGroup[]>> = {
   "Department Lead": [
     {
       items: [
-        { label: "Dashboard", icon: LayoutDashboard, href: "/department-lead", end: true },
+        { label: "Dashboard", icon: LayoutDashboard, href: "/department-lead/dashboard" },
         {
           label: "All tickets",
           icon: List,
@@ -158,10 +159,19 @@ const isActive = (pathname: string, item: NavItem, highlight?: string | null) =>
   return own || !!item.alsoActive?.some((prefix) => pathname.startsWith(prefix));
 };
 
-const OPEN_STATUSES = new Set(["Resolved", "Closed", "Cancelled"]);
+/** The agent views that show a count beside their nav item */
+const COUNTED_AGENT_VIEWS = ["my-open", "unassigned", "waiting", "breached"] as const;
+/** The lead's active work: what "All tickets" counts (Breached overlaps these, so it is left out) */
+const COUNTED_LEAD_TABS = ["unassigned", "open", "waiting", "pending"] as const;
+
+/** pagination.total of one view: the same params as the page it links to, one row fetched */
+const countOf = async (params: TicketListParams): Promise<number> => {
+  const response = await listTickets({ ...params, limit: 1 });
+  return response.pagination?.total ?? response.tickets.length;
+};
 
 /**
- * Work counts beside the nav items (p.46 "My open 5", "Unassigned 12"; p.54 "Approvals 3").
+ * Work counts beside the nav items (p.46 "My open 5", "Unassigned 12"; p.55 "All tickets 46").
  * Uses the same requests and filters as the pages they link to, refreshes on every page
  * change and when the window regains focus. Counts are a nicety: failures show nothing.
  */
@@ -169,7 +179,6 @@ function useNavCounts(user: User): Record<string, number> {
   const { pathname } = useLocation();
   const [counts, setCounts] = useState<Record<string, number>>({});
   const userId = user.user_id ?? user.id;
-  const departmentId = user.department_id ?? undefined;
   const role = user.role;
 
   useEffect(() => {
@@ -179,19 +188,17 @@ function useNavCounts(user: User): Record<string, number> {
     const load = async () => {
       try {
         if (role === "Agent") {
-          const [mine, queue] = await Promise.all([
-            fetchTickets({ assignee_id: userId ? String(userId) : undefined, limit: 100 }),
-            fetchTickets({ status: "New", department_id: departmentId ? Number(departmentId) : undefined, limit: 100 }),
-          ]);
+          const totals = await Promise.all(COUNTED_AGENT_VIEWS.map((v) => countOf(AGENT_VIEWS[v].params)));
           if (cancelled) return;
-          setCounts({
-            [agentQueuePath("my-open")]: mine.tickets.filter((t) => !OPEN_STATUSES.has(t.ticket_status)).length,
-            [agentQueuePath("unassigned")]: queue.tickets.filter((t) => !t.assignee_id).length,
-          });
+          setCounts(Object.fromEntries(COUNTED_AGENT_VIEWS.map((v, i) => [agentQueuePath(v), totals[i]])));
         } else {
-          const approvals = await fetchTickets({ status: "Pending approval", limit: 50 });
+          const totals = await Promise.all(COUNTED_LEAD_TABS.map((t) => countOf(LEAD_VIEWS[t].params)));
           if (cancelled) return;
-          setCounts({ "/department-lead/approvals": approvals.pagination?.total ?? approvals.tickets.length });
+          const pending = totals[COUNTED_LEAD_TABS.indexOf("pending")];
+          setCounts({
+            "/department-lead/all-tickets": totals.reduce((sum, n) => sum + n, 0),
+            "/department-lead/approvals": pending,
+          });
         }
       } catch {
         // A count is not worth an error message
@@ -204,7 +211,7 @@ function useNavCounts(user: User): Record<string, number> {
       cancelled = true;
       window.removeEventListener("focus", load);
     };
-  }, [role, userId, departmentId, pathname]);
+  }, [role, userId, pathname]);
 
   return counts;
 }

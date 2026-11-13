@@ -18,13 +18,18 @@ import QueueFilters from "./QueueFilters";
 import { useDepartmentCategories, useQueueFilters } from "./useQueueFilters";
 import QueueTable, { AssigneeCell } from "./QueueTable";
 import { plural } from "./queueUtils";
-import { LEAD_TABS, LEAD_VIEWS, isLeadTab, withTeam, type LeadTab } from "./queueViews";
+import { DEFAULT_LEAD_TAB, LEAD_TABS, LEAD_VIEWS, isLeadTab, withTeam, type LeadTab } from "./queueViews";
 import { useClaim } from "./useClaim";
 import { useTeam } from "./useTeam";
 import { useTicketCount, useTicketList } from "./useTicketList";
 
 /** Tabs whose tickets can still be (re)assigned: New, Open, Waiting on employee */
-const ASSIGNABLE: LeadTab[] = ["unassigned", "open", "waiting"];
+const ASSIGNABLE: LeadTab[] = ["breached", "unassigned", "open", "waiting"];
+
+/** Tabs counted with one total from the server (Resolved needs the dates, so it loads its list) */
+const COUNTED = ["breached", "unassigned", "open", "waiting", "pending"] as const;
+/** The active work the header total adds up (Breached overlaps the others, so it is left out) */
+const ACTIVE_TABS = ["unassigned", "open", "waiting", "pending"] as const;
 
 /**
  * Department Lead, All tickets (briefing p.55): tabs by status with counts, the same table, chips
@@ -40,22 +45,24 @@ export default function LeadTicketList() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const tab: LeadTab = isLeadTab(tabParam) ? tabParam : "unassigned";
+  const tab: LeadTab = isLeadTab(tabParam) ? tabParam : DEFAULT_LEAD_TAB;
   const view = LEAD_VIEWS[tab];
   const setTab = (next: LeadTab) => {
     setSelected(new Set());
-    setSearchParams(next === "unassigned" ? {} : { tab: next }, { replace: true });
+    setSearchParams(next === DEFAULT_LEAD_TAB ? {} : { tab: next }, { replace: true });
   };
 
   const filters = useQueueFilters();
   const categories = useDepartmentCategories(user?.department_id);
   const { tickets, loading, refetching, error, refetch, refresh } = useTicketList(
-    { ...view.params, ...filters.params },
+    // The view's own SLA filter (Breached) wins over the SLA chip, which is hidden there
+    { ...view.params, ...filters.params, sla: view.params.sla ?? filters.params.sla },
     { filter: view.filter },
   );
 
   // Tab counts: totals from the server; Resolved (7 days) needs the dates, so it loads the list
   const counts = {
+    breached: useTicketCount(LEAD_VIEWS.breached.params),
     unassigned: useTicketCount(LEAD_VIEWS.unassigned.params),
     open: useTicketCount(LEAD_VIEWS.open.params),
     waiting: useTicketCount(LEAD_VIEWS.waiting.params),
@@ -64,13 +71,13 @@ export default function LeadTicketList() {
   const resolvedWeek = useTicketList(LEAD_VIEWS.resolved.params, { filter: LEAD_VIEWS.resolved.filter, refreshOnFocus: false });
   const countOf = (t: LeadTab): number | undefined =>
     t === "resolved" ? (resolvedWeek.loading ? undefined : resolvedWeek.tickets.length) : (counts[t].count ?? undefined);
-  const activeTotal = (["unassigned", "open", "waiting", "pending"] as const).reduce((sum, t) => sum + (counts[t].count ?? 0), 0);
-  const countsReady = (["unassigned", "open", "waiting", "pending"] as const).every((t) => counts[t].count !== null);
+  const activeTotal = ACTIVE_TABS.reduce((sum, t) => sum + (counts[t].count ?? 0), 0);
+  const countsReady = ACTIVE_TABS.every((t) => counts[t].count !== null);
 
   const staff = useTeam();
   const reloadAll = () => {
     void refresh();
-    for (const t of ["unassigned", "open", "waiting", "pending"] as const) counts[t].reload();
+    for (const t of COUNTED) counts[t].reload();
     staff.reload();
   };
   const { assign, pendingId, busy } = useClaim({ basePath: "/department-lead", onDone: reloadAll, onConflict: reloadAll });
@@ -115,7 +122,7 @@ export default function LeadTicketList() {
           onValueChange={setTab}
           items={LEAD_TABS.map((t) => ({ value: t, label: LEAD_VIEWS[t].label, count: countOf(t) }))}
         />
-        <QueueFilters filters={filters} categories={categories} hideSla={view.finished || tab === "pending"} searchId="lead-ticket-search" />
+        <QueueFilters filters={filters} categories={categories} hideSla={!!view.params.sla || view.finished || tab === "pending"} searchId="lead-ticket-search" />
       </div>
 
       {selectedCount > 0 && <BulkBar count={selectedCount} onClear={() => setSelected(new Set())} />}
@@ -178,7 +185,7 @@ export default function LeadTicketList() {
           {tickets.length > 0 && (
             <>
               <span>
-                {plural(tickets.length, "ticket")} · {withTeam(view.description, team).toLowerCase()}
+                {plural(tickets.length, "ticket")} · {withTeam(view.description.toLowerCase(), team)}
                 {filters.active ? " (filtered)" : ""}
               </span>
               <span aria-hidden className="hidden sm:inline">

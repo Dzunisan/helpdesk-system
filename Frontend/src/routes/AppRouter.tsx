@@ -83,8 +83,9 @@ const AppRouter = () => {
         {/* Protected Department Lead Routes */}
         <Route element={<ProtectedRoute allowedRoles={["Department Lead"]} />}>
           <Route path="/department-lead" element={<AppLayout />}>
-            {/* The lead's home: department at a glance (p.54) */}
-            <Route index element={<LeadDashboard />} />
+            {/* Sprint 1: the lead's home is All tickets, Breached tab first (p.55), until the S8 dashboard */}
+            <Route index element={<Navigate to="/department-lead/all-tickets" replace />} />
+            <Route path="dashboard" element={<LeadDashboard />} />
             <Route path="all-tickets" element={<AllTickets />} />
             <Route path="ticket-queue" element={<Navigate to="/department-lead/all-tickets" replace />} />
             <Route path="approvals" element={<Approvals />} />

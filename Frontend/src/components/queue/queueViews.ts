@@ -21,10 +21,16 @@ export const agentQueuePath = (view: AgentQueueView) => `/agent/queue/${view}`;
 export const isAgentQueueView = (value: string | undefined): value is AgentQueueView =>
   AGENT_QUEUE_VIEWS.includes(value as AgentQueueView);
 
-/** The lead's status tabs on All tickets (briefing p.55) */
-export type LeadTab = "unassigned" | "open" | "waiting" | "pending" | "resolved";
+/**
+ * The lead's tabs on All tickets (briefing p.55). In Sprint 1 All tickets is the lead's home
+ * (the Lead index redirects here), so Breached comes first and is the default tab.
+ */
+export type LeadTab = "breached" | "unassigned" | "open" | "waiting" | "pending" | "resolved";
 
-export const LEAD_TABS: LeadTab[] = ["unassigned", "open", "waiting", "pending", "resolved"];
+export const LEAD_TABS: LeadTab[] = ["breached", "unassigned", "open", "waiting", "pending", "resolved"];
+
+/** The tab All tickets opens on when the address has no ?tab= */
+export const DEFAULT_LEAD_TAB: LeadTab = "breached";
 
 export const isLeadTab = (value: string | null | undefined): value is LeadTab => LEAD_TABS.includes(value as LeadTab);
 
@@ -103,6 +109,7 @@ export const AGENT_VIEWS: Record<AgentQueueView, TicketView> = {
 };
 
 export const LEAD_TAB_LABEL: Record<LeadTab, string> = {
+  breached: "Breached",
   unassigned: "Unassigned",
   open: "Open",
   waiting: "Waiting on employee",
@@ -111,9 +118,18 @@ export const LEAD_TAB_LABEL: Record<LeadTab, string> = {
 };
 
 export const leadTabPath = (tab: LeadTab) =>
-  tab === "unassigned" ? "/department-lead/all-tickets" : `/department-lead/all-tickets?tab=${tab}`;
+  tab === DEFAULT_LEAD_TAB ? "/department-lead/all-tickets" : `/department-lead/all-tickets?tab=${tab}`;
 
 export const LEAD_VIEWS: Record<LeadTab, TicketView> = {
+  breached: {
+    id: "lead:breached",
+    label: LEAD_TAB_LABEL.breached,
+    description: "Every overdue ticket in {team} · most overdue first",
+    params: { sla: "breached", status: ACTIVE, sort: "due" },
+    claimable: true,
+    path: leadTabPath("breached"),
+    empty: { title: "No breaches", description: "Every open ticket in {team} is inside its targets." },
+  },
   unassigned: {
     id: "lead:unassigned",
     label: LEAD_TAB_LABEL.unassigned,
