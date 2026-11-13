@@ -2,7 +2,9 @@
 // The server decides who sees what, never the browser:
 //   Employee        -> only tickets they raised
 //   Agent           -> tickets in their own department (plus any they raised themselves)
-//   Department Lead -> tickets in the department(s) they lead or belong to (plus their own)
+//   Department Lead -> tickets in the department(s) they lead or belong to (plus their own).
+//                      Lead powers (assign, approve, reject) only in a department whose
+//                      department.lead_id is them; their own users.department_id alone is agent-level.
 //   System Admin    -> counts only, never ticket content
 //   Platform Admin  -> no ticket access at all
 // A ticket the user may not view must be answered with 404 "Ticket not found." so we never
@@ -16,12 +18,14 @@ export const NO_TICKET_ACCESS_ROLES = ["System Admin", "Platform Admin"];
 export const TICKET_NOT_FOUND = "Ticket not found.";
 
 // The user fields the rules need. department_ids covers a lead who leads a department that
-// differs from users.department_id; use loadTicketAccess() to fill it in.
+// differs from users.department_id; led_department_ids are the departments whose lead_id is this
+// user (page 10: one lead per department). Use loadTicketAccess() to fill both in.
 export interface TicketAccessUser {
   user_id: string | number;
   role: string;
   department_id?: number | null;
   department_ids?: number[];
+  led_department_ids?: number[];
 }
 
 // The ticket fields the rules need.
@@ -47,10 +51,13 @@ export const loadTicketAccess = async (user: User | TicketAccessUser): Promise<T
     role: user.role,
     department_id: user.department_id ?? null,
     department_ids: (user as TicketAccessUser).department_ids,
+    led_department_ids: [],
   };
   if (user.role === "Department Lead") {
     const { rows } = await query("SELECT department_id FROM department WHERE lead_id = $1", [user.user_id]);
-    access.department_ids = [...new Set([...(access.department_ids ?? []), ...rows.map((r) => Number(r.department_id))])];
+    const led = rows.map((r) => Number(r.department_id));
+    access.led_department_ids = led;
+    access.department_ids = [...new Set([...(access.department_ids ?? []), ...led])];
   }
   return access;
 };
@@ -70,9 +77,14 @@ export const canWork = (user: TicketAccessUser, ticket: TicketAccessTicket): boo
   return departmentsOf(user).includes(Number(ticket.ticket_department_id));
 };
 
-// A Department Lead of the ticket's department: may assign / reassign, approve and reject.
+// The appointed lead of the ticket's department (department.lead_id): may assign / reassign,
+// approve and reject. A user with the Department Lead role who leads no department (just promoted,
+// or replaced through PUT /departments/:id/lead) only has agent-level access to their own department.
 export const isDepartmentLead = (user: TicketAccessUser, ticket: TicketAccessTicket): boolean =>
-  user.role === "Department Lead" && canWork(user, ticket);
+  user.role === "Department Lead" &&
+  ticket.ticket_department_id !== null &&
+  ticket.ticket_department_id !== undefined &&
+  (user.led_department_ids ?? []).includes(Number(ticket.ticket_department_id));
 
 // May this user see the ticket at all? Requesters see their own; staff see their department's.
 export const canView = (user: TicketAccessUser, ticket: TicketAccessTicket): boolean => {
