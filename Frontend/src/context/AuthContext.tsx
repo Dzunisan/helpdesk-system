@@ -1,4 +1,5 @@
-import React, { createContext, useState, useContext, useCallback, useEffect, type ReactNode } from 'react'; 
+import React, { createContext, useState, useContext, useCallback, useEffect, type ReactNode } from 'react';
+import { setUnauthorizedHandler } from '@/services/apiClient';
 
 // Define the role types
 export type Role = 'Employee' | 'Agent' | 'Department Lead' | 'System Admin' | 'Platform Admin' | null;
@@ -15,6 +16,9 @@ export interface User {
   department_id?: number | null;
   /** When the account was created; /api/auth/me returns it */
   created_at?: string | null;
+  /** Signed in with a temporary password: must choose their own first (S1, /change-password) */
+  must_change_password?: boolean;
+  last_login_at?: string | null;
 }
 
 interface AuthContextState {
@@ -56,6 +60,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
+
+  // Any API call that comes back 401 (session expired, account deactivated) signs the user out
+  // here, so ProtectedRoute sends them to the sign-in page
+  useEffect(() => {
+    setUnauthorizedHandler(() => setUser(null));
+    return () => setUnauthorizedHandler(null);
+  }, []);
 
   const login = (newUser: User) => {
     setUser(newUser);
