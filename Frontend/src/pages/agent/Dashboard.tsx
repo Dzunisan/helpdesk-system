@@ -158,7 +158,7 @@ export default function AgentDashboard() {
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-5">
+      <div className="grid gap-6 lg:grid-cols-5 lg:items-start">
         {/* My tickets */}
         <SectionCard
           className="lg:col-span-3"

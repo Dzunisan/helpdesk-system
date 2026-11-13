@@ -118,7 +118,7 @@ export default function ResolvedTickets() {
           id="resolved-search"
           value={search}
           onValueChange={setSearch}
-          placeholder="Search subject, requester or HD"
+          placeholder="Search title, name or HD number"
         />
       </Toolbar>
 

@@ -155,7 +155,7 @@ export default function EmployeeDashboard() {
                       <TicketRef id={t.ticket_id} />
                       {(t.category_name || t.department_name) && <> · {t.category_name ?? t.department_name}</>}
                     </p>
-                    <p className="mt-1 truncate text-sm font-medium text-foreground">{t.title}</p>
+                    <p className="mt-1 line-clamp-2 text-sm font-medium text-foreground md:truncate">{t.title}</p>
                   </div>
 
                   <div className="flex items-center justify-between gap-3 md:contents">

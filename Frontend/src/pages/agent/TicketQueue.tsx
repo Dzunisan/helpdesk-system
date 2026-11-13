@@ -169,7 +169,7 @@ function AgentQueue() {
             id="queue-search"
             value={search}
             onValueChange={setSearch}
-            placeholder="Search subject, requester or HD"
+            placeholder="Search title, name or HD number"
           />
         </div>
       </Toolbar>
