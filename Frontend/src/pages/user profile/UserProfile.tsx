@@ -4,6 +4,8 @@ import { useUsers } from "../../context/UsersContext";
 import { Input } from "../../components/legacy/Input";
 import { Button } from "../../components/legacy/Button";
 import { Alert } from "../../components/legacy/Alert";
+import PasswordChecklist from "@/components/app/PasswordChecklist";
+import { passwordAcceptable } from "@/lib/passwordRules";
 import {
   IoPersonOutline,
   IoMailOutline,
@@ -77,15 +79,10 @@ const UserProfile: React.FC = () => {
       return;
     }
 
-    if (newPassword.trim()) {
-      if (newPassword.length < 6) {
-        setLocalError("Password must be at least 6 characters long.");
-        return;
-      }
-      if (newPassword !== confirmPassword) {
-        setLocalError("New password and confirmation do not match.");
-        return;
-      }
+    // Same shared rule set as the reset-password page (briefing p.36)
+    if (newPassword.trim() && !passwordAcceptable(newPassword, confirmPassword)) {
+      setLocalError("Your new password doesn't meet every rule in the checklist yet.");
+      return;
     }
 
     const payload: { name: string; surname: string; password?: string } = {
@@ -240,7 +237,7 @@ const UserProfile: React.FC = () => {
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Enter new password (min. 6 chars)"
+                  placeholder="Enter a new password"
                   disabled={authLoading || actionLoading}
                 />
               </div>
@@ -256,6 +253,9 @@ const UserProfile: React.FC = () => {
                 />
               </div>
             </div>
+            {newPassword && (
+              <PasswordChecklist password={newPassword} confirm={confirmPassword} className="mt-3" />
+            )}
           </div>
 
           {/* Form Actions */}
