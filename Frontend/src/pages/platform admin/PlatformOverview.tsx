@@ -1,11 +1,13 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, Check, Minus, ShieldCheck, UserRoundCheck, UserRoundX } from "lucide-react";
+import { ShieldCheck, UserRoundCheck, UserRoundX } from "lucide-react";
 import { useUsers } from "@/context/UsersContext";
 import { formatSast } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import PageHeader from "@/components/app/PageHeader";
 import StatCard from "@/components/app/StatCard";
 import SectionCard from "@/components/app/SectionCard";
+import { CapabilityItem } from "@/components/admin/ChecklistItem";
+import CardLink from "@/components/app/CardLink";
 import UserAvatar from "@/components/app/UserAvatar";
 import EmptyState from "@/components/app/EmptyState";
 import ErrorState from "@/components/app/ErrorState";
@@ -84,14 +86,10 @@ export default function PlatformOverview() {
           <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
             <SectionCard
               title="System admins"
+              description="People who manage users and departments"
               flush
               action={
-                <Button asChild variant="ghost" size="sm" className="-mr-2 text-primary hover:text-primary">
-                  <Link to="/platform-admin/users">
-                    Manage
-                    <ArrowRight data-icon="inline-end" />
-                  </Link>
-                </Button>
+                <CardLink to="/platform-admin/users">Manage</CardLink>
               }
             >
               <ListHeaderRow grid={GRID}>
@@ -138,17 +136,9 @@ export default function PlatformOverview() {
             <SectionCard title="This account" description="What a Platform Admin can do here">
               <ul className="flex flex-col gap-3">
                 {SCOPE.map(({ can, text }) => (
-                  <li key={text} className="flex items-start gap-3 text-sm">
-                    <span
-                      className={cn(
-                        "-mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full",
-                        can ? "bg-emerald-50 text-emerald-600" : "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      {can ? <Check className="size-3.5" aria-label="Can" /> : <Minus className="size-3.5" aria-label="Can't" />}
-                    </span>
-                    <span className={can ? "text-foreground" : "text-muted-foreground"}>{text}</span>
-                  </li>
+                  <CapabilityItem key={text} can={can}>
+                    {text}
+                  </CapabilityItem>
                 ))}
               </ul>
             </SectionCard>

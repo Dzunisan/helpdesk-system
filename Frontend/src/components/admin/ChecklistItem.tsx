@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, CircleAlert, CircleCheck, type LucideIcon } from "lucide-react";
+import { ArrowRight, Check, CircleAlert, CircleCheck, Minus, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChecklistItemProps {
@@ -40,6 +40,23 @@ export default function ChecklistItem({ state, icon, children, action }: Checkli
           </Link>
         )}
       </div>
+    </li>
+  );
+}
+
+/** "Can / can't" line for an account's scope (briefing p.66 "This account"): green tick or muted dash */
+export function CapabilityItem({ can, children }: { can: boolean; children: ReactNode }) {
+  return (
+    <li className="flex items-start gap-3 text-sm">
+      <span
+        className={cn(
+          "-mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full",
+          can ? "bg-emerald-50 text-emerald-600" : "bg-muted text-muted-foreground",
+        )}
+      >
+        {can ? <Check className="size-3.5" aria-label="Can" /> : <Minus className="size-3.5" aria-label="Can't" />}
+      </span>
+      <span className={can ? "text-foreground" : "text-muted-foreground"}>{children}</span>
     </li>
   );
 }

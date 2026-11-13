@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Building2, Inbox, UserRoundX, Users } from "lucide-react";
+import { Building2, Inbox, UserRoundX, Users } from "lucide-react";
 import { fetchAdminOverview, type AdminOverview as Overview } from "@/services/reportService";
 import { cn } from "@/lib/utils";
 import PageHeader from "@/components/app/PageHeader";
 import StatCard from "@/components/app/StatCard";
 import SectionCard from "@/components/app/SectionCard";
+import CardLink from "@/components/app/CardLink";
 import UserAvatar from "@/components/app/UserAvatar";
 import EmptyState from "@/components/app/EmptyState";
 import ErrorState from "@/components/app/ErrorState";
@@ -98,14 +99,10 @@ function DepartmentsCard({ data }: { data: Overview | null }) {
   return (
     <SectionCard
       title="Departments"
+      description="Who leads each team, and how busy it is"
       flush
       action={
-        <Button asChild variant="ghost" size="sm" className="-mr-2 text-primary hover:text-primary">
-          <Link to="/system-admin/departments">
-            Manage
-            <ArrowRight data-icon="inline-end" />
-          </Link>
-        </Button>
+        <CardLink to="/system-admin/departments">Manage</CardLink>
       }
       footer="Counts only. System Admins don't read ticket contents, so HR stays private."
     >
