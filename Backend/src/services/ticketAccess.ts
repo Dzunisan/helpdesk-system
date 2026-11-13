@@ -32,7 +32,7 @@ export interface TicketAccessTicket {
 
 const sameId = (a: unknown, b: unknown) => a !== null && a !== undefined && b !== null && b !== undefined && String(a) === String(b);
 
-const departmentsOf = (user: TicketAccessUser): number[] => {
+export const departmentsOf = (user: TicketAccessUser): number[] => {
   const ids = new Set<number>();
   if (user.department_id !== null && user.department_id !== undefined) ids.add(Number(user.department_id));
   for (const id of user.department_ids ?? []) ids.add(Number(id));

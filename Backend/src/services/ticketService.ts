@@ -1039,6 +1039,25 @@ export const getTicketFeedback = async (
   };
 };
 
+// The approval step (briefing p.4): a purchase or access request starts in "Pending approval"
+// and only the department lead's approve / reject moves it on. A plain status change may not
+// put a ticket into "Pending approval" or take it out, except that the requester may still
+// withdraw (cancel) their own pending request. Returns the refusal message, or null if allowed.
+export const approvalStepProblem = (
+  oldStatus: TicketStatus,
+  newStatus: TicketStatus,
+  isTicketRequester: boolean
+): string | null => {
+  if (oldStatus === newStatus) return null;
+  if (newStatus === "Pending approval") {
+    return "A ticket can't be moved back to Pending approval. Only purchase and access requests start there.";
+  }
+  if (oldStatus === "Pending approval" && !(newStatus === "Cancelled" && isTicketRequester)) {
+    return "This request is waiting for approval. Only the Department Lead can approve or reject it.";
+  }
+  return null;
+};
+
 export const updateTicketStatus = async (
   ticketId: number,
   newStatus: TicketStatus,
@@ -1061,6 +1080,11 @@ export const updateTicketStatus = async (
   }
 
   const oldStatus = resolved.ticket.ticket_status;
+
+  const approvalProblem = approvalStepProblem(oldStatus, newStatus, resolved.isRequester);
+  if (approvalProblem) {
+    return { success: false, statusCode: 409, message: approvalProblem };
+  }
 
   await pool.query(
     "UPDATE ticket SET ticket_status = $1, updated_at = NOW() WHERE ticket_id = $2",
@@ -1174,15 +1198,20 @@ export const rejectTicket = async (
     };
   }
 
+  // The requester is shown why (briefing p.4: "lead rejects (reason shown)"), so a reason is required
+  if (typeof reason !== "string" || reason.trim().length === 0) {
+    return { success: false, statusCode: 400, message: "A reason is required to reject a request." };
+  }
+  reason = reason.trim();
+
   // Reject moves to Cancelled
   await pool.query(
     "UPDATE ticket SET ticket_status = 'Cancelled', updated_at = NOW() WHERE ticket_id = $1",
     [ticketId]
   );
 
-  const authorName = `${currentUser.name} ${currentUser.surname || ""}`.trim();
-  const noteBody = reason ? `Request Rejected: ${reason}` : `Request rejected by ${authorName} (${currentUser.role}).`;
-  await addComment(ticketId, currentUser, noteBody, true);
+  // A public comment, so the requester sees the reason on their ticket (the reject dialog says so)
+  await addComment(ticketId, currentUser, `Request rejected: ${reason}`, false);
 
   const updatedTicket = await getTicketById(ticketId, true, false);
   return {
@@ -1193,14 +1222,15 @@ export const rejectTicket = async (
   };
 };
 
-export const getAvailableAgents = async (departmentId?: number | null) => {
-  const conditions = ["u.active = true", "u.role IN ('Agent', 'Department Lead')"];
-  const params: any[] = [];
-
-  if (departmentId !== undefined && departmentId !== null) {
-    conditions.push("(u.department_id = $1 OR u.user_id IN (SELECT lead_id FROM department WHERE department_id = $1))");
-    params.push(departmentId);
-  }
+// Active agents and leads of the given departments (members, plus each department's lead)
+export const getAvailableAgents = async (departmentIds: number[]) => {
+  if (departmentIds.length === 0) return [];
+  const conditions = [
+    "u.active = true",
+    "u.role IN ('Agent', 'Department Lead')",
+    "(u.department_id = ANY($1::int[]) OR u.user_id IN (SELECT lead_id FROM department WHERE department_id = ANY($1::int[])))"
+  ];
+  const params: any[] = [departmentIds];
 
   const res = await pool.query(
     `SELECT u.user_id, u.name, u.surname, u.email, u.role, u.department_id, d.department_name

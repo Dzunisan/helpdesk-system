@@ -1,6 +1,12 @@
 import { Request, Response } from "express";
 import * as ticketService from "../services/ticketService";
-import { canListTickets, loadTicketAccess, NO_TICKET_ACCESS_ROLES, STAFF_ROLES } from "../services/ticketAccess";
+import {
+  canListTickets,
+  departmentsOf,
+  loadTicketAccess,
+  NO_TICKET_ACCESS_ROLES,
+  STAFF_ROLES
+} from "../services/ticketAccess";
 import {
   TicketPriority,
   TicketStatus,
@@ -25,12 +31,24 @@ const normalizePriority = (val?: string): TicketPriority | null => {
   return match || null;
 };
 
+// Ids of int columns (ticket, department, category, request type, comment): digits only and
+// within Postgres' integer range, so a huge number is a 400 instead of a database error
+const MAX_INT_ID = 2147483647;
+const isIntId = (val: unknown): boolean => {
+  const text = String(val ?? "").trim();
+  return /^\d+$/.test(text) && Number(text) <= MAX_INT_ID;
+};
+
+// User ids are bigint: up to 18 digits always fits
+const isUserId = (val: unknown): boolean => /^\d{1,18}$/.test(String(val ?? "").trim());
+
 const handleError = (res: Response, error: any) => {
   console.error("Ticket error:", error);
   if (error.code === "23503") {
     return res.status(400).json({ message: "Referenced entity (department, category, or user) does not exist." });
   }
-  return res.status(500).json({ message: "An unexpected error occurred", error: error.message });
+  // The database error text stays in the server log; the browser only gets a generic message
+  return res.status(500).json({ message: "An unexpected error occurred" });
 };
 
 
@@ -91,7 +109,7 @@ export const createTicket = async (req: Request, res: Response) => {
   const targetDeptId = department_id !== undefined ? department_id : ticket_department_id;
   let parsedDeptId: number | null = null;
   if (targetDeptId !== undefined && targetDeptId !== null && String(targetDeptId).trim() !== "") {
-    if (!/^\d+$/.test(String(targetDeptId))) {
+    if (!isIntId(String(targetDeptId))) {
       errors.push("Department ID must be a valid integer.");
     } else {
       parsedDeptId = Number(targetDeptId);
@@ -102,7 +120,7 @@ export const createTicket = async (req: Request, res: Response) => {
   const targetCatId = category_id !== undefined ? category_id : ticket_category_id;
   let parsedCatId: number | null = null;
   if (targetCatId !== undefined && targetCatId !== null && String(targetCatId).trim() !== "") {
-    if (!/^\d+$/.test(String(targetCatId))) {
+    if (!isIntId(String(targetCatId))) {
       errors.push("Category ID must be a valid integer.");
     } else {
       parsedCatId = Number(targetCatId);
@@ -113,7 +131,7 @@ export const createTicket = async (req: Request, res: Response) => {
   const targetReqTypeId = request_type_id !== undefined ? request_type_id : ticket_request_type_id;
   let parsedReqTypeId: number | null = null;
   if (targetReqTypeId !== undefined && targetReqTypeId !== null && String(targetReqTypeId).trim() !== "") {
-    if (!/^\d+$/.test(String(targetReqTypeId))) {
+    if (!isIntId(String(targetReqTypeId))) {
       errors.push("Request type ID must be a valid integer.");
     } else {
       parsedReqTypeId = Number(targetReqTypeId);
@@ -123,7 +141,7 @@ export const createTicket = async (req: Request, res: Response) => {
   // Requester resolution: Employees can only create tickets as themselves
   let resolvedRequesterId = String(user.user_id);
   if (requester_id !== undefined && requester_id !== null && String(requester_id).trim() !== "") {
-    if (!/^\d+$/.test(String(requester_id))) {
+    if (!isUserId(String(requester_id))) {
       errors.push("Requester ID must be a valid user ID.");
     } else {
       resolvedRequesterId = String(requester_id).trim();
@@ -238,10 +256,20 @@ export const fetchTickets = async (req: Request, res: Response) => {
   // Validate department_id filter if given
   let parsedDeptId: number | null = null;
   if (deptParam !== undefined && deptParam !== null && deptParam.trim() !== "") {
-    if (!/^\d+$/.test(deptParam.trim())) {
+    if (!isIntId(deptParam.trim())) {
       return res.status(400).json({ message: "department_id must be a valid integer." });
     }
     parsedDeptId = Number(deptParam.trim());
+  }
+
+  // creator_id / assignee_id filters are user ids (bigint)
+  const creatorId = creatorParam?.trim() || null;
+  if (creatorId !== null && !isUserId(creatorId)) {
+    return res.status(400).json({ message: "creator_id must be a valid user ID." });
+  }
+  const assigneeId = assigneeParam?.trim() || null;
+  if (assigneeId !== null && !isUserId(assigneeId)) {
+    return res.status(400).json({ message: "assignee_id must be a valid user ID." });
   }
 
   // Deleted tickets are never listed: only admins could see them, and admins have no ticket access
@@ -255,8 +283,8 @@ export const fetchTickets = async (req: Request, res: Response) => {
     // Agents and Leads get their department from the role (ticketAccess); the browser's
     // department_id is ignored for them so it can never widen the scope
     department_id: STAFF_ROLES.includes(user.role) ? null : parsedDeptId,
-    creator_id: creatorParam?.trim() || null,
-    assignee_id: assigneeParam?.trim() || null,
+    creator_id: creatorId,
+    assignee_id: assigneeId,
     search: searchParam?.trim() || null,
     include_deleted
   };
@@ -286,7 +314,7 @@ export const getTicketById = async (req: Request, res: Response) => {
 
   const rawId = req.params.id;
   const idParam = Array.isArray(rawId) ? rawId[0] : rawId;
-  if (!idParam || !/^\d+$/.test(idParam)) {
+  if (!idParam || !isIntId(idParam)) {
     return res.status(400).json({ message: "Invalid ticket ID. Must be an integer." });
   }
 
@@ -319,7 +347,7 @@ export const updateTicket = async (req: Request, res: Response) => {
 
   // Support /:id parameter, or id in body for legacy /update endpoint
   const idParam = req.params.id || req.body.ticket_id || req.body.id;
-  if (!idParam || !/^\d+$/.test(String(idParam))) {
+  if (!idParam || !isIntId(String(idParam))) {
     return res.status(400).json({ message: "Invalid or missing ticket ID." });
   }
 
@@ -345,6 +373,14 @@ export const updateTicket = async (req: Request, res: Response) => {
       ticket_request_type_id,
       assignee_id
     } = req.body;
+
+    // Assigning has its own rules (agents claim for themselves, leads assign within the
+    // department), so it only goes through PUT /api/tickets/:id/assign
+    if (assignee_id !== undefined) {
+      return res.status(400).json({
+        message: "Use PUT /api/tickets/:id/assign to assign or reassign a ticket."
+      });
+    }
 
     const errors: string[] = [];
     const updateData: UpdateTicketDto = {};
@@ -402,6 +438,15 @@ export const updateTicket = async (req: Request, res: Response) => {
       if (!norm) {
         errors.push(`Status must be one of: ${VALID_STATUSES.join(", ")}.`);
       } else {
+        // Only approve / reject may take a ticket through the approval step
+        const approvalProblem = ticketService.approvalStepProblem(
+          resolved.ticket.ticket_status,
+          norm,
+          resolved.isRequester
+        );
+        if (approvalProblem) {
+          return res.status(409).json({ message: approvalProblem });
+        }
         updateData.status = norm;
       }
     }
@@ -411,7 +456,7 @@ export const updateTicket = async (req: Request, res: Response) => {
     if (targetDeptId !== undefined) {
       if (targetDeptId === null || String(targetDeptId).trim() === "") {
         updateData.department_id = null;
-      } else if (!/^\d+$/.test(String(targetDeptId))) {
+      } else if (!isIntId(String(targetDeptId))) {
         errors.push("Department ID must be a valid integer.");
       } else {
         const deptIdNum = Number(targetDeptId);
@@ -429,7 +474,7 @@ export const updateTicket = async (req: Request, res: Response) => {
     if (targetCatId !== undefined) {
       if (targetCatId === null || String(targetCatId).trim() === "") {
         updateData.category_id = null;
-      } else if (!/^\d+$/.test(String(targetCatId))) {
+      } else if (!isIntId(String(targetCatId))) {
         errors.push("Category ID must be a valid integer.");
       } else {
         const catIdNum = Number(targetCatId);
@@ -447,7 +492,7 @@ export const updateTicket = async (req: Request, res: Response) => {
     if (targetReqTypeId !== undefined) {
       if (targetReqTypeId === null || String(targetReqTypeId).trim() === "") {
         updateData.request_type_id = null;
-      } else if (!/^\d+$/.test(String(targetReqTypeId))) {
+      } else if (!isIntId(String(targetReqTypeId))) {
         errors.push("Request type ID must be a valid integer.");
       } else {
         const reqTypeIdNum = Number(targetReqTypeId);
@@ -456,22 +501,6 @@ export const updateTicket = async (req: Request, res: Response) => {
           errors.push("Request type does not exist.");
         } else {
           updateData.request_type_id = reqTypeIdNum;
-        }
-      }
-    }
-
-    // Validate assignee_id
-    if (assignee_id !== undefined) {
-      if (assignee_id === null || String(assignee_id).trim() === "") {
-        updateData.assignee_id = null;
-      } else if (!/^\d+$/.test(String(assignee_id))) {
-        errors.push("Assignee ID must be a valid user ID.");
-      } else {
-        const exists = await ticketService.checkUserExists(String(assignee_id).trim());
-        if (!exists) {
-          errors.push("Assignee user does not exist.");
-        } else {
-          updateData.assignee_id = String(assignee_id).trim();
         }
       }
     }
@@ -494,7 +523,7 @@ export const deleteTicket = async (req: Request, res: Response) => {
   }
 
   const idParam = req.params.id || req.body.ticket_id || req.body.id;
-  if (!idParam || !/^\d+$/.test(String(idParam))) {
+  if (!idParam || !isIntId(String(idParam))) {
     return res.status(400).json({ message: "Invalid or missing ticket ID." });
   }
 
@@ -535,7 +564,7 @@ export const assignTicket = async (req: Request, res: Response) => {
   }
 
   const idParam = req.params.id || req.body.ticket_id || req.body.id;
-  if (!idParam || !/^\d+$/.test(String(idParam).trim())) {
+  if (!idParam || !isIntId(String(idParam).trim())) {
     return res.status(400).json({ message: "Invalid or missing ticket ID. Must be an integer." });
   }
 
@@ -543,7 +572,7 @@ export const assignTicket = async (req: Request, res: Response) => {
   const { assignee_id } = req.body;
 
   if (assignee_id !== undefined && assignee_id !== null && String(assignee_id).trim() !== "") {
-    if (!/^\d+$/.test(String(assignee_id).trim())) {
+    if (!isUserId(String(assignee_id).trim())) {
       return res.status(400).json({ message: "Assignee ID must be a valid user ID." });
     }
   }
@@ -578,7 +607,7 @@ export const addComment = async (req: Request, res: Response) => {
   }
 
   const ticketIdParam = req.params.ticket_id || req.params.id;
-  if (!ticketIdParam || !/^\d+$/.test(String(ticketIdParam).trim())) {
+  if (!ticketIdParam || !isIntId(String(ticketIdParam).trim())) {
     return res.status(400).json({ message: "Invalid ticket ID. Must be an integer." });
   }
 
@@ -614,7 +643,7 @@ export const getComments = async (req: Request, res: Response) => {
   }
 
   const ticketIdParam = req.params.ticket_id || req.params.id;
-  if (!ticketIdParam || !/^\d+$/.test(String(ticketIdParam).trim())) {
+  if (!ticketIdParam || !isIntId(String(ticketIdParam).trim())) {
     return res.status(400).json({ message: "Invalid ticket ID. Must be an integer." });
   }
 
@@ -641,7 +670,7 @@ export const editComment = async (req: Request, res: Response) => {
   }
 
   const commentIdParam = req.params.id || req.params.comment_id;
-  if (!commentIdParam || !/^\d+$/.test(String(commentIdParam).trim())) {
+  if (!commentIdParam || !isIntId(String(commentIdParam).trim())) {
     return res.status(400).json({ message: "Invalid comment ID. Must be an integer." });
   }
 
@@ -675,7 +704,7 @@ export const deleteComment = async (req: Request, res: Response) => {
   }
 
   const commentIdParam = req.params.id || req.params.comment_id;
-  if (!commentIdParam || !/^\d+$/.test(String(commentIdParam).trim())) {
+  if (!commentIdParam || !isIntId(String(commentIdParam).trim())) {
     return res.status(400).json({ message: "Invalid comment ID. Must be an integer." });
   }
 
@@ -702,7 +731,7 @@ export const submitFeedback = async (req: Request, res: Response) => {
   }
 
   const ticketIdParam = req.params.ticket_id || req.params.id;
-  if (!ticketIdParam || !/^\d+$/.test(String(ticketIdParam).trim())) {
+  if (!ticketIdParam || !isIntId(String(ticketIdParam).trim())) {
     return res.status(400).json({ message: "Invalid ticket ID. Must be an integer." });
   }
 
@@ -742,7 +771,7 @@ export const getFeedback = async (req: Request, res: Response) => {
   }
 
   const ticketIdParam = req.params.ticket_id || req.params.id;
-  if (!ticketIdParam || !/^\d+$/.test(String(ticketIdParam).trim())) {
+  if (!ticketIdParam || !isIntId(String(ticketIdParam).trim())) {
     return res.status(400).json({ message: "Invalid ticket ID. Must be an integer." });
   }
 
@@ -769,7 +798,7 @@ export const updateStatus = async (req: Request, res: Response) => {
   }
 
   const ticketIdParam = req.params.id || req.params.ticket_id;
-  if (!ticketIdParam || !/^\d+$/.test(String(ticketIdParam).trim())) {
+  if (!ticketIdParam || !isIntId(String(ticketIdParam).trim())) {
     return res.status(400).json({ message: "Invalid ticket ID. Must be an integer." });
   }
 
@@ -809,7 +838,7 @@ export const approveTicket = async (req: Request, res: Response) => {
   }
 
   const ticketIdParam = req.params.id || req.params.ticket_id;
-  if (!ticketIdParam || !/^\d+$/.test(String(ticketIdParam).trim())) {
+  if (!ticketIdParam || !isIntId(String(ticketIdParam).trim())) {
     return res.status(400).json({ message: "Invalid ticket ID. Must be an integer." });
   }
 
@@ -838,7 +867,7 @@ export const rejectTicket = async (req: Request, res: Response) => {
   }
 
   const ticketIdParam = req.params.id || req.params.ticket_id;
-  if (!ticketIdParam || !/^\d+$/.test(String(ticketIdParam).trim())) {
+  if (!ticketIdParam || !isIntId(String(ticketIdParam).trim())) {
     return res.status(400).json({ message: "Invalid ticket ID. Must be an integer." });
   }
 
@@ -866,14 +895,22 @@ export const getAgents = async (req: Request, res: Response) => {
     return res.status(401).json({ message: "Not authenticated" });
   }
 
-  const deptParam = req.query.department_id as string;
-  let deptId: number | null = null;
-  if (deptParam && /^\d+$/.test(deptParam.trim())) {
-    deptId = Number(deptParam.trim());
+  // Only Agents and Department Leads pick assignees; everyone else gets no staff directory
+  if (!STAFF_ROLES.includes(user.role)) {
+    return res.status(403).json({ message: "Forbidden: Only agents and leads can list agents." });
   }
 
   try {
-    const agents = await ticketService.getAvailableAgents(deptId);
+    // The server decides the departments (ticketAccess): the caller's own. department_id may only
+    // narrow that list (a lead of several departments), never widen it.
+    const access = await loadTicketAccess(user);
+    let departmentIds = departmentsOf(access);
+    const deptParam = req.query.department_id as string;
+    if (deptParam && isIntId(deptParam)) {
+      departmentIds = departmentIds.filter((id) => id === Number(deptParam.trim()));
+    }
+
+    const agents = await ticketService.getAvailableAgents(departmentIds);
     return res.status(200).json({ agents });
   } catch (error) {
     return handleError(res, error);
