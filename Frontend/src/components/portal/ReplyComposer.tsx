@@ -4,26 +4,34 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import AttachmentDropZone from "@/components/request/AttachmentDropZone";
+import { useAttachmentQueue } from "@/components/request/useAttachmentQueue";
 
 const MAX = 5000;
 
 interface ReplyComposerProps {
+  /** The request the files upload to */
+  ticketId: number;
   /** "Thabo" -> "Reply to Thabo…" */
   replyTo?: string | null;
   /** The team is waiting on the employee: say so and draw the eye */
   waiting?: boolean;
   /** Focus and scroll into view on arrival (the "Reply" button on My requests) */
   focusOnMount?: boolean;
-  /** Resolves true when sent, so the box can clear */
-  onSend: (body: string) => Promise<boolean>;
+  /** Resolves true when sent, so the box and the files clear */
+  onSend: (body: string, attachmentIds: number[]) => Promise<boolean>;
   className?: string;
 }
 
-/** The employee's reply box under the timeline (briefing p.41). Ctrl/Cmd + Enter sends. */
-export default function ReplyComposer({ replyTo, waiting, focusOnMount, onSend, className }: ReplyComposerProps) {
+/**
+ * The employee's reply box under the timeline (briefing p.41-42): text plus a drop zone whose files
+ * upload straight away with a progress bar each (S14). Ctrl/Cmd + Enter sends.
+ */
+export default function ReplyComposer({ ticketId, replyTo, waiting, focusOnMount, onSend, className }: ReplyComposerProps) {
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const files = useAttachmentQueue({ ticketId });
 
   useEffect(() => {
     if (!focusOnMount) return;
@@ -33,15 +41,27 @@ export default function ReplyComposer({ replyTo, waiting, focusOnMount, onSend, 
 
   const trimmed = body.trim();
   const tooLong = trimmed.length > MAX;
+  const blocked = !trimmed || tooLong || sending || files.uploading;
 
   const send = async (event?: FormEvent) => {
     event?.preventDefault();
-    if (!trimmed || tooLong || sending) return;
+    if (blocked) return;
     setSending(true);
-    const ok = await onSend(trimmed);
+    const ok = await onSend(trimmed, files.uploadedIds);
     setSending(false);
-    if (ok) setBody("");
+    if (ok) {
+      setBody("");
+      files.clear();
+    }
   };
+
+  const hint = tooLong
+    ? `${trimmed.length - MAX} characters too long`
+    : files.uploading
+      ? "Uploading your files…"
+      : files.uploadedIds.length > 0
+        ? `${files.uploadedIds.length} ${files.uploadedIds.length === 1 ? "file" : "files"} will go with your reply.`
+        : "The team sees it straight away.";
 
   return (
     <form
@@ -71,11 +91,12 @@ export default function ReplyComposer({ replyTo, waiting, focusOnMount, onSend, 
         disabled={sending}
         className="min-h-24 resize-none rounded-none border-0 bg-transparent px-4 py-3 shadow-none focus-visible:ring-0 dark:bg-transparent"
       />
+      <AttachmentDropZone queue={files} compact disabled={sending} className="px-4 pb-3" />
       <div className="flex items-center justify-between gap-3 border-t border-border bg-muted/30 px-4 py-2.5">
-        <p className={cn("text-xs", tooLong ? "text-destructive" : "text-muted-foreground")}>
-          {tooLong ? `${trimmed.length - MAX} characters too long` : "The team sees it straight away."}
+        <p className={cn("text-xs", tooLong ? "text-destructive" : "text-muted-foreground")} aria-live="polite">
+          {hint}
         </p>
-        <Button type="submit" disabled={!trimmed || tooLong || sending} className="h-10 sm:h-9">
+        <Button type="submit" disabled={blocked} className="h-10 shrink-0 sm:h-9">
           {sending ? <Spinner data-icon="inline-start" /> : <Send data-icon="inline-start" />}
           Send reply
         </Button>

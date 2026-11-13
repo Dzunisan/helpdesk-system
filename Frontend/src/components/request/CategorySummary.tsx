@@ -4,12 +4,22 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import CategoryIcon from "./CategoryIcon";
 import NeedsApprovalBadge from "./NeedsApprovalBadge";
+import { leadTitle } from "./useDepartmentLead";
 
 /**
  * The chosen category at the top of step 2 (briefing p.39): icon, name, where it goes,
  * and a "Change" link back to step 1 with the tile still selected.
  */
-export default function CategorySummary({ category, className }: { category: Category; className?: string }) {
+export default function CategorySummary({
+  category,
+  approverName,
+  className,
+}: {
+  category: Category;
+  /** Who approves (approval categories): "Thandi Mthembu" */
+  approverName?: string | null;
+  className?: string;
+}) {
   return (
     <div className={cn("flex items-center gap-4 rounded-xl border border-border bg-muted/30 p-4", className)}>
       <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -22,7 +32,7 @@ export default function CategorySummary({ category, className }: { category: Cat
         </p>
         <p className="text-xs text-muted-foreground">
           Goes to {category.department_name}
-          {category.needs_approval && ` · approved by the ${category.department_name} lead first`}
+          {category.needs_approval && ` · ${approverName ?? `the ${leadTitle(category.department_name)}`} approves first`}
         </p>
       </div>
       <Button asChild variant="ghost" size="sm" className="shrink-0 text-primary hover:text-primary">

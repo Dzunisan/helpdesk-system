@@ -3,13 +3,12 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { FileQuestion, Lock, MessageSquareText, Plus, Sparkles } from "lucide-react";
 import {
-  addComment,
   deleteComment,
   editComment,
   getTicket,
   getTicketActions,
   getTimeline,
-  submitFeedback,
+  sendComment,
   transitionTicket,
 } from "@/services/tickets";
 import { listCategories } from "@/services/categories";
@@ -32,7 +31,11 @@ import TicketTimeline from "@/components/tickets/TicketTimeline";
 import ReplyComposer from "@/components/portal/ReplyComposer";
 import ResolvedCheck from "@/components/portal/ResolvedCheck";
 import CancelRequestButton from "@/components/portal/CancelRequestButton";
-import { FeedbackForm, FeedbackSummary } from "@/components/tickets/TicketFeedback";
+import ApprovalBanner from "@/components/portal/ApprovalBanner";
+import { RequestFilesCard, WhoCanSeeFiles } from "@/components/portal/RequestFiles";
+import { filesOf } from "@/components/portal/fileList";
+import { CsatPrompt, RatingCard } from "@/components/feedback/CsatPrompt";
+import { useDepartmentLead } from "@/components/request/useDepartmentLead";
 import { IMPACT_LABEL, nextDueAt, promiseTime } from "@/components/portal/portalText";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -41,7 +44,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 const REOPEN_DAYS = 5;
 
 /** "Thabo Nkosi from IT Support is working on this", in plain words (p.41 header) */
-function WhoHasIt({ ticket }: { ticket: Ticket }) {
+function WhoHasIt({
+  ticket,
+  approverName,
+  declinedBy,
+}: {
+  ticket: Ticket;
+  approverName: string | null;
+  /** Cancelled by an approval rejection: the lead's name */
+  declinedBy: string | null;
+}) {
   const team = ticket.department_name ?? "the team";
   const person = ticket.assignee_name;
   // The avatar stays beside the sentence at 390px; the words wrap next to it
@@ -56,7 +68,13 @@ function WhoHasIt({ ticket }: { ticket: Ticket }) {
 
   switch (ticket.ticket_status) {
     case "Pending approval":
-      return <>Waiting for approval from the {team} lead.</>;
+      return approverName ? (
+        <>
+          Waiting for <span className="font-medium text-foreground">{approverName}</span>'s approval.
+        </>
+      ) : (
+        <>Waiting for approval from the {team} lead.</>
+      );
     case "New":
       return person ? withPerson("will pick this up") : <>Waiting for someone in {team} to pick this up.</>;
     case "Open":
@@ -68,7 +86,13 @@ function WhoHasIt({ ticket }: { ticket: Ticket }) {
     case "Closed":
       return person ? withPerson("handled this") : <>This request is closed.</>;
     default:
-      return <>This request was cancelled.</>;
+      return declinedBy ? (
+        <>
+          Declined by <span className="font-medium text-foreground">{declinedBy}</span>. The reason is below.
+        </>
+      ) : (
+        <>This request was cancelled.</>
+      );
   }
 }
 
@@ -143,6 +167,12 @@ export default function RequestDetail() {
 
   const ticket = ticketQ.data;
   const actions = actionsQ.data?.actions ?? [];
+  const approverName = useDepartmentLead(ticket?.ticket_department_id);
+  const files = useMemo(() => filesOf(timelineQ.data?.items ?? null), [timelineQ.data]);
+  const declinedBy = useMemo(() => {
+    const rejected = timelineQ.data?.items.findLast((item) => item.kind === "event" && item.type === "rejected");
+    return rejected ? (rejected.actor?.name ?? approverName ?? "the lead") : null;
+  }, [timelineQ.data, approverName]);
 
   const refreshAll = () => {
     ticketQ.reload();
@@ -157,10 +187,10 @@ export default function RequestDetail() {
     if (apiError.isConflict) refreshAll();
   };
 
-  const sendReply = async (body: string) => {
+  const sendReply = async (body: string, attachmentIds: number[]) => {
     try {
-      await addComment(ticketId, { body });
-      toast.success("Reply sent");
+      await sendComment(ticketId, { body, attachment_ids: attachmentIds.length ? attachmentIds : undefined });
+      toast.success(attachmentIds.length ? `Reply sent with ${attachmentIds.length} ${attachmentIds.length === 1 ? "file" : "files"}` : "Reply sent");
       refreshAll();
       return true;
     } catch (error) {
@@ -191,19 +221,6 @@ export default function RequestDetail() {
       return true;
     } catch (error) {
       fail("Couldn't edit the message", error);
-      return false;
-    }
-  };
-
-  /** "How did Thabo do?" once the request is closed: one rating per request */
-  const rate = async (rating: number, comment: string) => {
-    try {
-      const feedback = await submitFeedback(ticketId, { rating, comment: comment || undefined });
-      if (ticket) ticketQ.setData({ ...ticket, feedback });
-      toast.success("Thanks for rating this request");
-      return true;
-    } catch (error) {
-      fail("Couldn't send your rating", error);
       return false;
     }
   };
@@ -275,10 +292,12 @@ export default function RequestDetail() {
           </>
         }
         title={ticket.title}
-        description={<WhoHasIt ticket={ticket} />}
+        description={<WhoHasIt ticket={ticket} approverName={approverName} declinedBy={declinedBy} />}
       />
 
       <RequestProgress ticket={ticket} />
+
+      <ApprovalBanner ticket={ticket} items={timelineQ.data?.items ?? null} approverName={approverName} />
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="flex min-w-0 flex-col gap-6">
@@ -293,7 +312,7 @@ export default function RequestDetail() {
             />
           )}
 
-          {status === "Closed" && !ticket.feedback && <FeedbackForm ticket={ticket} onSubmit={rate} />}
+          {status === "Closed" && !ticket.feedback && <CsatPrompt ticket={ticket} />}
 
           <section aria-label="Timeline" className="flex flex-col gap-3">
             {timeline}
@@ -301,6 +320,7 @@ export default function RequestDetail() {
 
           {canReply ? (
             <ReplyComposer
+              ticketId={ticket.ticket_id}
               replyTo={assigneeFirst}
               waiting={status === "Waiting on employee"}
               focusOnMount={params.has("reply")}
@@ -329,7 +349,10 @@ export default function RequestDetail() {
             <KeyValueList items={detailItems(ticket, actionsQ.data?.reopen_until ?? null)} />
           </SectionCard>
 
-          {ticket.feedback && <FeedbackSummary feedback={ticket.feedback} isMine />}
+          {ticket.feedback && <RatingCard feedback={ticket.feedback} />}
+
+          <RequestFilesCard files={files} loading={timelineQ.loading} />
+          {(canReply || files.length > 0) && <WhoCanSeeFiles team={ticket.department_name} />}
 
           {actionsQ.error && !actionsQ.data ? (
             <ErrorState

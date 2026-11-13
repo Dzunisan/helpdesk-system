@@ -1,5 +1,5 @@
 import { Link, useLocation, useParams } from "react-router-dom";
-import { ArrowRight, Check, CircleCheck, Clock, FileQuestion, Hourglass } from "lucide-react";
+import { ArrowRight, Check, CircleCheck, Clock, FileQuestion, Hourglass, Paperclip, TriangleAlert } from "lucide-react";
 import { getTicket } from "@/services/tickets";
 import type { Ticket } from "@/types/api";
 import { formatSast, formatTicketRef } from "@/lib/format";
@@ -13,6 +13,8 @@ import NewRequestSteps from "@/components/request/NewRequestSteps";
 import CategoryIcon from "@/components/request/CategoryIcon";
 import { useApiData } from "@/hooks/useApiData";
 import { promiseTime } from "@/components/portal/portalText";
+import NeedsApprovalBadge from "@/components/request/NeedsApprovalBadge";
+import { leadTitle, useDepartmentLead } from "@/components/request/useDepartmentLead";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -25,10 +27,14 @@ export default function RequestSubmitted() {
   const { id } = useParams();
   const location = useLocation();
   const ticketId = Number(id);
-  const passed = (location.state as { ticket?: Ticket } | null)?.ticket;
+  const state = location.state as { ticket?: Ticket; filesSent?: number; filesFailed?: number } | null;
+  const passed = state?.ticket;
+  const filesSent = state?.filesSent ?? 0;
+  const filesFailed = state?.filesFailed ?? 0;
   const { data, error, loading, refreshing, reload } = useApiData(() => getTicket(ticketId), `ticket-${ticketId}`);
   // The form hands the new ticket over, so the page shows at once while it refreshes
   const ticket = data ?? (passed && passed.ticket_id === ticketId ? passed : null);
+  const approverName = useDepartmentLead(ticket?.ticket_department_id);
 
   if (!ticket) {
     if (loading) return <SubmittedSkeleton />;
@@ -53,6 +59,7 @@ export default function RequestSubmitted() {
   const ref = formatTicketRef(ticket.ticket_id);
   const team = ticket.department_name ?? "The team";
   const pending = ticket.ticket_status === "Pending approval";
+  const approver = approverName ?? `the ${team} lead`;
 
   return (
     <div className="flex flex-col gap-8">
@@ -103,7 +110,7 @@ export default function RequestSubmitted() {
                 {[ticket.category_name, team].filter(Boolean).join(" · ")}
               </p>
             </div>
-            <StatusBadge status={ticket.ticket_status} className="shrink-0" />
+            {pending ? <NeedsApprovalBadge className="shrink-0" /> : <StatusBadge status={ticket.ticket_status} className="shrink-0" />}
           </div>
 
           <div
@@ -120,9 +127,10 @@ export default function RequestSubmitted() {
             <div className="flex min-w-0 flex-col gap-0.5">
               {pending ? (
                 <>
-                  <p className="text-sm font-semibold text-foreground">Waiting for approval from the {team} lead</p>
+                  <p className="text-base font-semibold text-foreground">Waiting for {approver}'s approval</p>
                   <p className="text-sm text-muted-foreground">
-                    Usually within 1 working day. The reply clock starts once it's approved.
+                    {approverName ? `${approverName} is the ${leadTitle(team)}. ` : ""}Usually within 1 working day, and
+                    you'll see the reason either way. {team} picks it up once it's approved.
                   </p>
                 </>
               ) : ticket.first_response_due_at ? (
@@ -139,10 +147,25 @@ export default function RequestSubmitted() {
               )}
             </div>
           </div>
+
+          {(filesSent > 0 || filesFailed > 0) && (
+            <p className={cn("flex items-start gap-2 text-sm", filesFailed > 0 ? "text-warning-strong" : "text-muted-foreground")}>
+              {filesFailed > 0 ? (
+                <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+              ) : (
+                <Paperclip className="mt-0.5 size-4 shrink-0" aria-hidden />
+              )}
+              <span>
+                {filesSent > 0 && `${filesSent} ${filesSent === 1 ? "file" : "files"} attached. `}
+                {filesFailed > 0 &&
+                  `${filesFailed} ${filesFailed === 1 ? "file" : "files"} couldn't be attached. Open the request and add ${filesFailed === 1 ? "it" : "them"} to a reply.`}
+              </span>
+            </p>
+          )}
         </SectionCard>
 
         <SectionCard title="What happens now">
-          <StepsAhead ticket={ticket} />
+          <StepsAhead ticket={ticket} approverName={approverName} />
         </SectionCard>
       </div>
     </div>
@@ -150,13 +173,20 @@ export default function RequestSubmitted() {
 }
 
 /** Vertical tracker of the steps ahead (p.40 "Stepper") */
-function StepsAhead({ ticket }: { ticket: Ticket }) {
+function StepsAhead({ ticket, approverName }: { ticket: Ticket; approverName: string | null }) {
   const team = ticket.department_name ?? "the team";
   const pending = ticket.ticket_status === "Pending approval";
-  const steps: { title: string; body: string; state: "done" | "current" | "next" }[] = [
+  const steps: { title: string; body: string; state: "done" | "current" | "next"; tone?: "pending" }[] = [
     { title: "Submitted", body: formatSast(ticket.created_at), state: "done" },
     ...(pending
-      ? [{ title: "Waiting for approval", body: `The ${team} lead`, state: "current" as const }]
+      ? [
+          {
+            title: "Waiting for approval",
+            body: approverName ? `${approverName}, ${leadTitle(ticket.department_name)}` : `The ${team} lead`,
+            state: "current" as const,
+            tone: "pending" as const,
+          },
+        ]
       : []),
     {
       title: `Picked up by ${team}`,
@@ -181,14 +211,17 @@ function StepsAhead({ ticket }: { ticket: Ticket }) {
             className={cn(
               "flex size-7 shrink-0 items-center justify-center rounded-full border",
               step.state === "done" && "border-primary bg-primary text-primary-foreground",
-              step.state === "current" && "border-primary bg-background text-primary ring-3 ring-primary/15",
+              step.state === "current" &&
+                (step.tone === "pending"
+                  ? "border-pending bg-pending-muted text-pending ring-3 ring-pending/15"
+                  : "border-primary bg-background text-primary ring-3 ring-primary/15"),
               step.state === "next" && "border-border bg-background",
             )}
           >
             {step.state === "done" ? (
               <Check className="size-4" aria-hidden />
             ) : step.state === "current" ? (
-              <span className="size-2 rounded-full bg-primary" aria-hidden />
+              <span className={cn("size-2 rounded-full", step.tone === "pending" ? "bg-pending" : "bg-primary")} aria-hidden />
             ) : null}
           </span>
           <div className="flex min-w-0 flex-col gap-0.5 pt-1">
