@@ -15,6 +15,7 @@ import Dashboard from "../pages/agent/Dashboard";
 
 import TeamAgents from "../pages/department lead/TeamAgents";
 import Approvals from "../pages/department lead/Approvals";
+import LeadDashboard from "../pages/department lead/LeadDashboard";
 
 import Users from "../pages/users/Users";
 import Departments from "../pages/system admin/Departments";
@@ -61,8 +62,8 @@ const AppRouter = () => {
         {/* Protected Department Lead Routes */}
         <Route element={<ProtectedRoute allowedRoles={["Department Lead"]} />}>
           <Route path="/department-lead" element={<AppLayout />}>
-            {/* The lead's home is the department ticket list until the S8 dashboard (p.55) */}
-            <Route index element={<TicketQueue />} />
+            {/* The lead's home: department at a glance (p.54) */}
+            <Route index element={<LeadDashboard />} />
             <Route path="ticket-queue" element={<TicketQueue />} />
             <Route path="approvals" element={<Approvals />} />
             <Route path="team" element={<TeamAgents />} />

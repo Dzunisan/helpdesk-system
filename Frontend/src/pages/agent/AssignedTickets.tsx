@@ -1,180 +1,147 @@
-import { useEffect, useState } from "react";
-import { useAuth } from "../../context/AuthContext";
-import { useTickets } from "../../hooks/useTickets";
-import { toast } from "sonner";
-import type { Ticket } from "../../types/ticket.types";
-import Loader from "../../components/legacy/Loader";
-import { StatusBadge } from "@/components/app/StatusBadge";
-import { PriorityBadge } from "@/components/app/PriorityBadge";
-import { PRIORITY_RANK, toPriority } from "@/lib/ticketVocabulary";
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { ArrowDownUp, Inbox, SearchX } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { useTickets } from "@/hooks/useTickets";
+import { toStatus } from "@/lib/ticketVocabulary";
+import type { Ticket } from "@/types/ticket.types";
+import PageHeader from "@/components/app/PageHeader";
+import EmptyState from "@/components/app/EmptyState";
+import ErrorState from "@/components/app/ErrorState";
+import { FilterTabs, SearchInput, Toolbar } from "@/components/app/Toolbar";
+import { ListCaption } from "@/components/app/ListCard";
+import { Button } from "@/components/ui/button";
+import FilterSelect from "@/components/queue/FilterSelect";
+import OwnedTicketTable from "@/components/queue/OwnedTicketTable";
+import { byOldestUpdated, byRecentlyUpdated, byUrgency, isActive, matchesSearch, plural } from "@/components/queue/queueUtils";
 
-type SortOption = "newest" | "oldest" | "priority";
+type TabKey = "all" | "open" | "pending";
+type SortOption = "priority" | "newest" | "oldest";
 
-const AssignedTickets = () => {
+const SORTS: { value: SortOption; label: string }[] = [
+  { value: "priority", label: "Highest priority" },
+  { value: "newest", label: "Recently updated" },
+  { value: "oldest", label: "Least recently updated" },
+];
+
+const SORT_FN: Record<SortOption, (a: Ticket, b: Ticket) => number> = {
+  priority: byUrgency,
+  newest: byRecentlyUpdated,
+  oldest: byOldestUpdated,
+};
+
+const inTab = (ticket: Ticket, tab: TabKey) => {
+  if (tab === "all") return true;
+  const status = toStatus(ticket.ticket_status);
+  return tab === "pending" ? status === "pending" : status !== "pending";
+};
+
+/** "My open": the tickets I own and still have to finish (briefing p.53) */
+export default function AssignedTickets() {
   const { user } = useAuth();
-  const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<SortOption>("newest");
-
   const userId = user?.id || user?.user_id || "";
 
-  const { tickets, loading, error } = useTickets({
-    filters: {
-      assignee_id: userId ? String(userId) : undefined,
-      limit: 100,
-    },
+  const [tab, setTab] = useState<TabKey>("all");
+  const [sortBy, setSortBy] = useState<SortOption>("priority");
+  const [search, setSearch] = useState("");
+
+  const { tickets, loading, isRefetching, error, refetch } = useTickets({
+    filters: { assignee_id: userId ? String(userId) : undefined, limit: 100 },
     autoFetch: !!userId,
   });
 
-  // Only show active (non-resolved/closed) assigned tickets
-  const activeTickets = tickets.filter(
-    (t) =>
-      t.ticket_status !== "Resolved" &&
-      t.ticket_status !== "Closed" &&
-      t.ticket_status !== "Cancelled"
+  const active = useMemo(() => tickets.filter(isActive), [tickets]);
+  const counts = useMemo(
+    () => ({
+      all: active.length,
+      open: active.filter((t) => inTab(t, "open")).length,
+      pending: active.filter((t) => inTab(t, "pending")).length,
+    }),
+    [active],
   );
 
-  const filteredTickets = activeTickets
-    .filter((ticket: Ticket) => {
-      return (
-        `HD-${ticket.ticket_id}`.toLowerCase().includes(search.toLowerCase()) ||
-        ticket.title.toLowerCase().includes(search.toLowerCase()) ||
-        (ticket.requester_name || "").toLowerCase().includes(search.toLowerCase())
-      );
-    })
-    .sort((a, b) => {
-      if (sortBy === "priority") {
-        return (
-          PRIORITY_RANK[toPriority(b.ticket_priority)] -
-          PRIORITY_RANK[toPriority(a.ticket_priority)]
-        );
-      }
+  const visible = useMemo(
+    () => active.filter((t) => inTab(t, tab) && matchesSearch(t, search)).sort(SORT_FN[sortBy]),
+    [active, tab, search, sortBy],
+  );
 
-      if (sortBy === "oldest") {
-        return (
-          new Date(a.updated_at || a.created_at).getTime() -
-          new Date(b.updated_at || b.created_at).getTime()
-        );
-      }
+  const showCounts = !loading && !error;
+  const description = showCounts
+    ? `${plural(active.length, "ticket")} you own · ${SORTS.find((s) => s.value === sortBy)!.label.toLowerCase()} first`
+    : "Tickets you own and still have to finish";
 
-      return (
-        new Date(b.updated_at || b.created_at).getTime() -
-        new Date(a.updated_at || a.created_at).getTime()
-      );
-    });
-
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString("en-ZA", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  };
-
-  // Show fetch errors once per error (calling toast during render loops forever)
-  useEffect(() => {
-    if (error) toast.error(error);
-  }, [error]);
+  const empty =
+    active.length === 0 ? (
+      <EmptyState
+        icon={Inbox}
+        title="Nothing assigned to you"
+        description="Claim a ticket from the queue and it will show up here."
+        action={
+          <Button variant="outline" asChild>
+            <Link to="/agent/ticket-queue">Open the queue</Link>
+          </Button>
+        }
+      />
+    ) : search.trim() ? (
+      <EmptyState
+        icon={SearchX}
+        title="Nothing matches your search"
+        description="Try a different word, a name or the HD number."
+        action={
+          <Button variant="outline" onClick={() => setSearch("")}>
+            Clear search
+          </Button>
+        }
+      />
+    ) : (
+      <EmptyState
+        icon={Inbox}
+        title={tab === "pending" ? "Nothing waiting for approval" : "No open tickets"}
+        description={
+          tab === "pending"
+            ? "Tickets you send for approval wait here until the lead decides."
+            : "Everything you own is waiting for approval."
+        }
+      />
+    );
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-8">
+      <PageHeader title="My open" description={description} />
 
-      {/* Page Heading */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">
-          Assigned Tickets
-        </h1>
-        <p className="mt-1 text-sm text-gray-500">
-          View and manage tickets assigned to you.
-        </p>
-      </div>
-
-      {/* Search and Sorting */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <input
-          id="assigned-search"
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by ID, title or reporter…"
-          className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-primary sm:max-w-md transition-colors"
+      <Toolbar>
+        <FilterTabs
+          aria-label="Filter my tickets by status"
+          value={tab}
+          onValueChange={setTab}
+          items={[
+            { value: "all", label: "All", count: showCounts ? counts.all : undefined },
+            { value: "open", label: "Open", count: showCounts ? counts.open : undefined },
+            { value: "pending", label: "Pending approval", count: showCounts ? counts.pending : undefined },
+          ]}
         />
-
-        <select
-          id="assigned-sort"
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as SortOption)}
-          className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-primary transition-colors"
-        >
-          <option value="newest">Recently Updated</option>
-          <option value="oldest">Oldest Updated</option>
-          <option value="priority">Priority: High to Low</option>
-        </select>
-      </div>
-
-      {/* Loading State */}
-      {loading && (
-            <Loader/>
-
-      )}
-
-      {/* Assigned Ticket Cards */}
-      {!loading && (
-        <div className="space-y-3">
-          {filteredTickets.length > 0 ? (
-            filteredTickets.map((ticket: Ticket) => (
-              <div
-                key={ticket.ticket_id}
-                className="flex flex-col gap-3 rounded-md border border-gray-300 bg-white p-4 transition hover:border-primary hover:shadow-sm sm:flex-row sm:items-center sm:justify-between"
-              >
-                {/* Ticket Information */}
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-gray-500">
-                    HD-{ticket.ticket_id}
-                  </p>
-
-                  <h3 className="text-sm font-semibold text-gray-800">
-                    {ticket.title}
-                  </h3>
-
-                  <p className="text-xs text-gray-500">
-                    Reporter: {ticket.requester_name || "Unknown"}
-                  </p>
-
-                  <p className="text-xs text-gray-500">
-                    Last updated: {formatDate(ticket.updated_at || ticket.created_at)}
-                  </p>
-                </div>
-
-                {/* Priority and Status */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <PriorityBadge priority={ticket.ticket_priority} />
-                  <StatusBadge status={ticket.ticket_status} />
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="rounded-md border border-dashed border-gray-300 p-10 text-center">
-              <p className="text-sm font-medium text-gray-700">
-                No assigned tickets found.
-              </p>
-              <p className="mt-2 text-sm text-gray-500">
-                {activeTickets.length === 0
-                  ? "You don't have any active tickets. Claim one from the ticket queue!"
-                  : "No tickets match your current search."}
-              </p>
-            </div>
-          )}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <FilterSelect label="Sort tickets" icon={ArrowDownUp} value={sortBy} onValueChange={setSortBy} options={SORTS} />
+          <SearchInput
+            id="assigned-search"
+            value={search}
+            onValueChange={setSearch}
+            placeholder="Search subject, requester or HD"
+          />
         </div>
+      </Toolbar>
+
+      {error && !loading ? (
+        <ErrorState title="Couldn't load your tickets" onRetry={() => refetch()} retrying={isRefetching} />
+      ) : (
+        <OwnedTicketTable tickets={visible} loading={loading} basePath="/agent" dateLabel="Updated" empty={empty} />
       )}
 
-      {/* Ticket Count */}
-      {!loading && activeTickets.length > 0 && (
-        <p className="text-xs text-gray-500">
-          Showing {filteredTickets.length} of {activeTickets.length} assigned tickets
-        </p>
+      {showCounts && active.length > 0 && (
+        <ListCaption className="-mt-5">
+          Showing {visible.length} of {plural(active.length, "open ticket")}
+        </ListCaption>
       )}
     </div>
   );
-};
-
-export default AssignedTickets;
+}

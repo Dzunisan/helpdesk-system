@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckIcon, ClockIcon, PauseIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { formatSast } from "@/lib/format";
 
 /**
  * SLA clock chip (briefing p.12 S3, p.31):
@@ -43,13 +44,9 @@ const formatDuration = (ms: number): string => {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 };
 
-/** 16:14 today, otherwise "14 Nov 16:14" */
-const formatDue = (ms: number, now: number): string => {
-  const due = new Date(ms);
-  const time = due.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false });
-  if (due.toDateString() === new Date(now).toDateString()) return time;
-  return `${due.toLocaleDateString("en-ZA", { day: "numeric", month: "short" })} ${time}`;
-};
+/** "16:14" today, otherwise "Sat, 14 Nov, 16:14" (SAST) */
+const formatDue = (ms: number, now: number): string =>
+  formatSast(ms, "day") === formatSast(now, "day") ? formatSast(ms, "time") : formatSast(ms);
 
 /** Re-renders every 30 seconds so the countdown stays current */
 function useNow(intervalMs = 30_000): number {

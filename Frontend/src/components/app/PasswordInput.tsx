@@ -6,12 +6,19 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
+import { cn } from "@/lib/utils";
 
 /** Password field with a lucide Eye / EyeOff toggle (briefing p.35) */
-export default function PasswordInput(props: Omit<ComponentProps<"input">, "type">) {
+export default function PasswordInput({
+  groupClassName,
+  ...props
+}: Omit<ComponentProps<"input">, "type"> & {
+  /** Classes for the InputGroup wrapper, e.g. "h-10" */
+  groupClassName?: string;
+}) {
   const [visible, setVisible] = useState(false);
   return (
-    <InputGroup>
+    <InputGroup className={cn(groupClassName)}>
       <InputGroupInput type={visible ? "text" : "password"} {...props} />
       <InputGroupAddon align="inline-end">
         <InputGroupButton

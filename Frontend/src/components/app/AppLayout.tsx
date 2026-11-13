@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Bell,
@@ -6,26 +6,29 @@ import {
   ChevronsUpDown,
   CircleCheck,
   ClipboardCheck,
-  Clock,
   House,
   Inbox,
   LayoutDashboard,
   List,
   LogOut,
+  Mail,
+  Menu,
+  Plus,
   ShieldCheck,
-  Siren,
   UserRound,
   UserRoundX,
   Users,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth, type Role, type User } from "@/context/AuthContext";
 import { useDepartmentName } from "@/hooks/useDepartmentName";
-import { fullName, homePathFor, initials, profilePathFor } from "@/lib/roles";
+import { fetchTickets } from "@/services/ticketService";
+import { fullName, homePathFor, profilePathFor } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import BrandMark from "@/components/app/BrandMark";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button, buttonVariants } from "@/components/ui/button";
+import UserAvatar from "@/components/app/UserAvatar";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +38,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import { NavHighlightContext, useNavHighlightHref } from "./navHighlight";
 import {
   Sidebar,
   SidebarContent,
@@ -48,24 +53,29 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
-  SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
 
 /**
  * The one layout for every signed-in page (briefing p.32).
- * Staff roles get the shadcn Sidebar shell (sidebar-07 style, 220px);
- * employees get the calm portal: a top bar and centred content.
- * Renders `children` when given (the 404 page), otherwise the route's <Outlet />.
+ * Staff roles get the shadcn Sidebar shell (sidebar-07 style, 220px, p.46-48, 54, 60, 66);
+ * employees get the calm portal: a top bar and full-width content (p.37, p.45).
+ * Pages add NO outer padding: the shell pads them (PAGE_PADDING) so every page and the
+ * top bar share one left edge. Renders `children` when given (the 404 page), otherwise the route's <Outlet />.
  */
+
+/** Side and vertical padding of every page; the portal top bar uses the same sides */
+const PAGE_X = "px-6 sm:px-10 lg:px-16 xl:px-24";
+const PAGE_PADDING = `${PAGE_X} py-8 sm:py-10`;
 
 interface NavItem {
   label: string;
   icon: LucideIcon;
-  /** Omit for a page that does not exist yet: it shows greyed out and is not a link */
-  href?: string;
+  href: string;
   /** Only active on an exact path match (index routes) */
   end?: boolean;
+  /** Also active on these path prefixes (e.g. ticket detail pages under a list) */
+  alsoActive?: string[];
 }
 
 interface NavGroup {
@@ -74,9 +84,8 @@ interface NavGroup {
   items: NavItem[];
 }
 
-// Only link to routes that exist in AppRouter. Placeholders are for Sprint 1/2 pages
-// on the way (Waiting on employee, Breached, Unassigned tab); pages with no plan yet
-// (Macros, Reports, Help articles) are left out.
+// Only routes that exist in AppRouter. Mockup items with no page yet (Waiting on employee,
+// Breached, Macros, Help articles, Reports, Categories, SLA policies) are left out until built.
 const STAFF_NAV: Partial<Record<NonNullable<Role>, NavGroup[]>> = {
   Agent: [
     {
@@ -84,8 +93,6 @@ const STAFF_NAV: Partial<Record<NonNullable<Role>, NavGroup[]>> = {
         { label: "Home", icon: House, href: "/agent", end: true },
         { label: "My open", icon: Inbox, href: "/agent/assigned-tickets" },
         { label: "Unassigned", icon: UserRoundX, href: "/agent/ticket-queue" },
-        { label: "Waiting on employee", icon: Clock },
-        { label: "Breached", icon: Siren },
         { label: "Resolved by me", icon: CircleCheck, href: "/agent/resolved-tickets" },
       ],
     },
@@ -93,12 +100,14 @@ const STAFF_NAV: Partial<Record<NonNullable<Role>, NavGroup[]>> = {
   "Department Lead": [
     {
       items: [
-        // The lead's home is the department ticket list until the S8 dashboard (p.55)
         { label: "Dashboard", icon: LayoutDashboard, href: "/department-lead", end: true },
-        { label: "All tickets", icon: List, href: "/department-lead/ticket-queue" },
-        { label: "Unassigned", icon: UserRoundX },
+        {
+          label: "All tickets",
+          icon: List,
+          href: "/department-lead/ticket-queue",
+          alsoActive: ["/department-lead/tickets/"],
+        },
         { label: "Approvals", icon: ClipboardCheck, href: "/department-lead/approvals" },
-        { label: "Breached", icon: Siren },
       ],
     },
     {
@@ -133,31 +142,91 @@ const ROLE_SHORT: Record<NonNullable<Role>, string> = {
   "Platform Admin": "Platform Admin",
 };
 
-const isActive = (pathname: string, item: NavItem) =>
-  !!item.href &&
-  (item.end ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`));
+/** Active when the URL matches, unless the page named its own nav item (see navHighlight) */
+const isActive = (pathname: string, item: NavItem, highlight?: string | null) => {
+  if (highlight) return item.href === highlight;
+  const own = item.end ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
+  return own || !!item.alsoActive?.some((prefix) => pathname.startsWith(prefix));
+};
 
-/** Logo mark + "Helpdesk / Mzansi Freight" */
-function Brand({ to }: { to: string }) {
-  return (
-    <NavLink to={to} className="flex min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
-      <BrandMark />
-    </NavLink>
-  );
+const OPEN_STATUSES = new Set(["Resolved", "Closed", "Cancelled"]);
+
+/**
+ * Work counts beside the nav items (p.46 "My open 5", "Unassigned 12"; p.54 "Approvals 3").
+ * Uses the same requests and filters as the pages they link to, refreshes on every page
+ * change and when the window regains focus. Counts are a nicety: failures show nothing.
+ */
+function useNavCounts(user: User): Record<string, number> {
+  const { pathname } = useLocation();
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const userId = user.user_id ?? user.id;
+  const departmentId = user.department_id ?? undefined;
+  const role = user.role;
+
+  useEffect(() => {
+    if (role !== "Agent" && role !== "Department Lead") return;
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        if (role === "Agent") {
+          const [mine, queue] = await Promise.all([
+            fetchTickets({ assignee_id: userId ? String(userId) : undefined, limit: 100 }),
+            fetchTickets({ status: "Open", department_id: departmentId ? Number(departmentId) : undefined, limit: 100 }),
+          ]);
+          if (cancelled) return;
+          setCounts({
+            "/agent/assigned-tickets": mine.tickets.filter((t) => !OPEN_STATUSES.has(t.ticket_status)).length,
+            "/agent/ticket-queue": queue.tickets.filter((t) => !t.assignee_id).length,
+          });
+        } else {
+          const approvals = await fetchTickets({ status: "Pending approval", limit: 50 });
+          if (cancelled) return;
+          setCounts({ "/department-lead/approvals": approvals.pagination?.total ?? approvals.tickets.length });
+        }
+      } catch {
+        // A count is not worth an error message
+      }
+    };
+
+    load();
+    window.addEventListener("focus", load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", load);
+    };
+  }, [role, userId, departmentId, pathname]);
+
+  return counts;
 }
 
-/** Notifications arrive in Sprint 2; the bell is a placeholder until then */
-function BellButton() {
+/**
+ * The bell. In-app notifications are not built yet; the backend emails replies,
+ * assignments and status changes, so the bell says where they go instead of being a dead button.
+ */
+function NotificationsButton({ user, align = "end" }: { user: User; align?: "start" | "end" }) {
   return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      aria-label="Notifications (coming soon)"
-      title="Notifications are coming soon"
-      className="text-muted-foreground"
-    >
-      <Bell />
-    </Button>
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Notifications" className="size-9 text-muted-foreground hover:text-foreground">
+          <Bell />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align={align} className="w-80 gap-3 p-4">
+        <PopoverHeader className="gap-1">
+          <PopoverTitle className="text-sm font-semibold">Notifications</PopoverTitle>
+          <PopoverDescription className="text-sm">
+            Replies, assignments and status changes are emailed to you.
+          </PopoverDescription>
+        </PopoverHeader>
+        {user.email && (
+          <div className="flex min-w-0 items-center gap-2.5 rounded-lg bg-muted px-3 py-2.5 text-sm">
+            <Mail className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="truncate font-medium text-foreground">{user.email}</span>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -173,9 +242,12 @@ function UserMenuItems({ user }: { user: User }) {
 
   return (
     <>
-      <DropdownMenuLabel className="grid font-normal">
-        <span className="truncate text-sm font-medium text-foreground">{fullName(user)}</span>
-        <span className="truncate text-xs text-muted-foreground">{user.email}</span>
+      <DropdownMenuLabel className="flex items-center gap-2.5 py-2 font-normal">
+        <UserAvatar name={fullName(user)} />
+        <span className="grid min-w-0 leading-tight">
+          <span className="truncate text-sm font-medium text-foreground">{fullName(user)}</span>
+          <span className="truncate text-xs text-muted-foreground">{user.email}</span>
+        </span>
       </DropdownMenuLabel>
       <DropdownMenuSeparator />
       <DropdownMenuGroup>
@@ -193,10 +265,20 @@ function UserMenuItems({ user }: { user: User }) {
   );
 }
 
+const NAV_BUTTON =
+  "h-9 gap-2.5 rounded-lg px-2 text-sidebar-foreground/80 transition-colors max-md:h-10 " +
+  "hover:bg-sidebar-foreground/5 hover:text-sidebar-foreground active:bg-sidebar-foreground/10 " +
+  "[&>svg]:text-muted-foreground hover:[&>svg]:text-sidebar-foreground " +
+  "data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground " +
+  "data-active:hover:bg-sidebar-accent data-active:[&>svg]:text-primary";
+
 function StaffSidebar({ user }: { user: User }) {
   const { pathname } = useLocation();
+  // A ticket page names the list it belongs to (My open, Unassigned, Approvals…)
+  const highlight = useNavHighlightHref();
   const { isMobile, setOpenMobile } = useSidebar();
   const departmentName = useDepartmentName(user.department_id);
+  const counts = useNavCounts(user);
   const groups = (user.role && STAFF_NAV[user.role]) || [];
   const roleLabel = user.role ? ROLE_SHORT[user.role] : "";
   const subtitle = departmentName ? `${roleLabel} · ${departmentName}` : roleLabel;
@@ -208,41 +290,64 @@ function StaffSidebar({ user }: { user: User }) {
 
   return (
     <Sidebar>
-      <SidebarHeader className="flex-row items-center justify-between gap-2 px-3 pt-3">
-        <Brand to={homePathFor(user.role)} />
-        <BellButton />
+      <SidebarHeader className="flex-row items-center justify-between gap-2 pt-4 pr-3 pb-3 pl-5">
+        <NavLink
+          to={homePathFor(user.role)}
+          onClick={closeOnMobile}
+          className="flex min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <BrandMark />
+        </NavLink>
+        {isMobile ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Close navigation"
+            className="size-10 text-muted-foreground"
+            onClick={() => setOpenMobile(false)}
+          >
+            <X />
+          </Button>
+        ) : (
+          <NotificationsButton user={user} align="start" />
+        )}
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="gap-2 px-2 py-1">
         {groups.map((group, index) => {
           const label = group.label === "department" ? departmentName : group.label;
           return (
-            <SidebarGroup key={index}>
-              {label && <SidebarGroupLabel>{label}</SidebarGroupLabel>}
+            <SidebarGroup key={index} className="px-1 py-1">
+              {label && (
+                <SidebarGroupLabel className="h-7 px-2 text-xs font-medium text-muted-foreground">{label}</SidebarGroupLabel>
+              )}
               <SidebarGroupContent>
-                <SidebarMenu>
-                  {group.items.map((item) => (
-                    <SidebarMenuItem key={item.label}>
-                      {item.href ? (
-                        <SidebarMenuButton asChild isActive={isActive(pathname, item)}>
+                <SidebarMenu className="gap-0.5">
+                  {group.items.map((item) => {
+                    const active = isActive(pathname, item, highlight);
+                    const count = counts[item.href];
+                    return (
+                      <SidebarMenuItem key={item.label}>
+                        <SidebarMenuButton asChild isActive={active} className={NAV_BUTTON}>
                           <NavLink to={item.href} end={item.end} onClick={closeOnMobile}>
                             <item.icon />
-                            <span>{item.label}</span>
+                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                            {!!count && (
+                              <span
+                                className={cn(
+                                  "ml-auto shrink-0 text-xs font-medium tabular-nums",
+                                  active ? "text-primary" : "text-muted-foreground",
+                                )}
+                                aria-label={`${count} ${item.label.toLowerCase()}`}
+                              >
+                                {count}
+                              </span>
+                            )}
                           </NavLink>
                         </SidebarMenuButton>
-                      ) : (
-                        // Not built yet: visible so the shape of the product is clear, but not a link
-                        <SidebarMenuButton
-                          disabled
-                          title={`${item.label}: coming soon`}
-                          className="text-muted-foreground"
-                        >
-                          <item.icon />
-                          <span>{item.label}</span>
-                        </SidebarMenuButton>
-                      )}
-                    </SidebarMenuItem>
-                  ))}
+                      </SidebarMenuItem>
+                    );
+                  })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -250,21 +355,17 @@ function StaffSidebar({ user }: { user: User }) {
         })}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border">
+      <SidebarFooter className="border-t border-sidebar-border px-3 py-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <SidebarMenuButton
                   size="lg"
-                  className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                  className="h-14 gap-2.5 rounded-lg px-2 hover:bg-sidebar-foreground/5 hover:text-sidebar-foreground data-[state=open]:bg-sidebar-foreground/5"
                 >
-                  <Avatar size="sm">
-                    <AvatarFallback className="bg-primary text-[10px] font-medium text-primary-foreground">
-                      {initials(user)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="grid min-w-0 flex-1 text-left leading-tight">
+                  <UserAvatar name={fullName(user)} />
+                  <span className="grid min-w-0 flex-1 text-left leading-tight" title={`${fullName(user)} · ${subtitle}`}>
                     <span className="truncate text-sm font-medium">{fullName(user)}</span>
                     <span className="truncate text-xs text-muted-foreground">{subtitle}</span>
                   </span>
@@ -275,7 +376,7 @@ function StaffSidebar({ user }: { user: User }) {
                 side={isMobile ? "top" : "right"}
                 align="end"
                 sideOffset={8}
-                className="min-w-56"
+                className="min-w-60"
               >
                 <UserMenuItems user={user} />
               </DropdownMenuContent>
@@ -287,95 +388,150 @@ function StaffSidebar({ user }: { user: User }) {
   );
 }
 
+/** Phones and small tablets: the sidebar opens as a sheet from this bar */
+function StaffMobileBar({ user }: { user: User }) {
+  const { toggleSidebar } = useSidebar();
+  return (
+    <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-background/95 px-6 backdrop-blur sm:px-10 md:hidden">
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Open navigation"
+        className="-ml-3 size-10"
+        onClick={toggleSidebar}
+      >
+        <Menu />
+      </Button>
+      <NavLink
+        to={homePathFor(user.role)}
+        className="flex min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <BrandMark />
+      </NavLink>
+      <div className="ml-auto">
+        <NotificationsButton user={user} />
+      </div>
+    </header>
+  );
+}
+
 function StaffLayout({ user, children }: { user: User; children: ReactNode }) {
   return (
     <SidebarProvider style={{ "--sidebar-width": "220px" } as React.CSSProperties}>
       <StaffSidebar user={user} />
-      <SidebarInset className="min-w-0">
-        {/* Phones and small tablets: the sidebar opens as a sheet from this bar */}
-        <header className="sticky top-0 z-10 flex h-14 items-center gap-2 border-b border-border bg-background px-4 md:hidden">
-          <SidebarTrigger aria-label="Open navigation" />
-          <Brand to={homePathFor(user.role)} />
-        </header>
-        <div className="min-w-0 flex-1 px-6 py-8 sm:px-10 sm:py-10 lg:px-16 xl:px-24">{children}</div>
+      <SidebarInset className="min-w-0 bg-background">
+        <StaffMobileBar user={user} />
+        <div className={cn("min-w-0 flex-1", PAGE_PADDING)}>{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );
 }
 
 const PORTAL_NAV: NavItem[] = [
-  { label: "My requests", icon: Inbox, href: "/employee/my-requests" },
-  { label: "New request", icon: ClipboardCheck, href: "/employee/submit-request" },
+  {
+    label: "My requests",
+    icon: Inbox,
+    href: "/employee/my-requests",
+    alsoActive: ["/employee/tickets/"],
+  },
+  { label: "New request", icon: Plus, href: "/employee/submit-request" },
 ];
 
 function PortalLayout({ user, children }: { user: User; children: ReactNode }) {
   const { pathname } = useLocation();
 
-  // "My requests" is also the portal home and the parent of a request's detail page
+  // "My requests" is also the portal home
   const portalActive = (item: NavItem) =>
-    item.href === "/employee/my-requests"
-      ? pathname === "/employee" || isActive(pathname, item) || pathname.startsWith("/employee/tickets/")
-      : isActive(pathname, item);
-
-  const navLinks = PORTAL_NAV.map((item) => (
-    <NavLink
-      key={item.label}
-      to={item.href!}
-      className={cn(
-        buttonVariants({ variant: portalActive(item) ? "secondary" : "ghost", size: "sm" }),
-        !portalActive(item) && "text-muted-foreground",
-      )}
-    >
-      {item.label}
-    </NavLink>
-  ));
+    isActive(pathname, item) || (item.href === "/employee/my-requests" && pathname === "/employee");
 
   return (
-    <div className="min-h-svh bg-muted/40">
-      <header className="sticky top-0 z-10 border-b border-border bg-background">
-        <div className="flex h-16 items-center gap-8 px-6 sm:px-10 lg:px-16 xl:px-24">
-          <Brand to="/employee" />
+    <div className="flex min-h-svh flex-col bg-muted/40">
+      <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur">
+        <div className={cn("flex h-16 items-center gap-8", PAGE_X)}>
+          <NavLink
+            to="/employee"
+            className="flex min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <BrandMark />
+          </NavLink>
           <nav aria-label="Main" className="hidden items-center gap-1 sm:flex">
-            {navLinks}
+            {PORTAL_NAV.map((item) => {
+              const active = portalActive(item);
+              return (
+                <NavLink
+                  key={item.href}
+                  to={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "inline-flex h-9 items-center rounded-lg px-3 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    active
+                      ? "bg-secondary text-secondary-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  {item.label}
+                </NavLink>
+              );
+            })}
           </nav>
-          <div className="ml-auto flex items-center gap-1">
-            <BellButton />
+          <div className="-mr-1 ml-auto flex items-center gap-1">
+            <NotificationsButton user={user} />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="Account menu" className="rounded-full">
-                  <Avatar size="sm">
-                    <AvatarFallback className="bg-primary text-[10px] font-medium text-primary-foreground">
-                      {initials(user)}
-                    </AvatarFallback>
-                  </Avatar>
+                <Button variant="ghost" size="icon" aria-label="Account menu" className="size-10 rounded-full">
+                  <UserAvatar name={fullName(user)} />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-56">
+              <DropdownMenuContent align="end" sideOffset={6} className="min-w-60">
                 <UserMenuItems user={user} />
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </div>
-        {/* Phones: the two links get their own row so nothing is squeezed at 390px */}
-        <nav aria-label="Main" className="flex items-center gap-1 border-t border-border px-6 py-2 sm:hidden">
-          {navLinks}
+        {/* Phones: the two links become full-width tabs under the bar, 44px tap targets */}
+        <nav aria-label="Main" className="grid grid-cols-2 border-t border-border sm:hidden">
+          {PORTAL_NAV.map((item) => {
+            const active = portalActive(item);
+            return (
+              <NavLink
+                key={item.href}
+                to={item.href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "relative flex h-11 items-center justify-center gap-2 text-sm font-medium transition-colors outline-none focus-visible:bg-muted",
+                  active
+                    ? "text-primary after:absolute after:inset-x-6 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <item.icon className="size-4" aria-hidden />
+                {item.label}
+              </NavLink>
+            );
+          })}
         </nav>
       </header>
-      <main className="w-full px-6 py-8 sm:px-10 sm:py-10 lg:px-16 xl:px-24">{children}</main>
+      <main className={cn("w-full min-w-0 flex-1", PAGE_PADDING)}>{children}</main>
     </div>
   );
 }
 
 export default function AppLayout({ children }: { children?: ReactNode }) {
   const { user } = useAuth();
+  const [highlightHref, setHighlightHref] = useState<string | null>(null);
+  const highlight = useMemo(() => ({ href: highlightHref, setHref: setHighlightHref }), [highlightHref]);
   const content = children ?? <Outlet />;
 
   // ProtectedRoute guarantees a user on every route that uses this layout
   if (!user) return <>{content}</>;
 
-  return user.role === "Employee" ? (
-    <PortalLayout user={user}>{content}</PortalLayout>
-  ) : (
-    <StaffLayout user={user}>{content}</StaffLayout>
+  return (
+    <NavHighlightContext.Provider value={highlight}>
+      {user.role === "Employee" ? (
+        <PortalLayout user={user}>{content}</PortalLayout>
+      ) : (
+        <StaffLayout user={user}>{content}</StaffLayout>
+      )}
+    </NavHighlightContext.Provider>
   );
 }

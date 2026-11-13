@@ -70,7 +70,7 @@
   --accent-foreground: #18181b;
   --destructive: #e11d48; /* rose-600 */
   --border: #e4e4e7; /* zinc-200 */
-  --input: #e4e4e7;
+  --input: #d4d4d8; /* zinc-300: form borders must be clearly visible */
   --ring: #4f46e5;
   --chart-1: #4f46e5;
   --chart-2: #818cf8;

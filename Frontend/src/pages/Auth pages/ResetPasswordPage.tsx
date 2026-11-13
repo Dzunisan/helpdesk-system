@@ -6,10 +6,12 @@ import { CircleAlertIcon, LinkIcon } from "lucide-react";
 import AuthCard, { BackToSignIn } from "@/components/app/AuthCard";
 import PasswordChecklist from "@/components/app/PasswordChecklist";
 import PasswordInput from "@/components/app/PasswordInput";
+import { AuthBody, AuthHeading, AuthMessage } from "@/components/auth/AuthParts";
 import { passwordAcceptable } from "@/lib/passwordRules";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 
 type LinkState = "checking" | "valid" | "expired";
@@ -20,19 +22,44 @@ const EXPIRED_MESSAGE = "Invalid or expired reset token.";
 function ExpiredLink() {
   return (
     <AuthCard>
-      <div className="grid justify-items-center gap-3 text-center">
-        <span className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <LinkIcon className="size-5" />
-        </span>
-        <h1 className="text-lg font-semibold">This link has expired</h1>
-        <p className="text-sm text-muted-foreground">
-          Reset links work once and last 30 minutes. Request a new one and we&apos;ll email it to you.
-        </p>
-      </div>
-      <Button asChild className="w-full">
-        <Link to="/forgot-password">Request a new link</Link>
-      </Button>
-      <BackToSignIn />
+      <AuthBody>
+        <AuthMessage icon={LinkIcon} title="This link has expired" tone="muted">
+          <p>Reset links work once and last 30 minutes. Request a new one and we&apos;ll email it to you.</p>
+        </AuthMessage>
+        <Button asChild size="lg" className="w-full">
+          <Link to="/forgot-password">Request a new link</Link>
+        </Button>
+        <BackToSignIn />
+      </AuthBody>
+    </AuthCard>
+  );
+}
+
+/** Placeholder shaped like the form while the link is checked */
+function CheckingLink() {
+  return (
+    <AuthCard>
+      <AuthBody aria-busy>
+        <span className="sr-only">Checking your link…</span>
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-6 w-48" />
+          <Skeleton className="h-4 w-56" />
+        </div>
+        <div className="flex flex-col gap-5">
+          {[0, 1].map((i) => (
+            <div key={i} className="flex flex-col gap-3">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ))}
+          <div className="flex flex-col gap-2">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-3.5 w-40" />
+            ))}
+          </div>
+          <Skeleton className="h-10 w-full" />
+        </div>
+      </AuthBody>
     </AuthCard>
   );
 }
@@ -92,63 +119,68 @@ const ResetPasswordPage = () => {
   };
 
   if (linkState === "expired") return <ExpiredLink />;
-
-  if (linkState === "checking") {
-    return (
-      <AuthCard>
-        <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-          <Spinner />
-          Checking your link…
-        </div>
-      </AuthCard>
-    );
-  }
+  if (linkState === "checking") return <CheckingLink />;
 
   return (
     <AuthCard>
-      <div className="grid gap-1">
-        <h1 className="text-lg font-semibold">Choose a new password</h1>
-        {email && <p className="text-sm text-muted-foreground">For {email}</p>}
-      </div>
+      <AuthBody>
+        <AuthHeading
+          title="Choose a new password"
+          description={
+            email ? (
+              <>
+                For <span className="wrap-anywhere">{email}</span>
+              </>
+            ) : undefined
+          }
+        />
 
-      <form onSubmit={handleSubmit}>
-        <FieldGroup>
-          <Field>
-            <FieldLabel htmlFor="new-password">New password</FieldLabel>
-            <PasswordInput
-              id="new-password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="confirm-password">Confirm new password</FieldLabel>
-            <PasswordInput
-              id="confirm-password"
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-            />
-          </Field>
+        <form onSubmit={handleSubmit}>
+          {/* Lets password managers save the new password against the right account */}
+          <input type="email" name="username" autoComplete="username" value={email} readOnly hidden />
+          <FieldGroup className="gap-5">
+            <Field>
+              <FieldLabel htmlFor="new-password">New password</FieldLabel>
+              <PasswordInput
+                groupClassName="h-10"
+                id="new-password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoFocus
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="confirm-password">Confirm new password</FieldLabel>
+              <PasswordInput
+                groupClassName="h-10"
+                id="confirm-password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+              />
+            </Field>
 
-          <PasswordChecklist password={password} confirm={confirmPassword} />
+            <PasswordChecklist password={password} confirm={confirmPassword} className="gap-1.5" />
 
-          {error && (
-            <Alert variant="destructive" className="border-destructive/30 bg-destructive/5">
-              <CircleAlertIcon />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+            {error && (
+              <Alert role="alert" variant="destructive" className="border-destructive/25 bg-destructive/5">
+                <CircleAlertIcon />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
 
-          <Button type="submit" className="w-full" disabled={!canSubmit}>
-            {loading && <Spinner />}
-            {loading ? "Saving…" : "Set password"}
-          </Button>
-        </FieldGroup>
-      </form>
+            <Button type="submit" size="lg" className={loading ? "w-full disabled:opacity-100" : "w-full"} disabled={!canSubmit}>
+              {loading && <Spinner data-icon="inline-start" />}
+              {loading ? "Saving…" : "Set password"}
+            </Button>
+          </FieldGroup>
+        </form>
+
+        <BackToSignIn />
+      </AuthBody>
     </AuthCard>
   );
 };

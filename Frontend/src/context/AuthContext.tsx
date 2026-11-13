@@ -13,6 +13,8 @@ export interface User {
   role: Role;
   active?: boolean;
   department_id?: number | null;
+  /** When the account was created; /api/auth/me returns it */
+  created_at?: string | null;
 }
 
 interface AuthContextState {

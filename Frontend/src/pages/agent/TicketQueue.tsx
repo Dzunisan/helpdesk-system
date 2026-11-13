@@ -1,25 +1,58 @@
-import { useState, useCallback, useEffect } from "react";
-import { useAuth } from "../../context/AuthContext";
-import { useNavigate, useLocation } from "react-router-dom";
-import { useTickets } from "../../hooks/useTickets";
-import { toast } from "sonner";
-import { VALID_PRIORITIES, type Ticket } from "../../types/ticket.types";
-import Loader from "../../components/legacy/Loader";
-import { StatusBadge } from "@/components/app/StatusBadge";
+import { useMemo, useState } from "react";
+import { CircleCheck, Lock, RotateCw, SearchX, Shapes } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { useTickets } from "@/hooks/useTickets";
+import { useDepartmentName } from "@/hooks/useDepartmentName";
+import { homePathFor } from "@/lib/roles";
+import { formatAge, formatSast, formatTicketRef } from "@/lib/format";
+import { PRIORITY_LABEL, toPriority, type Priority } from "@/lib/ticketVocabulary";
+import type { Ticket } from "@/types/ticket.types";
+import PageHeader from "@/components/app/PageHeader";
 import { PriorityBadge } from "@/components/app/PriorityBadge";
-import { priorityLabel } from "@/lib/ticketVocabulary";
+import TicketRef from "@/components/app/TicketRef";
+import EmptyState from "@/components/app/EmptyState";
+import ErrorState from "@/components/app/ErrorState";
+import { FilterTabs, SearchInput, Toolbar } from "@/components/app/Toolbar";
+import { ListBody, ListCaption, ListCard, ListHeaderRow, ListRow, LoadingRows } from "@/components/app/ListCard";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ClaimButton, ClaimNextButton } from "@/components/queue/ClaimButton";
+import FilterSelect from "@/components/queue/FilterSelect";
+import LeadTicketList from "@/components/queue/LeadTicketList";
+import TicketSubject from "@/components/queue/TicketSubject";
+import { byUrgency, isUnassigned, matchesSearch, plural } from "@/components/queue/queueUtils";
+import { useClaim, useClaimNextShortcut } from "@/components/queue/useClaim";
 
-const TicketQueue = () => {
+type PriorityFilter = "all" | Priority;
+
+const ALL_CATEGORIES = "__all";
+const NO_CATEGORY = "__none";
+
+// Ref · Subject + requester · Category · Priority · Age · Claim (briefing p.47). Below xl, rows stack.
+const QUEUE_GRID =
+  "xl:grid xl:grid-cols-[4.5rem_minmax(0,1fr)_11rem_6rem_4.5rem_5rem] xl:items-center xl:gap-5";
+
+/**
+ * Agents: the unassigned queue (p.47). Department Leads land on the same route
+ * (/department-lead and /department-lead/ticket-queue) and get every department ticket (p.55).
+ */
+export default function TicketQueue() {
   const { user } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [search, setSearch] = useState("");
-  const [priorityFilter, setPriorityFilter] = useState("All");
-  const [claimingId, setClaimingId] = useState<number | null>(null);
+  if (user?.role === "Department Lead") return <LeadTicketList />;
+  return <AgentQueue />;
+}
 
-  // Fetch unassigned Open tickets for the agent's department
+function AgentQueue() {
+  const { user } = useAuth();
+  const basePath = homePathFor(user?.role);
   const departmentId = user?.department_id ?? undefined;
-  const { tickets, loading, error, claimTicket, refetch } = useTickets({
+
+  const [priority, setPriority] = useState<PriorityFilter>("all");
+  const [category, setCategory] = useState<string>(ALL_CATEGORIES);
+  const [search, setSearch] = useState("");
+
+  // Unassigned "Open" tickets; the server limits them to the agent's own department
+  const { tickets, loading, isRefetching, error, claimTicket, refetch } = useTickets({
     filters: {
       status: "Open",
       department_id: departmentId ? Number(departmentId) : undefined,
@@ -28,263 +61,235 @@ const TicketQueue = () => {
     autoFetch: true,
   });
 
-  // Only show truly unassigned tickets
-  const unassignedTickets = tickets.filter(
-    (t) => !t.assignee_id || t.assignee_id === null,
+  const departmentName =
+    useDepartmentName(departmentId) ?? tickets.find((t) => t.department_name)?.department_name ?? null;
+  const teamLabel = departmentName ?? "your department";
+
+  const { claim, pendingId, busy } = useClaim({ claimTicket, basePath, onConflict: refetch });
+
+  // Most urgent first: highest priority, then oldest
+  const queue = useMemo(() => tickets.filter(isUnassigned).sort(byUrgency), [tickets]);
+
+  const priorityCounts = useMemo(() => {
+    const result: Record<Priority, number> = { urgent: 0, high: 0, normal: 0, low: 0 };
+    for (const t of queue) result[toPriority(t.ticket_priority)] += 1;
+    return result;
+  }, [queue]);
+
+  const categories = useMemo(() => {
+    const names = new Set<string>();
+    let hasNone = false;
+    for (const t of queue) {
+      if (t.category_name) names.add(t.category_name);
+      else hasNone = true;
+    }
+    return [
+      { value: ALL_CATEGORIES, label: "All categories" },
+      ...[...names].sort().map((name) => ({ value: name, label: name })),
+      ...(hasNone ? [{ value: NO_CATEGORY, label: "No category" }] : []),
+    ];
+  }, [queue]);
+
+  const visible = useMemo(
+    () =>
+      queue.filter((t) => {
+        if (priority !== "all" && toPriority(t.ticket_priority) !== priority) return false;
+        if (category === NO_CATEGORY && t.category_name) return false;
+        if (category !== ALL_CATEGORIES && category !== NO_CATEGORY && t.category_name !== category) return false;
+        return matchesSearch(t, search);
+      }),
+    [queue, priority, category, search],
   );
 
-  // Client-side search and priority filtering
-  const filteredTickets = unassignedTickets.filter((t: Ticket) => {
-    const matchesSearch =
-      `HD-${t.ticket_id} ${t.title} ${t.requester_name || ""}`
-        .toLowerCase()
-        .includes(search.toLowerCase());
-    const matchesPriority =
-      priorityFilter === "All" || t.ticket_priority === priorityFilter;
-    return matchesSearch && matchesPriority;
-  });
+  // Priorities that exist in the data model; Urgent only shows once tickets use it
+  const priorityTabs: { value: PriorityFilter; label: string; count?: number }[] = [
+    { value: "all", label: "All", count: loading || error ? undefined : queue.length },
+    ...(["urgent", "high", "normal", "low"] as Priority[])
+      .filter((p) => p !== "urgent" || priorityCounts.urgent > 0)
+      .map((p) => ({ value: p, label: PRIORITY_LABEL[p], count: loading || error ? undefined : priorityCounts[p] })),
+  ];
 
-  const handleClaim = useCallback(
-    async (ticketId: number) => {
-      setClaimingId(ticketId);
-      try {
-        await claimTicket(ticketId);
-        toast.success("Ticket claimed successfully! It's now in your assigned tickets.");
-      } catch (err: unknown) {
-        const error = err as Error & { statusCode?: number };
-        if (error.statusCode === 409) {
-          toast.warning("This ticket was already claimed by another agent. Refreshing queue…");
-          refetch();
-        } else if (error.statusCode === 403) {
-          toast.error(error.message || "You're not authorized to claim this ticket.");
-        } else {
-          toast.error(error.message || "Failed to claim ticket.");
-        }
-      } finally {
-        setClaimingId(null);
-      }
-    },
-    [claimTicket, refetch],
-  );
-
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString("en-ZA", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  const filtersActive = priority !== "all" || category !== ALL_CATEGORIES || search.trim() !== "";
+  const clearFilters = () => {
+    setPriority("all");
+    setCategory(ALL_CATEGORIES);
+    setSearch("");
   };
 
-  // Calculate time ago for display
-  const timeAgo = (date: string) => {
-    const now = new Date();
-    const created = new Date(date);
-    const diffMs = now.getTime() - created.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays}d ago`;
+  const next = queue[0];
+  const claimNext = () => {
+    if (next && !busy) claim(next);
   };
+  useClaimNextShortcut(claimNext, !!next && !busy && !loading);
 
-  // Show fetch errors once per error (calling toast during render loops forever)
-  useEffect(() => {
-    if (error) toast.error(error);
-  }, [error]);
+  const description =
+    loading || error
+      ? `Tickets in ${teamLabel} waiting for an owner`
+      : queue.length === 0
+        ? `Nothing waiting in ${teamLabel}`
+        : `${plural(queue.length, "ticket")} in ${teamLabel} · highest priority first, then oldest`;
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-8">
+      <PageHeader
+        title="Unassigned"
+        description={description}
+        actions={
+          <>
+            <Button variant="outline" onClick={() => refetch()} disabled={loading || isRefetching} className="h-10 sm:h-9">
+              <RotateCw data-icon="inline-start" className={isRefetching ? "animate-spin" : undefined} />
+              Refresh
+            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span tabIndex={next ? -1 : 0} className="inline-flex">
+                  <ClaimNextButton onClick={claimNext} disabled={!next || loading} busy={busy && pendingId === next?.ticket_id} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {next ? `Claims ${formatTicketRef(next.ticket_id)}, the most urgent ticket` : "Nothing to claim"}
+              </TooltipContent>
+            </Tooltip>
+          </>
+        }
+      />
 
-      {/* Page Heading */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            Department Ticket Queue
-          </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Open tickets awaiting assignment in your department.
-          </p>
+      <Toolbar>
+        <FilterTabs aria-label="Filter by priority" value={priority} onValueChange={setPriority} items={priorityTabs} />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <FilterSelect
+            label="Filter by category"
+            icon={Shapes}
+            value={category}
+            onValueChange={setCategory}
+            options={categories}
+            className="sm:max-w-56"
+          />
+          <SearchInput
+            id="queue-search"
+            value={search}
+            onValueChange={setSearch}
+            placeholder="Search subject, requester or HD"
+          />
         </div>
+      </Toolbar>
 
-        <button
-          id="refresh-queue-btn"
-          onClick={() => refetch()}
-          className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 hover:border-primary"
-        >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+      {error && !loading ? (
+        <ErrorState title="Couldn't load the queue" onRetry={() => refetch()} retrying={isRefetching} />
+      ) : (
+        <ListCard>
+          <ListHeaderRow grid={QUEUE_GRID}>
+            <span>Ref</span>
+            <span>Subject</span>
+            <span>Category</span>
+            <span>Priority</span>
+            <span>Age</span>
+            <span className="sr-only">Claim</span>
+          </ListHeaderRow>
+
+          {loading ? (
+            <LoadingRows
+              grid={QUEUE_GRID}
+              breakpoint="xl"
+              rows={5}
+              columns={["meta", "title", "text", "badge", "meta", "button"]}
             />
-          </svg>
-          Refresh
-        </button>
-      </div>
-
-      {/* Search & Filter */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <input
-          id="queue-search"
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by ID, title or requester…"
-          className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-primary sm:max-w-md transition-colors"
-        />
-
-        <select
-          id="queue-priority-filter"
-          value={priorityFilter}
-          onChange={(e) => setPriorityFilter(e.target.value)}
-          className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-primary transition-colors"
-        >
-          <option value="All">All Priorities</option>
-          {VALID_PRIORITIES.map((p) => (
-            <option key={p} value={p}>
-              {priorityLabel(p)}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Loading State */}
-      {loading && <Loader />}
-
-      {/* Ticket Cards */}
-      {!loading && (
-        <div className="space-y-3">
-          {filteredTickets.length > 0 ? (
-            filteredTickets.map((ticket: Ticket) => (
-              <div
-                key={ticket.ticket_id}
-                onClick={() =>
-                  navigate(
-                    `/${location.pathname.split("/")[1]}/tickets/${ticket.ticket_id}`,
-                  )
+          ) : visible.length === 0 ? (
+            queue.length === 0 ? (
+              <EmptyState
+                icon={CircleCheck}
+                title="Queue clear"
+                description={`Nothing unassigned in ${teamLabel}. New requests land here first.`}
+              />
+            ) : (
+              <EmptyState
+                icon={SearchX}
+                title="Nothing matches these filters"
+                description="Try another priority or category, or a different search."
+                action={
+                  <Button variant="outline" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
                 }
-                className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 transition-all hover:border-primary hover:shadow-md sm:flex-row sm:items-center sm:justify-between"
-              >
-                {/* Ticket Info */}
-                <div className="space-y-1 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="text-xs font-semibold text-primary">
-                      HD-{ticket.ticket_id}
-                    </p>
-                    <span className="text-[11px] text-gray-400">
-                      {timeAgo(ticket.created_at)}
-                    </span>
-                  </div>
-
-                  <h3 className="text-sm font-semibold text-gray-800">
-                    {ticket.title}
-                  </h3>
-
-                  {ticket.description && (
-                    <p className="text-xs text-gray-500 line-clamp-2">
-                      {ticket.description}
-                    </p>
-                  )}
-
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 pt-1">
-                    {ticket.requester_name && (
-                      <span>Requester: {ticket.requester_name}</span>
-                    )}
-                    {ticket.department_name && (
-                      <span>Dept: {ticket.department_name}</span>
-                    )}
-                    <span>Created: {formatDate(ticket.created_at)}</span>
-                  </div>
-                </div>
-
-                {/* Right side: Priority + Claim button */}
-                <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
-                  <PriorityBadge priority={ticket.ticket_priority} />
-                  <StatusBadge status={ticket.ticket_status} />
-
-                  <button
-                    id={`claim-ticket-${ticket.ticket_id}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleClaim(ticket.ticket_id);
-                    }}
-                    disabled={claimingId === ticket.ticket_id}
-                    className="ml-2 inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-all hover:bg-primary/90 disabled:bg-gray-300 disabled:cursor-not-allowed active:scale-[0.98]"
-                  >
-                    {claimingId === ticket.ticket_id ? (
-                      <>
-                        <span className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></span>
-                        Claiming…
-                      </>
-                    ) : (
-                      <>
-                        <svg
-                          className="h-3.5 w-3.5"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                          />
-                        </svg>
-                        Assign to Me
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            ))
+              />
+            )
           ) : (
-            <div className="rounded-md border border-dashed border-gray-300 p-10 text-center">
-              <div className="mb-2">
-                <svg
-                  className="mx-auto h-10 w-10 text-gray-300"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
-                  />
-                </svg>
-              </div>
-              <p className="text-sm font-medium text-gray-700">
-                No open tickets in the queue
-              </p>
-              <p className="mt-2 text-sm text-gray-500">
-                All department tickets are currently assigned. Check back later!
-              </p>
-            </div>
+            <ListBody>
+              {visible.map((t: Ticket) => (
+                <QueueRow
+                  key={t.ticket_id}
+                  ticket={t}
+                  to={`${basePath}/tickets/${t.ticket_id}`}
+                  claiming={pendingId === t.ticket_id}
+                  disabled={busy}
+                  onClaim={() => claim(t)}
+                />
+              ))}
+            </ListBody>
           )}
-        </div>
+        </ListCard>
       )}
 
-      {/* Ticket Count */}
-      {!loading && unassignedTickets.length > 0 && (
-        <p className="text-xs text-gray-500">
-          Showing {filteredTickets.length} of {unassignedTickets.length}{" "}
-          unassigned tickets
-        </p>
+      {!loading && !error && (
+        <ListCaption className="-mt-5 flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+          {queue.length > 0 && (
+            <>
+              <span>
+                Showing {visible.length} of {queue.length}
+                {filtersActive ? " (filtered)" : ""}
+              </span>
+              <span aria-hidden className="hidden sm:inline">
+                ·
+              </span>
+            </>
+          )}
+          <span className="inline-flex items-center gap-1.5">
+            <Lock className="size-3 shrink-0" aria-hidden />
+            Only {teamLabel} tickets are listed, enforced by the server. Other departments' requests never appear here.
+          </span>
+        </ListCaption>
       )}
     </div>
   );
-};
+}
 
-export default TicketQueue;
+function QueueRow({
+  ticket,
+  to,
+  claiming,
+  disabled,
+  onClaim,
+}: {
+  ticket: Ticket;
+  to: string;
+  claiming: boolean;
+  disabled: boolean;
+  onClaim: () => void;
+}) {
+  const age = formatAge(ticket.created_at);
+  return (
+    <ListRow grid={QUEUE_GRID} className="py-4">
+      <TicketRef id={ticket.ticket_id} className="hidden xl:block" />
+      <TicketSubject ticket={ticket} to={to} stackedMeta={ticket.category_name} />
+
+      <div className="flex min-w-0 items-center gap-3 xl:contents">
+        <span className="hidden truncate text-sm text-muted-foreground xl:block">{ticket.category_name ?? "—"}</span>
+        <div className="flex shrink-0">
+          <PriorityBadge priority={ticket.ticket_priority} />
+        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="relative z-10 w-fit text-xs text-muted-foreground tabular-nums xl:text-sm">
+              {age}
+              <span className="xl:hidden"> old</span>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>Created {formatSast(ticket.created_at, "full")}</TooltipContent>
+        </Tooltip>
+        <div className="ml-auto shrink-0 xl:ml-0 xl:flex xl:justify-end">
+          <ClaimButton ticketId={ticket.ticket_id} onClaim={onClaim} claiming={claiming} disabled={disabled} />
+        </div>
+      </div>
+    </ListRow>
+  );
+}

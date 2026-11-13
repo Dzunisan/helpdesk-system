@@ -60,7 +60,11 @@ export const useDepartments = (_options: UseDepartmentsOptions = {}) => {
       }
       setError(null);
 
-      const res = await axios.get(`${API}/departments`, { withCredentials: true });
+      const res = await axios.get(`${API}/departments`, {
+        // The server defaults to 10 per page; ask for its maximum so the 11th+ department isn't dropped
+        params: { limit: 100 },
+        withCredentials: true,
+      });
       const fetchedDepartments: Department[] = res.data?.departments || res.data || [];
       setDepartments(fetchedDepartments);
       initialFetchDone.current = true;

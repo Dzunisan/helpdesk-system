@@ -1,204 +1,138 @@
-import { useEffect, useState } from "react";
-import { useAuth } from "../../context/AuthContext";
-import { useTickets } from "../../hooks/useTickets";
-import { toast } from "sonner";
-import type { Ticket } from "../../types/ticket.types";
-import Loader from "../../components/legacy/Loader";
-import { StatusBadge } from "@/components/app/StatusBadge";
-import { PriorityBadge } from "@/components/app/PriorityBadge";
+import { useMemo, useState } from "react";
+import { CircleCheck, SearchX } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { useTickets } from "@/hooks/useTickets";
+import type { Ticket } from "@/types/ticket.types";
+import PageHeader from "@/components/app/PageHeader";
+import EmptyState from "@/components/app/EmptyState";
+import ErrorState from "@/components/app/ErrorState";
+import { FilterTabs, SearchInput, Toolbar } from "@/components/app/Toolbar";
+import { ListCaption } from "@/components/app/ListCard";
+import { Button } from "@/components/ui/button";
+import OwnedTicketTable from "@/components/queue/OwnedTicketTable";
+import { byRecentlyUpdated, isDone, matchesSearch, plural, sastDayKey } from "@/components/queue/queueUtils";
 
 type DateRange = "all" | "today" | "7days" | "30days";
 
-const ResolvedTickets = () => {
-  const { user } = useAuth();
-  const [search, setSearch] = useState("");
-  const [dateRange, setDateRange] = useState<DateRange>("all");
+const DAY_MS = 24 * 60 * 60 * 1000;
 
+const RANGES: { value: DateRange; label: string; empty: string }[] = [
+  { value: "all", label: "All time", empty: "" },
+  { value: "today", label: "Today", empty: "today" },
+  { value: "7days", label: "7 days", empty: "in the last 7 days" },
+  { value: "30days", label: "30 days", empty: "in the last 30 days" },
+];
+
+/** When the ticket was last touched; the closest the data has to a resolved date */
+const doneAt = (ticket: Ticket) => ticket.updated_at || ticket.created_at;
+
+/** "Resolved by me": tickets I resolved or closed (briefing p.53) */
+export default function ResolvedTickets() {
+  const { user } = useAuth();
   const userId = user?.id || user?.user_id || "";
 
-  const { tickets: allTickets, loading, error } = useTickets({
-    filters: {
-      assignee_id: userId ? String(userId) : undefined,
-      limit: 100,
-    },
+  const [range, setRange] = useState<DateRange>("all");
+  const [search, setSearch] = useState("");
+  // Day boundaries are taken when the page opens
+  const [now] = useState(() => Date.now());
+
+  const { tickets, loading, isRefetching, error, refetch } = useTickets({
+    filters: { assignee_id: userId ? String(userId) : undefined, limit: 100 },
     autoFetch: !!userId,
   });
 
-  // Only show Resolved / Closed tickets
-  const resolvedTickets = allTickets.filter(
-    (t) => t.ticket_status === "Resolved" || t.ticket_status === "Closed"
+  const done = useMemo(() => tickets.filter(isDone).sort(byRecentlyUpdated), [tickets]);
+
+  const inRange = useMemo(() => {
+    const today = sastDayKey(now);
+    // "Last 7 days" starts at midnight (SAST) six days ago, so today counts as one of the seven
+    const since = (days: number) => sastDayKey(now - (days - 1) * DAY_MS);
+    return (ticket: Ticket, r: DateRange) => {
+      if (r === "all") return true;
+      const day = sastDayKey(doneAt(ticket));
+      if (r === "today") return day === today;
+      return day >= since(r === "7days" ? 7 : 30) && day <= today;
+    };
+  }, [now]);
+
+  const counts = useMemo(() => {
+    const result: Record<DateRange, number> = { all: 0, today: 0, "7days": 0, "30days": 0 };
+    for (const t of done) for (const r of RANGES) if (inRange(t, r.value)) result[r.value] += 1;
+    return result;
+  }, [done, inRange]);
+
+  const visible = useMemo(
+    () => done.filter((t) => inRange(t, range) && matchesSearch(t, search)),
+    [done, range, search, inRange],
   );
 
-  const now = new Date();
+  const showCounts = !loading && !error;
+  const description = showCounts
+    ? `${plural(done.length, "ticket")} you resolved or closed · most recent first`
+    : "Tickets you resolved or closed";
+  const rangeMeta = RANGES.find((r) => r.value === range)!;
 
-  // Check if a ticket was resolved today
-  const isToday = (date: string) => {
-    const resolvedDate = new Date(date);
-    return resolvedDate.toDateString() === now.toDateString();
-  };
-
-  // Check if a ticket was resolved within the selected number of days
-  const isWithinDays = (date: string, days: number) => {
-    const resolvedDate = new Date(date);
-    const startDate = new Date();
-    startDate.setDate(now.getDate() - days);
-    startDate.setHours(0, 0, 0, 0);
-    return resolvedDate >= startDate && resolvedDate <= now;
-  };
-
-  // Search and filter the resolved tickets
-  const filteredTickets = resolvedTickets.filter((ticket: Ticket) => {
-    const matchesSearch =
-      `HD-${ticket.ticket_id}`.toLowerCase().includes(search.toLowerCase()) ||
-      ticket.title.toLowerCase().includes(search.toLowerCase()) ||
-      (ticket.requester_name || "").toLowerCase().includes(search.toLowerCase());
-
-    let matchesDate = true;
-    const dateToCheck = ticket.updated_at || ticket.created_at;
-
-    if (dateRange === "today") {
-      matchesDate = isToday(dateToCheck);
-    } else if (dateRange === "7days") {
-      matchesDate = isWithinDays(dateToCheck, 7);
-    } else if (dateRange === "30days") {
-      matchesDate = isWithinDays(dateToCheck, 30);
-    }
-
-    return matchesSearch && matchesDate;
-  });
-
-  // Format resolution date
-  const formatDate = (date: string) => {
-    return new Date(date).toLocaleString("en-ZA", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  // Show fetch errors once per error (calling toast during render loops forever)
-  useEffect(() => {
-    if (error) toast.error(error);
-  }, [error]);
+  const empty =
+    done.length === 0 ? (
+      <EmptyState
+        icon={CircleCheck}
+        title="Nothing resolved yet"
+        description="Tickets you resolve or close will be listed here."
+      />
+    ) : search.trim() ? (
+      <EmptyState
+        icon={SearchX}
+        title="Nothing matches your search"
+        description="Try a different word, a name or the HD number."
+        action={
+          <Button variant="outline" onClick={() => setSearch("")}>
+            Clear search
+          </Button>
+        }
+      />
+    ) : (
+      <EmptyState
+        icon={CircleCheck}
+        title={`Nothing resolved ${rangeMeta.empty}`}
+        description="Pick a longer range to see earlier tickets."
+        action={
+          <Button variant="outline" onClick={() => setRange("all")}>
+            Show all time
+          </Button>
+        }
+      />
+    );
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-8">
+      <PageHeader title="Resolved by me" description={description} />
 
-      {/* Page Heading */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">
-          Resolved Tickets
-        </h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Review tickets you have previously resolved or closed.
-        </p>
-      </div>
+      <Toolbar>
+        <FilterTabs
+          aria-label="Filter by when the ticket was last updated"
+          value={range}
+          onValueChange={setRange}
+          items={RANGES.map((r) => ({ value: r.value, label: r.label, count: showCounts ? counts[r.value] : undefined }))}
+        />
+        <SearchInput
+          id="resolved-search"
+          value={search}
+          onValueChange={setSearch}
+          placeholder="Search subject, requester or HD"
+        />
+      </Toolbar>
 
-      {/* Ticket History */}
-      <div className="rounded-xl p-5 shadow-sm">
- 
+      {error && !loading ? (
+        <ErrorState title="Couldn't load your resolved tickets" onRetry={() => refetch()} retrying={isRefetching} />
+      ) : (
+        <OwnedTicketTable tickets={visible} loading={loading} basePath="/agent" dateLabel="Last updated" empty={empty} />
+      )}
 
-        {/* Search and Date Filter */}
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {/* Search */}
-          <input
-            id="resolved-search"
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by ID, title or reporter…"
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
-          />
-
-          {/* Date Filter */}
-          <select
-            id="resolved-date-filter"
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value as DateRange)}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-primary transition-colors"
-          >
-            <option value="all">All Dates</option>
-            <option value="today">Today</option>
-            <option value="7days">Last 7 Days</option>
-            <option value="30days">Last 30 Days</option>
-          </select>
-        </div>
-
-        {/* Loading State */}
-        {loading && (
-           <Loader/>
-
-        )}
-
-        {/* Resolved Ticket Cards */}
-        {!loading && (
-          <div className="mt-5 space-y-3">
-            {filteredTickets.length > 0 ? (
-              filteredTickets.map((ticket: Ticket) => (
-                <div
-                  key={ticket.ticket_id}
-                  className="rounded-xl border border-gray-200 p-4 transition hover:border-primary hover:shadow-sm"
-                >
-                  <div className="flex flex-col gap-3">
-                    {/* Ticket ID and Status */}
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-sm font-bold text-primary">
-                        HD-{ticket.ticket_id}
-                      </span>
-
-                      <StatusBadge status={ticket.ticket_status} />
-                    </div>
-
-                    {/* Ticket Title */}
-                    <h3 className="text-base font-semibold text-foreground">
-                      {ticket.title}
-                    </h3>
-
-                    {/* Ticket Details */}
-                    <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-gray-500">
-                      <span>Reporter: {ticket.requester_name || "Unknown"}</span>
-                      {ticket.department_name && (
-                        <span>Department: {ticket.department_name}</span>
-                      )}
-                      <PriorityBadge priority={ticket.ticket_priority} />
-                    </div>
-
-                    {/* Resolution Information */}
-                    <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2 border-t border-gray-100 pt-3 text-xs text-gray-500">
-                      <span>
-                        Updated: {formatDate(ticket.updated_at || ticket.created_at)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              /* Empty State */
-              <div className="rounded-lg border border-dashed border-gray-300 p-10 text-center">
-                <h3 className="font-semibold text-gray-700">
-                  No resolved tickets found
-                </h3>
-                <p className="mt-2 text-sm text-gray-500">
-                  {resolvedTickets.length === 0
-                    ? "You haven't resolved any tickets yet."
-                    : "No resolved tickets match your current search or date filter."}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Ticket Count */}
-        {!loading && resolvedTickets.length > 0 && (
-          <p className="mt-5 text-xs text-gray-500">
-            Showing {filteredTickets.length} of {resolvedTickets.length} tickets
-          </p>
-        )}
-      </div>
+      {showCounts && done.length > 0 && (
+        <ListCaption className="-mt-5">
+          Showing {visible.length} of {done.length} · dates are when the ticket was last updated
+        </ListCaption>
+      )}
     </div>
   );
-};
-
-export default ResolvedTickets;
+}
