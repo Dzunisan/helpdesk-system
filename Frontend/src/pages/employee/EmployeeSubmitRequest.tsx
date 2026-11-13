@@ -3,9 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useDepartments } from "../../hooks/useDepartments";
 import * as ticketService from "../../services/ticketService";
-import type { TicketPriority } from "../../types/ticket.types";
 import { Button } from "../../components/legacy/Button";
-import { priorityLabel } from "@/lib/ticketVocabulary";
 
 const EmployeeSubmitRequest = () => {
   const navigate = useNavigate();
@@ -17,7 +15,6 @@ const EmployeeSubmitRequest = () => {
     department_id: "",
     title: "",
     description: "",
-    priority: "Low" as TicketPriority,
   });
 
   // Set default department_id to first department once loaded
@@ -52,7 +49,6 @@ const EmployeeSubmitRequest = () => {
       await ticketService.createTicket({
         title: formData.title.trim(),
         description: formData.description.trim(),
-        priority: formData.priority,
         department_id: formData.department_id
           ? Number(formData.department_id)
           : undefined,
@@ -76,9 +72,10 @@ const EmployeeSubmitRequest = () => {
       </h1>
 
       <form onSubmit={addRequest} className="space-y-5">
-        {/* Step 1: Routing */}
+        {/* Step 1: Routing. No priority here: staff set it after triage (the server ignores
+            priority from Employees) */}
         <div className="  p-4 rounded">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="text-xs text-gray-500">Department</label>
               {deptLoading ? (
@@ -112,25 +109,6 @@ const EmployeeSubmitRequest = () => {
                   {errors.department_id}
                 </p>
               )}
-            </div>
-            <div>
-              <label className="text-xs text-gray-500">Priority</label>
-              <select
-                id="priority-select"
-                value={formData.priority}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    priority: e.target.value as TicketPriority,
-                  })
-                }
-                className="w-full border rounded px-3 py-2 text-sm bg-white"
-              >
-                <option value="Low">Low</option>
-                {/* Stored as legacy "Medium" until the S1 rename; shown as Normal */}
-                <option value="Medium">{priorityLabel("Medium")}</option>
-                <option value="High">High</option>
-              </select>
             </div>
           </div>
         </div>

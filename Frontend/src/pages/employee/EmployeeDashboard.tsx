@@ -43,102 +43,101 @@ export default function EmployeeDashboard() {
   }, [error]);
 
   return (
-    <div className="min-h-screen">
-      <div className="p-6 max-w-5xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-[20px] font-bold">My Requests</h1>
-          <Button
-            type="button"
-            variant="primary"
-            onClick={() => navigate("/employee/submit-request")}
-          >
-            New Request
-          </Button>
-        </div>
-
-        {/* Search & Filter */}
-        <div className="flex gap-3 mb-4">
-          <input
-            id="search-tickets"
-            placeholder="Search by keyword or Ticket ID..."
-            className="border border-gray-300 rounded px-3 py-2 text-sm w-[380px] focus:border-primary outline-none transition-colors"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <select
-            id="status-filter"
-            className="border border-gray-300 rounded px-3 py-2 text-sm bg-white focus:border-primary outline-none transition-colors"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option>All Statuses</option>
-            {VALID_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {statusLabel(s)}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Loading State */}
-        {loading && <Loader />}
-
-        {/* Ticket List */}
-        {!loading && (
-          <div className="border border-gray-200 rounded">
-            {filtered.length === 0 && tickets.length === 0 ? (
-              <div className="py-16 text-center">
-                <p className="text-sm text-gray-600">
-                  You haven't submitted any requests yet. Need help?
-                </p>
-                <a
-                  href="/employee/submit-request"
-                  className="text-blue-600 text-sm mt-1 underline inline-block"
-                >
-                  Create a new request
-                </a>
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="py-16 text-center text-sm text-gray-500">
-                No requests match your search
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {filtered.map((t: Ticket) => (
-                  <div
-                    key={t.ticket_id}
-                    onClick={() => navigate(`/employee/tickets/${t.ticket_id}`)}
-                    className="flex justify-between items-center px-4 py-3 hover:bg-gray-50 transition-colors"
-                  >
-                    <div>
-                      <p className="text-[12px] text-gray-500">
-                        HD-{t.ticket_id}
-                        {t.department_name && ` · ${t.department_name}`}
-                      </p>
-                      <p className="text-[14px] font-medium mt-1">{t.title}</p>
-                      <p className="text-[11px] text-gray-400 mt-0.5">
-                        {formatDate(t.created_at)}
-                        {t.assignee_name && ` · Assigned to ${t.assignee_name}`}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <PriorityBadge priority={t.ticket_priority} />
-                      <StatusBadge status={t.ticket_status} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Count */}
-        {!loading && tickets.length > 0 && (
-          <p className="text-xs text-gray-500 mt-3">
-            Showing {filtered.length} of {tickets.length} requests
-          </p>
-        )}
+    // PortalLayout already centres the page and pads it, so no wrapper of its own
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-[20px] font-bold">My Requests</h1>
+        <Button
+          type="button"
+          variant="primary"
+          onClick={() => navigate("/employee/submit-request")}
+        >
+          New Request
+        </Button>
       </div>
+
+      {/* Search & Filter */}
+      <div className="flex flex-col gap-3 mb-4 sm:flex-row">
+        <input
+          id="search-tickets"
+          placeholder="Search by keyword or Ticket ID..."
+          className="border border-gray-300 rounded px-3 py-2 text-sm w-full sm:w-96 focus:border-primary outline-none transition-colors"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select
+          id="status-filter"
+          className="border border-gray-300 rounded px-3 py-2 text-sm bg-white focus:border-primary outline-none transition-colors"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+        >
+          <option>All Statuses</option>
+          {VALID_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {statusLabel(s)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Loading State */}
+      {loading && <Loader />}
+
+      {/* Ticket List */}
+      {!loading && (
+        <div className="border border-gray-200 rounded">
+          {filtered.length === 0 && tickets.length === 0 ? (
+            <div className="py-16 text-center">
+              <p className="text-sm text-gray-600">
+                You haven't submitted any requests yet. Need help?
+              </p>
+              <a
+                href="/employee/submit-request"
+                className="text-blue-600 text-sm mt-1 underline inline-block"
+              >
+                Create a new request
+              </a>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="py-16 text-center text-sm text-gray-500">
+              No requests match your search
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {filtered.map((t: Ticket) => (
+                <div
+                  key={t.ticket_id}
+                  onClick={() => navigate(`/employee/tickets/${t.ticket_id}`)}
+                  className="flex justify-between items-center px-4 py-3 hover:bg-gray-50 transition-colors"
+                >
+                  <div>
+                    <p className="text-[12px] text-gray-500">
+                      HD-{t.ticket_id}
+                      {t.department_name && ` · ${t.department_name}`}
+                    </p>
+                    <p className="text-[14px] font-medium mt-1">{t.title}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      {formatDate(t.created_at)}
+                      {t.assignee_name && ` · Assigned to ${t.assignee_name}`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <PriorityBadge priority={t.ticket_priority} />
+                    <StatusBadge status={t.ticket_status} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Count */}
+      {!loading && tickets.length > 0 && (
+        <p className="text-xs text-gray-500 mt-3">
+          Showing {filtered.length} of {tickets.length} requests
+        </p>
+      )}
     </div>
   );
 }
