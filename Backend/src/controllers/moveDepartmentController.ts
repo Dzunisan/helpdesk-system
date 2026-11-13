@@ -1,10 +1,34 @@
-// S12 Move to another department (briefing p.20). OWNER: the move-department feature. Contract:
-// docs/api-sprint-2.md "S12". Routes are already wired in routes/ticketRoutes.ts and
-// routes/departmentRoutes.ts; replace these handlers.
-import { notImplemented } from "../utils/notImplemented";
+// S12 Move to another department (briefing p.20). Contract: docs/api-sprint-2.md "S12".
+// Routes: PATCH /api/tickets/:id/department (routes/ticketRoutes.ts) and
+// GET /api/departments/:id/categories (routes/departmentRoutes.ts). The work is in services/ticketMove.ts.
+import { Request, Response } from "express";
+import { STAFF_ROLES } from "../services/ticketAccess";
+import { activeDepartmentCategories, moveTicketDepartment, parseMoveInput } from "../services/ticketMove";
+import { parseIntId, sendError } from "../utils/httpError";
 
-/** PATCH /api/tickets/:id/department { department_id, category_id, reason, message } */
-export const moveDepartment = notImplemented("S12 PATCH /api/tickets/:id/department");
+/** PATCH /api/tickets/:id/department { department_id, category_id, reason, message? } */
+export const moveDepartment = async (req: Request, res: Response) => {
+  const user = req.user;
+  if (!user) return res.status(401).json({ message: "Not authenticated" });
+  try {
+    const ticketId = parseIntId(req.params.id);
+    const input = parseMoveInput(req.body);
+    const { ticket, to_department_name } = await moveTicketDepartment(ticketId, user, input);
+    return res.status(200).json({ message: `Moved to ${to_department_name}.`, ticket });
+  } catch (error) {
+    return sendError(res, error, "Move department error");
+  }
+};
 
 /** GET /api/departments/:id/categories (Agents and Leads: active categories for the move picker) */
-export const departmentCategories = notImplemented("S12 GET /api/departments/:id/categories");
+export const departmentCategories = async (req: Request, res: Response) => {
+  const user = req.user;
+  if (!user) return res.status(401).json({ message: "Not authenticated" });
+  if (!STAFF_ROLES.includes(user.role)) return res.status(403).json({ message: "Forbidden" });
+  try {
+    const departmentId = parseIntId(req.params.id, "department");
+    return res.status(200).json({ categories: await activeDepartmentCategories(departmentId) });
+  } catch (error) {
+    return sendError(res, error, "Department categories error");
+  }
+};
