@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import * as ticketService from "../services/ticketService";
+import { canListTickets, loadTicketAccess, NO_TICKET_ACCESS_ROLES, STAFF_ROLES } from "../services/ticketAccess";
 import {
   TicketPriority,
   TicketStatus,
@@ -39,20 +40,27 @@ export const createTicket = async (req: Request, res: Response) => {
     return res.status(401).json({ message: "Not authenticated" });
   }
 
+  // System Admin and Platform Admin have no ticket access (ticketAccess), so they don't raise tickets
+  if (NO_TICKET_ACCESS_ROLES.includes(user.role)) {
+    return res.status(403).json({ message: "Forbidden: Administrators cannot create tickets." });
+  }
+
+  // Status and assignee are always decided by the server (status from the request type,
+  // assignee by claiming / assigning afterwards). Employees may only send title, description and
+  // department / category / request type; priority and requester are staff-only.
+  const isStaff = STAFF_ROLES.includes(user.role);
   const {
     title,
     description,
-    priority,
-    status,
     department_id,
     ticket_department_id,
     category_id,
     ticket_category_id,
     request_type_id,
-    ticket_request_type_id,
-    assignee_id,
-    requester_id
+    ticket_request_type_id
   } = req.body;
+  const priority = isStaff ? req.body.priority : undefined;
+  const requester_id = isStaff ? req.body.requester_id : undefined;
 
   const errors: string[] = [];
 
@@ -76,17 +84,6 @@ export const createTicket = async (req: Request, res: Response) => {
       errors.push(`Priority must be one of: ${VALID_PRIORITIES.join(", ")}.`);
     } else {
       validatedPriority = norm;
-    }
-  }
-
-  // Status validation (default 'Open')
-  let validatedStatus: TicketStatus = "Open";
-  if (status !== undefined && status !== null) {
-    const norm = normalizeStatus(String(status));
-    if (!norm) {
-      errors.push(`Status must be one of: ${VALID_STATUSES.join(", ")}.`);
-    } else {
-      validatedStatus = norm;
     }
   }
 
@@ -123,20 +120,9 @@ export const createTicket = async (req: Request, res: Response) => {
     }
   }
 
-  // Assignee ID validation
-  let parsedAssigneeId: string | null = null;
-  if (assignee_id !== undefined && assignee_id !== null && String(assignee_id).trim() !== "") {
-    if (!/^\d+$/.test(String(assignee_id))) {
-      errors.push("Assignee ID must be a valid user ID.");
-    } else {
-      parsedAssigneeId = String(assignee_id).trim();
-    }
-  }
-
   // Requester resolution: Employees can only create tickets as themselves
   let resolvedRequesterId = String(user.user_id);
-  const isPrivileged = ["System Admin", "Platform Admin", "Agent", "Department Lead"].includes(user.role);
-  if (isPrivileged && requester_id !== undefined && requester_id !== null && String(requester_id).trim() !== "") {
+  if (requester_id !== undefined && requester_id !== null && String(requester_id).trim() !== "") {
     if (!/^\d+$/.test(String(requester_id))) {
       errors.push("Requester ID must be a valid user ID.");
     } else {
@@ -164,17 +150,16 @@ export const createTicket = async (req: Request, res: Response) => {
       }
     }
 
+    // Purchase and access requests (request type kind "provision") start in Pending approval;
+    // everything else starts as Open (briefing: ticket lifecycle)
+    let initialStatus: TicketStatus = "Open";
     if (parsedReqTypeId !== null) {
-      const reqTypeExists = await ticketService.checkRequestTypeExists(parsedReqTypeId);
-      if (!reqTypeExists) {
+      const reqTypeKind = await ticketService.getRequestTypeKind(parsedReqTypeId);
+      if (!reqTypeKind) {
         return res.status(400).json({ message: "Request type not found with the provided ID." });
       }
-    }
-
-    if (parsedAssigneeId !== null) {
-      const assigneeExists = await ticketService.checkUserExists(parsedAssigneeId);
-      if (!assigneeExists) {
-        return res.status(400).json({ message: "Assignee user not found." });
+      if (reqTypeKind === "provision") {
+        initialStatus = "Pending approval";
       }
     }
 
@@ -189,12 +174,12 @@ export const createTicket = async (req: Request, res: Response) => {
       title: title.trim(),
       description: description ? description.trim() : null,
       priority: validatedPriority,
-      status: validatedStatus,
+      status: initialStatus,
       department_id: parsedDeptId,
       category_id: parsedCatId,
       request_type_id: parsedReqTypeId,
       requester_id: resolvedRequesterId,
-      assignee_id: parsedAssigneeId
+      assignee_id: null
     };
 
     const ticket = await ticketService.createTicket(newTicketDto);
@@ -211,6 +196,12 @@ export const fetchTickets = async (req: Request, res: Response) => {
     return res.status(401).json({ message: "Not authenticated" });
   }
 
+  // ticketAccess: System Admin (counts only) and Platform Admin (none) can't list ticket content
+  const access = await loadTicketAccess(user);
+  if (!canListTickets(access)) {
+    return res.status(403).json({ message: "Forbidden: Your role does not have access to tickets." });
+  }
+
   const page = Math.max(parseInt(req.query.page as string, 10) || 1, 1);
   const limit = Math.min(Math.max(parseInt(req.query.limit as string, 10) || 10, 1), 100);
   const statusParam = req.query.status as string;
@@ -219,7 +210,6 @@ export const fetchTickets = async (req: Request, res: Response) => {
   const creatorParam = (req.query.creator_id || req.query.requester_id || req.query.creator) as string;
   const assigneeParam = (req.query.assignee_id || req.query.assignee) as string;
   const searchParam = req.query.search as string;
-  const includeDeletedParam = req.query.include_deleted === "true";
 
   // Validate status filter if given
   let normalizedStatus: string | null = null;
@@ -254,16 +244,17 @@ export const fetchTickets = async (req: Request, res: Response) => {
     parsedDeptId = Number(deptParam.trim());
   }
 
-  // Allow include_deleted only for System Admin and Platform Admin
-  const canSeeDeleted = ["System Admin", "Platform Admin"].includes(user.role);
-  const include_deleted = canSeeDeleted && includeDeletedParam;
+  // Deleted tickets are never listed: only admins could see them, and admins have no ticket access
+  const include_deleted = false;
 
   const filters: TicketFilters = {
     page,
     limit,
     status: normalizedStatus,
     priority: normalizedPriority,
-    department_id: parsedDeptId,
+    // Agents and Leads get their department from the role (ticketAccess); the browser's
+    // department_id is ignored for them so it can never widen the scope
+    department_id: STAFF_ROLES.includes(user.role) ? null : parsedDeptId,
     creator_id: creatorParam?.trim() || null,
     assignee_id: assigneeParam?.trim() || null,
     search: searchParam?.trim() || null,
@@ -271,7 +262,7 @@ export const fetchTickets = async (req: Request, res: Response) => {
   };
 
   try {
-    const { tickets, total } = await ticketService.getTickets(filters, user.role, String(user.user_id));
+    const { tickets, total } = await ticketService.getTickets(filters, access);
     return res.status(200).json({
       tickets,
       pagination: {
@@ -302,17 +293,15 @@ export const getTicketById = async (req: Request, res: Response) => {
   const ticketId = Number(idParam);
 
   try {
-    const canSeeDeleted = ["System Admin", "Platform Admin"].includes(user.role);
-    const ticket = await ticketService.getTicketById(ticketId, user.role, canSeeDeleted);
-
-    if (!ticket) {
+    // ticketAccess: not found and not allowed look the same (404), so we never admit the ticket exists
+    const resolved = await ticketService.resolveTicketAccess(ticketId, user);
+    if (!resolved) {
       return res.status(404).json({ message: "Ticket not found." });
     }
 
-    // Role-based access control:
-    // Regular employees can ONLY view their own tickets
-    if (user.role === "Employee" && String(ticket.requester_id) !== String(user.user_id)) {
-      return res.status(403).json({ message: "Forbidden: You are not authorized to view this ticket." });
+    const ticket = await ticketService.getTicketById(ticketId, resolved.canWork, false);
+    if (!ticket) {
+      return res.status(404).json({ message: "Ticket not found." });
     }
 
     return res.status(200).json({ ticket });
@@ -337,18 +326,10 @@ export const updateTicket = async (req: Request, res: Response) => {
   const ticketId = Number(idParam);
 
   try {
-    // Check if ticket exists
-    const existingTicket = await ticketService.getTicketById(ticketId, user.role, false);
-    if (!existingTicket) {
+    // ticketAccess: 404 for anyone who can't view the ticket
+    const resolved = await ticketService.resolveTicketAccess(ticketId, user);
+    if (!resolved) {
       return res.status(404).json({ message: "Ticket not found." });
-    }
-
-    const isStaffOrAdmin = ["System Admin", "Platform Admin", "Agent", "Department Lead"].includes(user.role);
-    const isOwner = String(existingTicket.requester_id) === String(user.user_id);
-
-    // If neither staff/admin nor ticket owner, forbidden
-    if (!isStaffOrAdmin && !isOwner) {
-      return res.status(403).json({ message: "Forbidden: You are not authorized to update this ticket." });
     }
 
     const {
@@ -368,21 +349,20 @@ export const updateTicket = async (req: Request, res: Response) => {
     const errors: string[] = [];
     const updateData: UpdateTicketDto = {};
 
-    // Check Employee restrictions:
-    // Employees can only update title, description, or cancel their ticket
-    if (user.role === "Employee") {
-      if (priority !== undefined || assignee_id !== undefined || department_id !== undefined || category_id !== undefined || request_type_id !== undefined) {
+    // Requester restrictions: anyone who can't work the ticket (Employees, or staff who raised a
+    // ticket in another department) may only edit its title and description. Every other field,
+    // including the ticket_* aliases, is refused. Cancelling goes through PATCH /:id/status.
+    if (!resolved.canWork) {
+      const restrictedFields = [
+        priority, status, assignee_id,
+        department_id, ticket_department_id,
+        category_id, ticket_category_id,
+        request_type_id, ticket_request_type_id
+      ];
+      if (restrictedFields.some((value) => value !== undefined)) {
         return res.status(403).json({
-          message: "Forbidden: Employees can only edit title, description, or cancel their own tickets."
+          message: "Forbidden: You can only edit the title and description of your own tickets."
         });
-      }
-      if (status !== undefined) {
-        const norm = normalizeStatus(String(status));
-        if (norm !== "Cancelled") {
-          return res.status(403).json({
-            message: "Forbidden: Employees can only change ticket status to 'Cancelled'."
-          });
-        }
       }
     }
 
@@ -500,7 +480,7 @@ export const updateTicket = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Validation failed", errors });
     }
 
-    const updatedTicket = await ticketService.updateTicket(ticketId, updateData);
+    const updatedTicket = await ticketService.updateTicket(ticketId, updateData, resolved.canWork);
     return res.status(200).json({ message: "Ticket updated successfully", ticket: updatedTicket });
   } catch (error) {
     return handleError(res, error);
@@ -521,22 +501,19 @@ export const deleteTicket = async (req: Request, res: Response) => {
   const ticketId = Number(idParam);
 
   try {
-    const existingTicket = await ticketService.getTicketById(ticketId, user.role, false);
-    if (!existingTicket) {
+    // ticketAccess: 404 for anyone who can't view the ticket
+    const resolved = await ticketService.resolveTicketAccess(ticketId, user);
+    if (!resolved) {
       return res.status(404).json({ message: "Ticket not found." });
     }
 
-    const isAdmin = ["System Admin", "Platform Admin"].includes(user.role);
-    const isOwner = String(existingTicket.requester_id) === String(user.user_id);
-
-    // Only Admin or the Ticket Owner can delete
-    if (!isAdmin && !isOwner) {
+    // Only the ticket's requester can (soft-)delete it. Admins have no ticket access, so there
+    // is no permanent delete path any more.
+    if (!resolved.isRequester) {
       return res.status(403).json({ message: "Forbidden: You are not authorized to delete this ticket." });
     }
 
-    // Permanent deletion is only allowed for Admins via query param permanent=true
-    const permanent = isAdmin && req.query.permanent === "true";
-    const soft = !permanent;
+    const soft = true;
 
     const success = await ticketService.deleteTicket(ticketId, soft);
     if (!success) {
@@ -772,7 +749,10 @@ export const getFeedback = async (req: Request, res: Response) => {
   const ticketId = Number(String(ticketIdParam).trim());
 
   try {
-    const result = await ticketService.getTicketFeedback(ticketId);
+    const result = await ticketService.getTicketFeedback(ticketId, user);
+    if (!result.success) {
+      return res.status(result.statusCode).json({ message: result.message });
+    }
     return res.status(result.statusCode).json({
       feedback: result.feedback
     });
