@@ -3,7 +3,7 @@
 // GET /api/departments/:id/categories (routes/departmentRoutes.ts). The work is in services/ticketMove.ts.
 import { Request, Response } from "express";
 import { STAFF_ROLES } from "../services/ticketAccess";
-import { activeDepartmentCategories, moveTicketDepartment, parseMoveInput } from "../services/ticketMove";
+import { activeDepartmentCategories, moveTicketDepartment } from "../services/ticketMove";
 import { parseIntId, sendError } from "../utils/httpError";
 
 /** PATCH /api/tickets/:id/department { department_id, category_id, reason, message? } */
@@ -12,8 +12,7 @@ export const moveDepartment = async (req: Request, res: Response) => {
   if (!user) return res.status(401).json({ message: "Not authenticated" });
   try {
     const ticketId = parseIntId(req.params.id);
-    const input = parseMoveInput(req.body);
-    const { ticket, to_department_name } = await moveTicketDepartment(ticketId, user, input);
+    const { ticket, to_department_name } = await moveTicketDepartment(ticketId, user, req.body);
     return res.status(200).json({ message: `Moved to ${to_department_name}.`, ticket });
   } catch (error) {
     return sendError(res, error, "Move department error");

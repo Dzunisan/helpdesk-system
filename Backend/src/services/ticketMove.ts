@@ -48,7 +48,7 @@ const optionalText = (value: unknown, label: string): string | null => {
   return trimmed || null;
 };
 
-/** Checks the body shape (400 with every problem listed) before the ticket is looked at */
+/** Checks the body shape (400 with every problem listed), after the ticket's access checks */
 export const parseMoveInput = (body: unknown): MoveInput => {
   const raw = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   const errors: string[] = [];
@@ -79,7 +79,7 @@ const fullName = (user: Pick<User, "name" | "surname">) => `${user.name} ${user.
 export const moveTicketDepartment = async (
   ticketId: number,
   user: User,
-  input: MoveInput
+  body: unknown
 ): Promise<{ ticket: TicketDetail; to_department_name: string }> => {
   const access = await loadTicketAccess(user);
   const moved = await withTransaction(async (client) => {
@@ -101,6 +101,8 @@ export const moveTicketDepartment = async (
     }
     const blocked = UNMOVABLE[ticket.ticket_status as TicketStatus];
     if (blocked) throw new HttpError(409, blocked);
+    // Only now look at the body: 404 / 403 / 409 first, like approve and reject
+    const input = parseMoveInput(body);
 
     if (Number(ticket.ticket_department_id) === input.department_id) {
       throw new HttpError(400, `This ticket is already in ${ticket.department_name}. Choose another department.`);
@@ -181,6 +183,23 @@ export const moveTicketDepartment = async (
         type: "department_changed",
         title: `${fullName(user)} moved ${ref} from ${from} to ${to}`,
         body: input.reason,
+      });
+    }
+    // The previous owner loses access with the move: tell them, unless they moved it themselves
+    if (
+      ticket.assignee_id &&
+      String(ticket.assignee_id) !== String(user.user_id) &&
+      String(ticket.assignee_id) !== String(ticket.requester_id) &&
+      String(ticket.assignee_id) !== String(leadId)
+    ) {
+      await notify(client, {
+        userIds: [ticket.assignee_id],
+        // No link: they can't open it any more (it would be a 404)
+        ticketId: null,
+        actorId: user.user_id,
+        type: "department_changed",
+        title: `${fullName(user)} moved your ticket ${ref} to ${to}`,
+        body: `${input.reason} · It's no longer in your queue.`,
       });
     }
     return { to };
