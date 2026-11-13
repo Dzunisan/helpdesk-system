@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Ban, Check, CircleCheck, Hourglass, RotateCcw, RotateCw, UserCheck, UserRoundPlus, X } from "lucide-react";
+import { Ban, Building2, Check, CircleCheck, Hourglass, RotateCcw, RotateCw, UserCheck, UserRoundPlus, X } from "lucide-react";
 import type { Ticket, TicketAction, TicketActionsResponse, TicketStatus } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,7 +8,7 @@ import AssignMenu from "@/components/queue/AssignMenu";
 import type { Assignee } from "@/components/queue/useClaim";
 import type { TeamMember } from "@/components/queue/useTeam";
 
-export type ActionKey = TicketAction | "send";
+export type ActionKey = TicketAction | "send" | "move";
 
 interface StaffActionBarProps {
   ticket: Ticket;
@@ -30,6 +30,8 @@ interface StaffActionBarProps {
   team: { members: TeamMember[]; loading: boolean; error: boolean };
   currentUserId: string;
   onAssign: (assignee: Assignee) => void;
+  /** S12: opens the Move dialog; left out when this person can't move the ticket now */
+  onMove?: () => void;
 }
 
 const TAP = "h-10 sm:h-8";
@@ -54,6 +56,7 @@ export default function StaffActionBar({
   team,
   currentUserId,
   onAssign,
+  onMove,
 }: StaffActionBarProps) {
   if (actionsError) {
     return (
@@ -158,6 +161,13 @@ export default function StaffActionBar({
           </Button>
         }
       />,
+    );
+  if (onMove)
+    buttons.push(
+      <Button key="move" variant="ghost" className={TAP} disabled={busy} onClick={onMove}>
+        {icon("move", Building2)}
+        Move
+      </Button>,
     );
   if (has("cancel"))
     buttons.push(

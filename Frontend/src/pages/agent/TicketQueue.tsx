@@ -20,6 +20,7 @@ import { plural } from "@/components/queue/queueUtils";
 import { useClaim, useClaimNextShortcut } from "@/components/queue/useClaim";
 import { useTicketList } from "@/components/queue/useTicketList";
 import { AGENT_VIEWS, agentQueuePath, isAgentQueueView, withTeam, type AgentQueueView } from "@/components/queue/queueViews";
+import ResolvedByMe from "./ResolvedByMe";
 
 const EMPTY_ICON: Record<AgentQueueView, LucideIcon> = {
   "my-open": Inbox,
@@ -39,6 +40,8 @@ export default function TicketQueue() {
   const { view } = useParams();
   if (user?.role === "Department Lead") return <LeadTicketList />;
   if (!isAgentQueueView(view)) return <Navigate to={agentQueuePath("unassigned")} replace />;
+  // Resolved by me has its own columns: resolved time, resolution chip, rating, reopened (p.53)
+  if (view === "resolved") return <ResolvedByMe />;
   // A fresh component per view, so filters reset when the agent switches lists
   return <AgentQueue key={view} view={view} />;
 }

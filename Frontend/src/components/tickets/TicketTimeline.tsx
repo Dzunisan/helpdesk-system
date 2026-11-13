@@ -14,6 +14,8 @@ import {
   Star,
   UserCheck,
   UserRoundPlus,
+  Building2,
+  Paperclip,
 } from "lucide-react";
 import type { CategoryField, Ticket, TimelineComment, TimelineEvent, TimelineItem } from "@/types/api";
 import { formatDuration, formatSast } from "@/lib/format";
@@ -41,6 +43,7 @@ import { minutesBetween } from "@/components/queue/ticketSla";
 import { formatAnswer, humanizeKey, statusWords } from "@/components/portal/portalText";
 import { CommentMenu, EventLine, MessageBody, MessageCard } from "./timelineParts";
 import { roleWord } from "./ticketDetail";
+import TimelineAttachments from "./TimelineAttachments";
 
 /**
  * Who reads the timeline. The server already filters internal notes and events for a requester;
@@ -94,12 +97,17 @@ const echoOf = (item: TimelineEvent, prev: Row | undefined): EventRow | null => 
 function buildRows(ticket: Ticket, items: TimelineItem[], audience: TimelineAudience, now: number): Row[] {
   const rows: Row[] = [];
   let sawCreated = false;
+  // S14: a file sent with a message shows on the message; its "attached" event needs no line
+  const sentFiles = new Set(
+    items.flatMap((i) => (i.kind === "comment" ? (i.attachments ?? []).map((a) => String(a.attachment_id)) : [])),
+  );
 
   for (const item of items) {
     if (item.kind === "comment") {
       rows.push({ kind: "comment", at: item.at, comment: item });
       continue;
     }
+    if (item.type === "attached" && item.to_value && sentFiles.has(item.to_value)) continue;
     // The comment keeps its place ("Message removed", "edited"), so these facts need no line
     if (item.type === "comment_deleted" || item.type === "comment_edited") continue;
     const echoed = echoOf(item, rows[rows.length - 1]);
@@ -239,7 +247,7 @@ export default function TicketTimeline({
             const { event, folded } = row;
             const line = audience === "staff" ? staffLine(event, who(event.actor), ticket) : requesterLine(event, who(event.actor), ticket);
             return (
-              <EventLine key={event.id} icon={line.icon} time={event.at} staffOnly={event.is_internal} note={event.note}>
+              <EventLine key={event.id} icon={line.icon} time={event.at} staffOnly={event.is_internal} note={event.type === "attached" ? null : event.note}>
                 <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
                   {line.text}
                   {folded && audience === "staff" && (
@@ -322,7 +330,10 @@ export default function TicketTimeline({
                   </div>
                 </div>
               ) : (
-                <MessageBody>{c.body}</MessageBody>
+                <>
+                  <MessageBody>{c.body}</MessageBody>
+                  <TimelineAttachments files={c.attachments ?? []} showInternal={audience === "staff"} />
+                </>
               )}
             </MessageCard>
           );
@@ -472,6 +483,28 @@ function staffLine(event: TimelineEvent, who: string, ticket: Ticket): Line {
           </span>
         ),
       };
+    case "department_changed":
+      // S12: one public line (note = the message to the requester), one internal (note = the reason)
+      return event.is_internal
+        ? { icon: Building2, text: <span>{actor} gave the reason for the move</span> }
+        : {
+            icon: Building2,
+            text: (
+              <span>
+                {actor} moved this from <Name>{event.from_value ?? "another department"}</Name> to{" "}
+                <Name>{event.to_value ?? "another department"}</Name> · now New and unassigned
+              </span>
+            ),
+          };
+    case "attached":
+      return {
+        icon: Paperclip,
+        text: (
+          <span>
+            {actor} attached <Name>{event.note ?? "a file"}</Name>
+          </span>
+        ),
+      };
     default:
       return { icon: CircleDot, text: <span>{actor} updated this</span> };
   }
@@ -547,6 +580,24 @@ function requesterLine(event: TimelineEvent, who: string, ticket: Ticket): Line 
         text: (
           <span>
             {actor} {event.from_value ? "changed the rating to" : "rated this"} {outOfFive(event.to_value)}
+          </span>
+        ),
+      };
+    case "department_changed":
+      return {
+        icon: Building2,
+        text: (
+          <span>
+            Moved from <Name>{event.from_value ?? "another team"}</Name> to <Name>{event.to_value ?? "another team"}</Name>
+          </span>
+        ),
+      };
+    case "attached":
+      return {
+        icon: Paperclip,
+        text: (
+          <span>
+            {actor} attached <Name>{event.note ?? "a file"}</Name>
           </span>
         ),
       };

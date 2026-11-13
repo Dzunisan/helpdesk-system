@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ChevronLeft, Lock, SearchX } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import {
-  addComment,
   approveTicket,
   assignTicket,
   changePriority,
@@ -12,6 +11,7 @@ import {
   deleteComment,
   editComment,
   rejectTicket,
+  sendComment,
   transitionTicket,
 } from "@/services/tickets";
 import { toApiError } from "@/services/apiClient";
@@ -42,7 +42,8 @@ import type { Assignee } from "@/components/queue/useClaim";
 import { useTeam } from "@/components/queue/useTeam";
 import StaffActionBar, { type ActionKey } from "./StaffActionBar";
 import StaffPropertiesPanel from "./StaffPropertiesPanel";
-import TicketComposer, { type SendFollowUp } from "./TicketComposer";
+import TicketComposer, { type ComposerMessage } from "./TicketComposer";
+import MoveDepartmentDialog from "./MoveDepartmentDialog";
 import TicketDetailSkeleton from "./TicketDetailSkeleton";
 import TicketListPane from "./TicketListPane";
 import TicketTimeline from "./TicketTimeline";
@@ -121,6 +122,8 @@ export default function StaffTicketView() {
   const [resolveOpen, setResolveOpen] = useState(false);
   const [approveOpen, setApproveOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const navigate = useNavigate();
 
   const ref = ticket ? formatTicketRef(ticket.ticket_id) : id ? formatTicketRef(id) : "This ticket";
 
@@ -200,33 +203,49 @@ export default function StaffTicketView() {
       toast.success(`${ref} rejected`);
     });
 
-  const handleSend = async (body: string, internal: boolean, followUp: SendFollowUp) => {
+  /**
+   * One POST /comments with the Sprint 2 extras: the macro (S7, its set_status applies unless the
+   * send menu chose one), the uploaded files (S14) and set_status. A refused status move keeps the
+   * reply; the server says why.
+   */
+  const handleSend = async ({ body, internal, followUp, macro, attachmentIds }: ComposerMessage) => {
     if (!ticket) return false;
     setPending("send");
+    const sent = internal ? "Internal note added" : "Reply sent";
     try {
-      await addComment(ticket.ticket_id, { body, is_internal: internal });
+      const result = await sendComment(ticket.ticket_id, {
+        body,
+        is_internal: internal,
+        ...(attachmentIds.length ? { attachment_ids: attachmentIds } : {}),
+        ...(macro ? { macro_id: macro.id } : {}),
+        ...(followUp === "wait" ? { set_status: "Waiting on employee" as const } : {}),
+      });
+      settle();
+      const move = result.set_status;
+      const files = attachmentIds.length ? ` with ${attachmentIds.length === 1 ? "1 file" : `${attachmentIds.length} files`}` : "";
+      if (move && !move.applied) {
+        toast.warning(`${sent}, but the status didn't change`, { description: move.message ?? undefined });
+      } else if (move?.applied) {
+        toast.success(`${sent}${files}`, { description: `Status set to ${statusLabel(move.requested)}.` });
+      } else {
+        toast.success(`${sent}${files}`);
+      }
+      return true;
     } catch (err) {
-      setPending(null);
       fail(err, internal ? "Couldn't add your note" : "Couldn't send your reply");
       return false;
-    }
-    try {
-      if (followUp === "wait") {
-        const updated = await transitionTicket(ticket.ticket_id, { to: "Waiting on employee" });
-        settle(updated);
-        toast.success("Reply sent", { description: "Status set to Waiting on employee." });
-      } else {
-        settle();
-        toast.success(internal ? "Internal note added" : "Reply sent");
-      }
-    } catch (err) {
-      // The reply is saved even if the status change wasn't
-      settle();
-      fail(err, "Reply sent, but the status didn't change");
     } finally {
       setPending(null);
     }
-    return true;
+  };
+
+  const handleMoved = (departmentName: string) => {
+    setMoveOpen(false);
+    toast.success(`${ref} moved to ${departmentName}`, {
+      description: `It's New in the ${departmentName} queue. ${ticket?.department_name ?? "Your department"} no longer sees it.`,
+    });
+    // The old department gets 404 from now on: back to the list
+    navigate(view.path, { replace: true });
   };
 
   const handleSaveEdit = async (commentId: number, body: string) => {
@@ -299,6 +318,11 @@ export default function StaffTicketView() {
   const busy = pending !== null;
   // Nobody replies or resolves without seeing the conversation (until GET /timeline loads)
   const blind = !timeline;
+  // S12: any agent of the department or its lead; never Pending approval or a final status (409)
+  const canMove =
+    !!actions &&
+    permissions.isStaff &&
+    !["Pending approval", "Closed", "Cancelled"].includes(ticket.ticket_status);
 
   const actionBar = (
     <StaffActionBar
@@ -316,6 +340,7 @@ export default function StaffTicketView() {
       team={team}
       currentUserId={userId}
       onAssign={(a) => void handleAssign(a)}
+      onMove={canMove ? () => setMoveOpen(true) : undefined}
     />
   );
 
@@ -343,6 +368,8 @@ export default function StaffTicketView() {
         allowReply={has("reply")}
         allowNote={has("internal_note")}
         allowSendAndWait={has("wait")}
+        allowMacros={permissions.isStaff}
+        agentName={[user?.name, user?.surname].filter(Boolean).join(" ") || null}
         disabledReason={timelineError ? "Load the conversation above before you reply" : blind ? "Loading the conversation…" : null}
       />
     ) : actions && final ? (
@@ -406,6 +433,7 @@ export default function StaffTicketView() {
         busy={pending === "reject"}
         onConfirm={(reason) => void handleReject(reason)}
       />
+      {canMove && <MoveDepartmentDialog open={moveOpen} onOpenChange={setMoveOpen} ticket={ticket} onMoved={handleMoved} />}
     </>
   );
 
@@ -458,7 +486,8 @@ export default function StaffTicketView() {
               <h1 className="text-lg leading-snug font-semibold tracking-tight text-balance text-foreground">{ticket.title}</h1>
               {actionBar}
             </header>
-            <ScrollArea resetKey={`${ticket.ticket_id}:${timeline ? "ready" : "loading"}`}>{timelineNode}</ScrollArea>
+            {/* A new message (yours after Send) scrolls into view above the composer */}
+            <ScrollArea resetKey={`${ticket.ticket_id}:${timeline ? timeline.length : "loading"}`}>{timelineNode}</ScrollArea>
             {composer && <div className="shrink-0 border-t border-border bg-background px-6 py-4">{composer}</div>}
           </div>
         </ResizablePanel>
