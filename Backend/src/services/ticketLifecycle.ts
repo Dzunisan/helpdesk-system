@@ -522,7 +522,7 @@ export const getTicketActions = async (ticketId: number, user: User): Promise<Ti
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Staff of the department change priority (once owned: the owner or the lead); both due times are recalculated from created_at with
+ * Staff of the department change priority (once owned: the owner or the lead); both due times are recalculated from created_at (or the S6 approval time) with
  * the current policies (page 5), never from now. Pending approval tickets have no clock yet (S6
  * starts it on approval), so only the priority changes. One `priority_changed` event.
  */
@@ -545,7 +545,13 @@ export const changePriority = async (ticketId: number, user: User, priority: Tic
         ticketId,
       ]);
     } else {
-      const due = computeDueTimes(ticket.created_at, priority, await loadSlaPolicies(client));
+      // The clocks start at creation, or at the lead's approval for an S6 request (page 15)
+      const approved = await client.query<{ at: Date | null }>(
+        `SELECT MAX(created_at) AS at FROM ticket_event WHERE ticket_id = $1 AND type = 'approved'`,
+        [ticketId]
+      );
+      const clockStart = approved.rows[0]?.at ?? ticket.created_at;
+      const due = computeDueTimes(clockStart, priority, await loadSlaPolicies(client));
       await client.query(
         `UPDATE ticket
          SET ticket_priority = $1, first_response_due_at = $2, resolution_due_at = $3, updated_at = now()
