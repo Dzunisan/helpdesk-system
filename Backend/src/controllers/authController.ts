@@ -6,6 +6,7 @@ import { sendPasswordResetEmail } from "../utils/mailer";
 import crypto from "crypto";
 import { JWT_SECRET } from "../config/env";
 import { passwordProblem } from "../utils/passwordRules";
+import { userFromToken } from "../middleware/authMiddlware";
 
 const COOKIE_NAME = "session";
 const COOKIE_OPTIONS = {
@@ -57,23 +58,12 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
     }
 } 
 export const me = async (req: Request, res: Response, next: NextFunction) => {
-    const token = req.cookies?.[COOKIE_NAME];
-    // console.log(" token received:", token);
-    if(!token) {
+    // By the token's user id, never its email (see userFromToken)
+    const user = await userFromToken(req.cookies?.[COOKIE_NAME]);
+    if (!user) {
         return res.status(401).json({message: "Not authenticated"})
     }
-
-    try {
-        const decoded = jwt.verify(token, JWT_SECRET) as { id: string; email: string; role: string };
-        const user = await userServices.findUserByEmail(decoded.email);
-
-        if(!user || !user.active) {
-            return res.status(401).json({message: "Not authenticated"})
-        }
-        res.status(200).json({ user: userServices.toPublicUser(user) })
-    } catch (error) {
-        return res.status(401).json({message: "Not authenticated"})
-    }
+    res.status(200).json({ user: userServices.toPublicUser(user) })
 }
 
 export const forgotPassword = async (req: Request, res: Response) => {
@@ -168,7 +158,7 @@ export const changePassword = async (req: Request, res: Response, next: NextFunc
     }
     const matches = await bcrypt.compare(current_password, user.password || "");
     if (!matches) {
-      const message = "Your current password is wrong.";
+      const message = "Your current password is incorrect.";
       return res.status(400).json({ message, errors: [message] });
     }
     const updated = await userServices.setOwnPassword(user.user_id, new_password);

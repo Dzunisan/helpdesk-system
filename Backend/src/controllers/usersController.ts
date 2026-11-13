@@ -7,7 +7,6 @@ import crypto from "crypto";
 import * as userServices from "../services/userService";
 import { DEPARTMENT_ROLES, ALL_ROLES } from "../services/userService";
 import { sendTempPasswordEmail } from "../utils/emailService";
-import { passwordProblem } from "../utils/passwordRules";
 
 /** The roles a signed-in admin may see, create and manage */
 const getAllowedTargetRoles = (adminRole: string): string[] => {
@@ -86,16 +85,13 @@ const makeTemporaryPassword = (): string => {
 
 /**
  * Sends the welcome email with the temporary password. Never fails the request: the account exists
- * either way. Without email settings (local development) the password goes to the server log so the
- * demo can still sign in; production never logs it.
+ * either way. Returns false when email isn't configured (local development and the free demo) or the
+ * send failed; createUser then hands the temporary password to the admin once, labelled as a
+ * simulated email, so the new person can still sign in. The password never goes to the log.
  */
 const sendWelcomeEmail = async (email: string, tempPassword: string): Promise<boolean> => {
     if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER) {
-        if (process.env.NODE_ENV !== "production") {
-            console.warn(`[users] Email is not configured. Temporary password for ${email}: ${tempPassword}`);
-        } else {
-            console.error(`[users] Email is not configured: no welcome email for ${email}.`);
-        }
+        console.warn(`[users] Email is not configured: the welcome email for ${email} is simulated in the response.`);
         return false;
     }
     try {
@@ -171,7 +167,11 @@ export const createUser = async (req: Request, res: Response, next: NextFunction
 
         const welcomeEmailSent = await sendWelcomeEmail(created.email, tempPassword);
         const user = await userServices.getUserView(String(created.user_id));
-        return res.status(201).json({ user, welcome_email_sent: welcomeEmailSent });
+        // No real email went out: show the admin the simulated welcome email once (DoD, page 28)
+        const simulated = welcomeEmailSent
+            ? {}
+            : { simulated_welcome_email: { to: created.email, temporary_password: tempPassword } };
+        return res.status(201).json({ user, welcome_email_sent: welcomeEmailSent, ...simulated });
     } catch (error: any) {
         if (error?.code === "23505") {
             return res.status(409).json({ message: "A user with this email already exists." });
@@ -355,8 +355,9 @@ export const fetchUser = async (req: Request, res: Response, next: NextFunction)
 };
 
 /**
- * Legacy PUT /api/users/update[/:id] and PUT /api/users/:id (UsersContext, until the screens move to
- * services/users.ts). Your own id: the profile page edits name, surname, email and password.
+ * PUT /api/users/update[/:id] and PUT /api/users/:id. Your own id: the profile page edits your name
+ * and surname, nothing else. Your email is managed by your admin, and a new password only goes
+ * through POST /api/auth/change-password, which checks the current one (400 here otherwise).
  * Someone else's id: the admin rules of PATCH /:id, plus { active } handled like PATCH /:id/active.
  */
 export const updateUserLegacy = async (req: Request, res: Response, next: NextFunction) => {
@@ -375,25 +376,21 @@ export const updateUserLegacy = async (req: Request, res: Response, next: NextFu
 
     try {
         const { name, surname, email, password } = req.body ?? {};
+        if (password !== undefined && password !== null && String(password) !== "") {
+            return validationFailed(res, ["Change your password with POST /api/auth/change-password (it asks for your current one)."]);
+        }
+        if (email !== undefined && email !== null && String(email).trim() !== "") {
+            return validationFailed(res, ["Your email is managed by your admin."]);
+        }
         const errors: string[] = [];
         const update: Record<string, string | undefined> = {};
-        if (typeof name === "string" && name.trim() !== "") update.name = cleanName(name, "Name", errors);
-        if (typeof surname === "string" && surname.trim() !== "") update.surname = cleanName(surname, "Surname", errors);
-        if (typeof email === "string" && email.trim() !== "") update.email = cleanEmail(email, errors);
-        if (password !== undefined && password !== null && String(password).trim() !== "") {
-            const problem = passwordProblem(String(password).trim());
-            if (problem) errors.push(problem);
-            else update.password = String(password).trim();
-        }
+        if (name !== undefined) update.name = cleanName(name, "Name", errors);
+        if (surname !== undefined) update.surname = cleanName(surname, "Surname", errors);
         if (errors.length > 0) return validationFailed(res, errors);
         if (Object.keys(update).length === 0) {
-            return validationFailed(res, ["No valid fields provided for update."]);
+            return validationFailed(res, ["Send your name or surname."]);
         }
-        if (update.email && (await userServices.emailTaken(update.email, id))) {
-            return res.status(409).json({ message: "A user with this email already exists." });
-        }
-        // A password the user chose themselves ends the "change it at first sign-in" requirement
-        await userServices.updateUser(id, update.password ? { ...update, must_change_password: false } : update);
+        await userServices.updateUser(id, update);
         const user = await userServices.getUserView(id);
         return res.status(200).json({ message: "User updated successfully", user });
     } catch (error) {
