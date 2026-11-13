@@ -13,7 +13,6 @@ import AssignedTickets from "../pages/agent/AssignedTickets";
 import ResolvedTickets from "../pages/agent/ResolvedTickets";
 import Dashboard from "../pages/agent/Dashboard";
 
-import Reports from "../pages/department lead/Reports";
 import TeamAgents from "../pages/department lead/TeamAgents";
 import Approvals from "../pages/department lead/Approvals";
 
@@ -67,7 +66,6 @@ const AppRouter = () => {
             <Route path="ticket-queue" element={<TicketQueue />} />
             <Route path="approvals" element={<Approvals />} />
             <Route path="team" element={<TeamAgents />} />
-            <Route path="reports" element={<Reports />} />
             <Route path="tickets/:id" element={<TicketDetails />} />
             <Route path="profile" element={<UserProfile />} />
           </Route>
@@ -79,7 +77,6 @@ const AppRouter = () => {
             <Route index element={<AdminOverview />} />
             <Route path="users" element={<Users />} />
             <Route path="departments" element={<Departments />} />
-            <Route path="reports" element={<Reports />} />
             <Route path="profile" element={<UserProfile />} />
           </Route>
         </Route>
