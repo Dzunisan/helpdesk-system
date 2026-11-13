@@ -3,6 +3,7 @@ import { api, call } from "./apiClient";
 import type {
   ChangePasswordRequest,
   CreateUserRequest,
+  CreateUserResponse,
   UpdateUserRequest,
   User,
   UserListParams,
@@ -16,7 +17,7 @@ export const listUsers = async (params: UserListParams = {}): Promise<User[]> =>
 
 /** POST /api/users: department required for Employee, Agent and Department Lead (400 otherwise) */
 export const createUser = async (body: CreateUserRequest): Promise<User> =>
-  (await call(() => api.post<UserResponse>("/users", body), "Couldn't create the user.")).user;
+  (await call(() => api.post<CreateUserResponse>("/users", body), "Couldn't create the user.")).user;
 
 /** PATCH /api/users/:id: edit name, email, role and department */
 export const updateUser = async (id: string, body: UpdateUserRequest): Promise<User> =>

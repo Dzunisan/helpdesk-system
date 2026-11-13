@@ -12,6 +12,7 @@ import type {
   ChangePriorityRequest,
   CommentResponse,
   CreateTicketRequest,
+  CreateTicketResponse,
   FeedbackResponse,
   SubmitFeedbackRequest,
   Ticket,
@@ -45,7 +46,7 @@ export const getTicket = async (id: number): Promise<Ticket> =>
 
 /** POST /api/tickets (S5): the category decides department, priority and status */
 export const createTicket = async (body: CreateTicketRequest): Promise<Ticket> =>
-  (await call(() => api.post<TicketResponse>("/tickets", body), "Couldn't submit your request.")).ticket;
+  (await call(() => api.post<CreateTicketResponse>("/tickets", body), "Couldn't submit your request.")).ticket;
 
 /** POST /api/tickets/:id/claim (S2): owner = me, status Open. 409 when someone else got it first. */
 export const claimTicket = async (id: number): Promise<Ticket> =>

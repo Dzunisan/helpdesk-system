@@ -157,6 +157,11 @@ export interface TicketResponse {
   ticket: Ticket;
 }
 
+/** POST /api/tickets answers 201 with the new ticket and its reference, e.g. "HD-1054" */
+export interface CreateTicketResponse extends TicketResponse {
+  reference: string;
+}
+
 /** POST /api/tickets. Department, priority and status come from the category; never sent. */
 export interface CreateTicketRequest {
   category_id: number;
@@ -351,6 +356,13 @@ export interface CreateUserRequest {
   email: string;
   role: Role;
   department_id: number | null;
+  /** "Ask them to set a new password at first sign-in" (page 61); default true */
+  must_change_password?: boolean;
+}
+
+/** POST /api/users answers 201 with the user and whether the welcome email went out */
+export interface CreateUserResponse extends UserResponse {
+  welcome_email_sent: boolean;
 }
 
 /** PATCH /api/users/:id */

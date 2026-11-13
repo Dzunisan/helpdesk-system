@@ -6,8 +6,8 @@ Backend work implements exactly these shapes; frontend work calls them only thro
 response types live in `Frontend/src/types/api.ts`. If you need to change a shape, change this file,
 `types/api.ts` and the server in the same pull request.
 
-**Status column:** `ready` works today, `stub` is routed but answers `501 Not implemented yet`,
-`update` exists but must be changed to match this contract.
+**Status column:** every Sprint 1 endpoint below is `ready` (integrated on `feature/briefing`,
+Fri 13 Nov). `legacy` marks older paths kept only until the screens that call them are rebuilt.
 
 ## Conventions
 
@@ -124,13 +124,14 @@ Field `type` is `text | number | long_text | date`; optional `help` (text under 
 | --- | --- | --- | --- |
 | GET | `/api/tickets` | ready (scope); params below | `listTickets` |
 | GET | `/api/tickets/:id` | ready | `getTicket` |
-| GET | `/api/users` | update | `listUsers` |
-| POST | `/api/users` | update (today `POST /api/users/create`) | `createUser` |
-| PATCH | `/api/users/:id` | update (today `PUT /api/users/update/:id`) | `updateUser` |
-| PATCH | `/api/users/:id/active` | update (today `PATCH /:id/deactivate`) | `setUserActive` |
-| PUT | `/api/departments/:id/lead` | update | `appointLead` |
+| GET | `/api/users` | ready | `listUsers` |
+| POST | `/api/users` | ready | `createUser` |
+| PATCH | `/api/users/:id` | ready | `updateUser` |
+| PATCH | `/api/users/:id/active` | ready | `setUserActive` |
+| PUT | `/api/departments/:id/lead` | ready | `appointLead` |
 | GET | `/api/departments` | ready | `listDepartments` |
-| POST | `/api/auth/change-password` | stub | `changePassword` |
+| POST | `/api/auth/change-password` | ready | `changePassword` |
+| POST `/api/users/create`, GET `/api/users/getUser`, PUT `/api/users/update[/:id]`, PUT `/api/users/:id` | | legacy (profile page, UsersContext) | |
 
 **GET /api/tickets** - Employee, Agent, Department Lead. System Admin and Platform Admin: **403**.
 The WHERE clause comes from the role (`ticketScopeCondition`); a `department_id` sent by an Agent or
@@ -154,14 +155,19 @@ others 403. Query: `role`, `department_id`, `active` (`true`/`false`), `search`.
 Response `{ users: User[] }` with `department_name` and `led_department_id`.
 
 **POST /api/users** - System Admin creates Employee / Agent / Department Lead; Platform Admin creates
-System Admin. Body `{ name, surname, email, role, department_id }`. `department_id` is required for
-Employee, Agent and Department Lead (**400** "Choose a department"), must be null for admins.
-Sends the welcome email with a temporary password and sets `must_change_password = true`.
-Response **201** `{ user }`. Errors: 400, 403 (role you may not create), 409 email already used.
+System Admin. Body `{ name, surname, email, role, department_id, must_change_password? }`.
+`department_id` is required for Employee, Agent and Department Lead (**400** "Choose a department"),
+must be null for admins. Sends the welcome email with a temporary password and sets
+`must_change_password` (default `true`: the "ask them to set a new password" box on page 61).
+Without email settings outside production the temporary password is written to the server log.
+Response **201** `{ user, welcome_email_sent: boolean }`. Errors: 400, 403 (role you may not create),
+409 email already used.
 
 **PATCH /api/users/:id** - same admins, same role limits. Body: any of `name, surname, email, role,
 department_id` (the department rule above applies to the resulting user). Response `{ user }`.
-Errors: 400, 403, 404, 409 email used; 409 when demoting a lead who still leads a department.
+Errors: 400, 403, 404, 409 email used; 409 when demoting or moving a lead who still leads a
+department. Promoting an Agent with `{ role: "Department Lead", department_id }` is how the Appoint
+lead dialog (page 62) turns an agent into a lead before `PUT /departments/:id/lead`.
 
 **PATCH /api/users/:id/active** - same admins. Body `{ active: boolean }`. Response `{ user }`.
 Deactivated users get **401** on their next request, cookie or not. No hard delete: the
@@ -169,23 +175,27 @@ Deactivated users get **401** on their next request, cookie or not. No hard dele
 
 **PUT /api/departments/:id/lead** - System Admin. Body `{ lead_id }` (`leadId` still accepted).
 The user must be an active Department Lead who leads no other department (**409** otherwise; the
-`department.lead_id` UNIQUE constraint backs this). Also sets the lead's `users.department_id`.
-Response `{ department }`. Errors: 400, 403, 404 department or user, 409.
+`department.lead_id` UNIQUE constraint backs this). Also sets the lead's `users.department_id`, in
+the same transaction. Response `{ message, department }` (the full Department shape, with
+`departmentLead`). Errors: 400, 403, 404 department or user, 409.
 
 **POST /api/auth/change-password** - any signed-in user. Body `{ current_password, new_password }`
 (password rules as reset). Clears `must_change_password`. Response `{ user }`. Errors: 400 wrong
-current password or weak new password. `POST /api/auth/login` and `GET /api/auth/me` return
+current password ("Your current password is wrong.") or weak new password, 401 not signed in. `POST /api/auth/login` and `GET /api/auth/me` return
 `must_change_password` and stamp `last_login_at` (login); while it is true the app sends the user to
-`/change-password`.
+`/change-password` (`ProtectedRoute`, `SignInPage`). The server does not block other calls meanwhile.
 
 ## S2 Ticket lifecycle & ownership (page 11)
 
 | Verb | Path | Status | Client |
 | --- | --- | --- | --- |
-| POST | `/api/tickets/:id/claim` | stub | `claimTicket` |
-| PATCH | `/api/tickets/:id/assign` | update (exists; logs events) | `assignTicket` |
-| POST | `/api/tickets/:id/transition` | stub | `transitionTicket` |
-| GET | `/api/tickets/:id/actions` | stub | `getTicketActions` |
+| POST | `/api/tickets/:id/claim` | ready | `claimTicket` |
+| PATCH | `/api/tickets/:id/assign` | ready | `assignTicket` |
+| GET | `/api/tickets/agents` | ready | `listAssignees` |
+| POST | `/api/tickets/:id/transition` | ready | `transitionTicket` |
+| GET | `/api/tickets/:id/actions` | ready | `getTicketActions` |
+| POST | `/api/tickets/:id/feedback` | ready | `submitFeedback` |
+| PATCH `/api/tickets/:id/status`, `/approve`, `/reject` | | legacy (same rules as `/transition`; approve/reject belong to S6) | |
 
 **POST /api/tickets/:id/claim** - Agent or Lead of the ticket's department. No body. Locks the row
 (`FOR UPDATE`), requires `New` and no assignee, sets `assignee_id = me` and `Open` in one transaction,
@@ -220,14 +230,24 @@ Response `{ ticket }`. Errors: 400 unknown status / missing note, 403 wrong pers
 `resolve`, `confirm_fixed`, `still_broken`, `cancel`, `approve`, `reject` (see `TicketAction` in
 `types/api.ts` for when each appears). The UI renders buttons from this list only.
 
+**GET /api/tickets/agents** - Agent or Lead. The people a ticket can be assigned to: active Agents and
+Leads of the caller's department. Response `{ agents: Assignee[] }` (`user_id, name, surname, email,
+role, department_id, department_name`). Others 403. The lead's Assign menu adds each person's open
+load from `GET /api/tickets?status=Open,Waiting on employee`.
+
+**POST /api/tickets/:id/feedback** - the requester, once the ticket is Resolved or Closed. Body
+`{ rating: 1-5, comment? }`. Response **201** `{ feedback }`; `GET /api/tickets/:id` returns it as
+`ticket.feedback`. Sending it again replaces the rating. Errors: 400 (not finished, bad rating),
+403 not the requester, 404. The CSAT reports on top of it are S10 (Sprint 2).
+
 ## S3 Priority triage & SLA timers (page 12)
 
 | Verb | Path | Status | Client |
 | --- | --- | --- | --- |
-| PATCH | `/api/tickets/:id/priority` | stub | `changePriority` |
-| GET | `/api/tickets?sort=due&sla=breached` | update | `listTickets` |
+| PATCH | `/api/tickets/:id/priority` | ready | `changePriority` |
+| GET | `/api/tickets?sort=due&sla=breached` | ready | `listTickets` |
 | GET | `/api/sla-policies` | ready | `listSlaPolicies` |
-| PUT | `/api/sla-policies/:priority` | stub | `updateSlaPolicy` |
+| PUT | `/api/sla-policies/:priority` | ready | `updateSlaPolicy` |
 
 Every new ticket gets `first_response_due_at` and `resolution_due_at` = `created_at` + the policy
 (ready in `POST /api/tickets`). Pending approval tickets have none until approved (clock starts then).
@@ -240,6 +260,8 @@ is ignored (ready).
 
 **GET /api/tickets?sort=due** orders by `SQL_NEXT_DUE ASC NULLS LAST` (breached first, then nearest
 due); **`sla=breached`** filters with `SQL_IS_BREACHED`, `sla=due_soon` = running and under 25% left.
+`SQL_IS_BREACHED` also matches tickets that were resolved or closed late, so the Breached queues send
+`status=New,Open,Waiting on employee` with it to list only overdue open work.
 
 **GET /api/sla-policies** - everyone signed in. Response
 `{ "policies": [{ "priority": "Urgent", "first_response_mins": 30, "resolution_mins": 240, "updated_at": "..." }, ...] }`
@@ -257,10 +279,10 @@ done in `POST /api/tickets/:id/comments` (S4 owns that handler).
 
 | Verb | Path | Status | Client |
 | --- | --- | --- | --- |
-| GET | `/api/tickets/:id/timeline` | stub | `getTimeline` |
-| POST | `/api/tickets/:id/comments` | update | `addComment` |
-| PATCH | `/api/comments/:id` | update | `editComment` |
-| DELETE | `/api/comments/:id` | update (hard delete today) | `deleteComment` |
+| GET | `/api/tickets/:id/timeline` | ready | `getTimeline` |
+| POST | `/api/tickets/:id/comments` | ready | `addComment` |
+| PATCH | `/api/comments/:id` | ready | `editComment` |
+| DELETE | `/api/comments/:id` | ready (soft delete) | `deleteComment` |
 
 **GET /api/tickets/:id/timeline** - anyone who can view (404 otherwise). One merged list, oldest
 first. Employees (anyone who can't `canWork`) never receive internal comments or `is_internal`
@@ -277,6 +299,10 @@ events. Response `{ items: TimelineItem[] }`:
 
 `actor` is `null` for system events. For `claimed` / `assigned` the values are user ids and the
 labels are names. A deleted comment keeps its place with `body: null` ("Message removed by Thabo").
+`reopened` stores the old and new `reopen_count` (`"0"` -> `"1"`) with the requester's note, next to
+a `status_changed` Resolved -> Open. `comment_deleted` stores the comment id in `to_value` and copies
+the comment's `is_internal`. The automatic close has actor `null`, note "Closed automatically 5 days
+after it was resolved." and `at` = `resolved_at` + 5 days.
 
 **POST /api/tickets/:id/comments** - requester or department staff. Body `{ body, is_internal? }`
 (1-5000 chars). Internal notes: staff only (403). Response **201** `{ comment }`.
@@ -298,9 +324,9 @@ row stays, logs `comment_deleted` (`is_internal` = the comment's). Response `{ c
 | Verb | Path | Status | Client |
 | --- | --- | --- | --- |
 | GET | `/api/categories` | ready | `listCategories` |
-| POST | `/api/tickets` | ready (extra field validation to do) | `createTicket` |
-| POST | `/api/categories` | stub | `createCategory` |
-| PATCH | `/api/categories/:id` | stub | `updateCategory` |
+| POST | `/api/tickets` | ready (`Backend/src/services/ticketCreate.ts`) | `createTicket` |
+| POST | `/api/categories` | ready | `createCategory` |
+| PATCH | `/api/categories/:id` | ready | `updateCategory` |
 
 **GET /api/categories** - everyone signed in: active categories of active departments, sorted by
 department, kind, name. System Admin may add `?include_inactive=true`. Response
@@ -310,8 +336,10 @@ department, kind, name. System Admin may add `?include_inactive=true`. Response
 `{ category_id, title, description, impact?, extra_fields? }`. The server derives
 `ticket_department_id` from the category, priority = `default_priority` (staff may send `priority`),
 status = `Pending approval` if `needs_approval` else `New`; it sets both due times and logs `created`
-in one transaction. Anything else the browser sends (department, status) is ignored.
-Response **201** `{ ticket }` (the confirmation shows `HD-` + id and `first_response_due_at`).
+in one transaction. Anything else the browser sends (department, status, `requester_id`) is ignored:
+nobody raises a ticket for someone else in Sprint 1.
+Response **201** `{ message, reference: "HD-1054", ticket }` (the confirmation shows the reference and
+`first_response_due_at`).
 Errors: 400 missing/unknown/inactive category, title 1-255 chars, bad impact, and required extra
 fields: `{ "message": "Validation failed", "errors": [...], "field_errors": { "software_name": "Software name is required." } }`.
 Legacy bridge (remove with the new form): a body with only `department_id` goes to that department's
@@ -333,24 +361,32 @@ Seeded approval categories (New hardware, Software purchase, Access to a system 
 
 | Route | Page | Feature |
 | --- | --- | --- |
-| `/change-password` | `pages/Auth pages/ChangePasswordFirstLogin.tsx` | S1 (placeholder) |
-| `/system-admin/users`, `/system-admin/departments` | existing pages | S1 |
-| `/agent/queue/:view` (`my-open`, `unassigned`, `waiting`, `breached`, `resolved`) | `pages/agent/TicketQueue.tsx` (waiting and breached are placeholders) | S2, S3 |
-| `/agent/tickets/:id`, `/department-lead/tickets/:id` | `pages/tickets/TicketDetails.tsx` (staff) | S2, S3, S4 |
-| `/department-lead/all-tickets` | `pages/department lead/AllTickets.tsx` | S2, S3 |
+| `/change-password` | `pages/Auth pages/ChangePasswordFirstLogin.tsx` (forced while `must_change_password`) | S1 |
+| `/system-admin` | `pages/system admin/AdminOverview.tsx` (counts + set-up checklist) | S1 |
+| `/system-admin/users`, `/platform-admin/users` | `pages/users/Users.tsx` (UserSheet, deactivate/reactivate) | S1 |
+| `/system-admin/departments` | `pages/system admin/Departments.tsx` (AppointLeadDialog) | S1 |
+| `/agent` | `pages/agent/Dashboard.tsx` (KPIs, due soonest, next in queue) | S2, S3 |
+| `/agent/queue/:view` (`my-open`, `unassigned`, `waiting`, `breached`, `resolved`) | `pages/agent/TicketQueue.tsx` | S2, S3 |
+| `/agent/tickets/:id`, `/department-lead/tickets/:id` | `pages/tickets/TicketDetails.tsx` -> `components/tickets/StaffTicketView.tsx` (three panes) | S2, S3, S4 |
+| `/department-lead` | redirects to All tickets (the Sprint 1 lead home) | S2 |
+| `/department-lead/all-tickets` | `pages/department lead/AllTickets.tsx` (Breached tab first) | S2, S3 |
+| `/department-lead/dashboard` | `pages/department lead/LeadDashboard.tsx` (until S8) | S8 |
+| `/employee`, `/employee/my-requests` | `pages/employee/EmployeeDashboard.tsx` | S2 |
 | `/employee/submit-request` | `pages/employee/EmployeeSubmitRequest.tsx` (step 1, category tiles) | S5 |
-| `/employee/submit-request/:categoryId` | `pages/employee/NewRequestDetails.tsx` (step 2) | S5 (placeholder) |
-| `/employee/tickets/:id/submitted` | `pages/employee/RequestSubmitted.tsx` (step 3) | S5 (placeholder) |
-| `/employee/tickets/:id` | `pages/employee/RequestDetail.tsx` (shows TicketDetails until rebuilt) | S2, S4 |
-| `/system-admin/categories` | `pages/system admin/Categories.tsx` | S5 (placeholder) |
-| `/system-admin/sla` | `pages/system admin/SlaPolicies.tsx` | S3 (placeholder) |
+| `/employee/submit-request/:categoryId` | `pages/employee/NewRequestDetails.tsx` (step 2, extra fields) | S5 |
+| `/employee/tickets/:id/submitted` | `pages/employee/RequestSubmitted.tsx` (step 3) | S5 |
+| `/employee/tickets/:id` | `pages/employee/RequestDetail.tsx` (public timeline, actions, rating) | S2, S4 |
+| `/system-admin/categories` | `pages/system admin/Categories.tsx` (CategorySheet) | S5 |
+| `/system-admin/sla` | `pages/system admin/SlaPolicies.tsx` | S3 |
 
 Old addresses (`/agent/ticket-queue`, `/agent/assigned-tickets`, `/agent/resolved-tickets`,
 `/department-lead/ticket-queue`) redirect to the new ones.
 
 ## Demo data (Backend/scripts/seed.ts, `pnpm db:reset`)
 
-Password `Demo2026!` for every `@mzansifreight.co.za` login. 16 categories (13 active), 27 tickets
+Password `Demo2026!` for every `@mzansifreight.co.za` login. `karabo@` (HR agent) is seeded as
+invited (`must_change_password`, never signed in), so the Users table shows "Invited" and signing in
+opens `/change-password`. 16 categories (13 active), 27 tickets
 on every status and priority. Due times come from `sla_policy` relative to seed time: the IT
 Unassigned queue has exactly one breached ticket (HD-1050) and one due soon (HD-1044); Thabo's
 HD-1041 is breached. HD-1048 replays page 5 (Tue 10 Nov, first response met in 48 min, resolved in
