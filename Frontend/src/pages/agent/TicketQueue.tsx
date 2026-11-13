@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTickets } from "../../hooks/useTickets";
@@ -104,9 +104,10 @@ const TicketQueue = () => {
     return `${diffDays}d ago`;
   };
 
-  if (error && !loading) {
-    showToast(error, "error");
-  }
+  // Show fetch errors once per error (calling showToast during render loops forever)
+  useEffect(() => {
+    if (error) showToast(error, "error");
+  }, [error, showToast]);
 
   return (
     <div className="space-y-6">

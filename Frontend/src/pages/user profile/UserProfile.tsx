@@ -27,6 +27,8 @@ const UserProfile: React.FC = () => {
 
   const [successMessage, setSuccessMessage] = useState("");
   const [localError, setLocalError] = useState("");
+  // Only show UsersContext errors caused by this page's own save, never a background users-list fetch
+  const [hasSubmitted, setHasSubmitted] = useState(false);
 
   // Fetch / refresh user data from AuthContext on mount
   useEffect(() => {
@@ -57,6 +59,7 @@ const UserProfile: React.FC = () => {
     setLocalError("");
     setSuccessMessage("");
     clearError();
+    setHasSubmitted(true);
 
     const userId = user?.user_id || user?.id;
     if (!userId) {
@@ -110,7 +113,7 @@ const UserProfile: React.FC = () => {
     }
   };
 
-  const displayError = localError || userContextError;
+  const displayError = localError || (hasSubmitted ? userContextError : null);
   const initials = `${name?.[0] || user?.name?.[0] || ""}${surname?.[0] || user?.surname?.[0] || ""}`.toUpperCase() || "U";
 
   return (

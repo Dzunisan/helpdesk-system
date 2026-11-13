@@ -135,15 +135,18 @@ export const UsersProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, [allowedRoles]);
 
-  // Automatically fetch users when authenticated or when role changes
+  // Automatically fetch users when authenticated or when role changes.
+  // Only System Admin / Platform Admin may list users; for every other role the API answers 403,
+  // which used to surface as a false "no permission" banner on the profile page.
+  const canManageUsers = allowedRoles.length > 0;
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && canManageUsers) {
       fetchUsers();
     } else {
       setUsers([]);
       setSelectedUser(null);
     }
-  }, [isAuthenticated, authUser?.role, fetchUsers]);
+  }, [isAuthenticated, canManageUsers, authUser?.role, fetchUsers]);
 
   // 2. READ ONE - Get user by ID
   const getUserById = useCallback(async (id: string): Promise<User | null> => {

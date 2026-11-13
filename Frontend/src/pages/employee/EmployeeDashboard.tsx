@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTickets } from "../../hooks/useTickets";
 import { useToast } from "../../components/ui/Toast";
 import type { Ticket } from "../../types/ticket.types";
@@ -53,10 +53,10 @@ export default function EmployeeDashboard() {
     });
   };
 
-  // Show errors via toast
-  if (error && !loading) {
-    showToast(error, "error");
-  }
+  // Show fetch errors once per error (calling showToast during render loops forever)
+  useEffect(() => {
+    if (error) showToast(error, "error");
+  }, [error, showToast]);
 
   return (
     <div className="min-h-screen">

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { useTickets } from "../../hooks/useTickets";
@@ -102,9 +102,13 @@ const AgentDashboard = () => {
   const isLoading = activeTab === "unassigned" ? deptLoading : myLoading;
   const displayTickets = getDisplayTickets();
 
-  // Show error toasts
-  if (myError && !myLoading) showToast(myError, "error");
-  if (deptError && !deptLoading) showToast(deptError, "error");
+  // Show fetch errors once per error (calling showToast during render loops forever)
+  useEffect(() => {
+    if (myError) showToast(myError, "error");
+  }, [myError, showToast]);
+  useEffect(() => {
+    if (deptError) showToast(deptError, "error");
+  }, [deptError, showToast]);
 
   return (
     <div className="min-h-screen p-6">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export type ToastType = "success" | "error" | "warning" | "info";
 
@@ -113,15 +113,17 @@ export const useToast = () => {
     type: ToastType;
   } | null>(null);
 
-  const showToast = (message: string, type: ToastType = "info") => {
+  // Stable identities, so pages can call showToast from a useEffect without re-running it
+  const showToast = useCallback((message: string, type: ToastType = "info") => {
     setToast({ message, type });
-  };
+  }, []);
+  const hideToast = useCallback(() => setToast(null), []);
 
   const toastElement = toast ? (
     <Toast
       message={toast.message}
       type={toast.type}
-      onClose={() => setToast(null)}
+      onClose={hideToast}
     />
   ) : null;
 
