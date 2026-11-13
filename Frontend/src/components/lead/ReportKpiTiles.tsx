@@ -14,6 +14,8 @@ interface ReportKpiTilesProps {
    * who sees aggregates only and never ticket lists.
    */
   linkBase?: string;
+  /** Where the CSAT tile goes, e.g. "#recent-feedback" (the dashboard's Recent feedback card) */
+  csatTo?: string;
   className?: string;
 }
 
@@ -24,7 +26,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
  * breached, avg first response, avg resolution, CSAT + reopen rate. Shared by the lead
  * dashboard and the System Admin overview. Two per row on phones, three on laptops, six on wide screens.
  */
-export default function ReportKpiTiles({ summary: s, loading, linkBase, className }: ReportKpiTilesProps) {
+export default function ReportKpiTiles({ summary: s, loading, linkBase, csatTo, className }: ReportKpiTilesProps) {
   const link = (tab: string) => (linkBase ? `${linkBase}/all-tickets?tab=${tab}` : undefined);
   const busy = loading || !s;
 
@@ -95,6 +97,7 @@ export default function ReportKpiTiles({ summary: s, loading, linkBase, classNam
             .filter(Boolean)
             .join(" · ")
         }
+        to={csatTo}
       />
     </section>
   );

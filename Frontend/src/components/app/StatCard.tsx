@@ -53,8 +53,8 @@ export default function StatCard({ label, value, hint, tone = "default", icon: I
   const t = TONE[tone];
   const body = (
     <>
-      <div className="flex items-center justify-between gap-2">
-        <span className={cn("truncate text-sm font-medium", t.label)}>{label}</span>
+      <div className="flex items-start justify-between gap-2">
+        <span className={cn("min-w-0 text-sm leading-5 font-medium", t.label)}>{label}</span>
         {Icon && <Icon aria-hidden className={cn("size-4 shrink-0", t.label)} />}
       </div>
       {loading ? (
@@ -64,8 +64,8 @@ export default function StatCard({ label, value, hint, tone = "default", icon: I
         </div>
       ) : (
         <div className="flex flex-col gap-1">
-          <span className={cn("text-3xl leading-9 font-semibold tracking-tight tabular-nums", t.value)}>{value}</span>
-          {hint && <span className={cn("truncate text-xs tabular-nums", t.hint)}>{hint}</span>}
+          <span className={cn("text-2xl leading-8 font-semibold tracking-tight whitespace-nowrap tabular-nums sm:text-3xl sm:leading-9", t.value)}>{value}</span>
+          {hint && <span className={cn("line-clamp-2 text-xs tabular-nums", t.hint)}>{hint}</span>}
         </div>
       )}
     </>

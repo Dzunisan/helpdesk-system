@@ -14,6 +14,7 @@ import EmptyState from "@/components/app/EmptyState";
 import ErrorState from "@/components/app/ErrorState";
 import { ListBody, ListCaption, ListCard, ListHeaderRow, ListRow, LoadingRows } from "@/components/app/ListCard";
 import LoadBar from "@/components/lead/LoadBar";
+import RecentFeedback, { RECENT_FEEDBACK_ID } from "@/components/lead/RecentFeedback";
 import { loadOf, minutesOrDash, pctOrDash, type WorkloadRowWithExtras } from "@/components/lead/reportFormat";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -118,6 +119,7 @@ export default function TeamAgents() {
                     : "No ratings yet"
                   : "Couldn't load"
               }
+              to={`#${RECENT_FEEDBACK_ID}`}
             />
           </section>
 
@@ -190,6 +192,9 @@ export default function TeamAgents() {
               </Button>
             </Alert>
           )}
+
+          {/* S10 (p.19 step 6): the newest ratings and comments; the Team CSAT tile scrolls here */}
+          <RecentFeedback days={30} ticketBase={BASE} />
         </>
       )}
     </div>

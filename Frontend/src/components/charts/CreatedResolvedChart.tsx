@@ -24,7 +24,7 @@ export default function CreatedResolvedChart({ days, className }: { days: DailyP
 
   return (
     <ChartContainer config={CONFIG} className={cn("aspect-auto h-56 w-full", className)}>
-      <BarChart data={days} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} barGap={2} barCategoryGap="22%">
+      <BarChart data={days} margin={{ top: 4, right: 16, bottom: 0, left: 0 }} barGap={2} barCategoryGap="22%">
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
         <XAxis
           dataKey="date"

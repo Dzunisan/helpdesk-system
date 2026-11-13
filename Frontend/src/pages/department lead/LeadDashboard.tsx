@@ -21,6 +21,7 @@ import UserAvatar from "@/components/app/UserAvatar";
 import { ListBody, ListRow } from "@/components/app/ListCard";
 import ReportKpiTiles from "@/components/lead/ReportKpiTiles";
 import ReportDaysSelect from "@/components/lead/ReportDaysSelect";
+import RecentFeedback, { RECENT_FEEDBACK_ID } from "@/components/lead/RecentFeedback";
 import { nextDue, type ReportDays, type SummaryWithExtras } from "@/components/lead/reportFormat";
 import CreatedResolvedChart, { CreatedResolvedLegend } from "@/components/charts/CreatedResolvedChart";
 import WorkloadBars, { WorkloadLegend } from "@/components/charts/WorkloadBars";
@@ -70,7 +71,7 @@ export default function LeadDashboard() {
       {summary.error && !s ? (
         <ErrorState title="Couldn't load the department numbers" description={summary.error.message} onRetry={summary.reload} />
       ) : (
-        <ReportKpiTiles summary={s} loading={summary.loading} linkBase={BASE} />
+        <ReportKpiTiles summary={s} loading={summary.loading} linkBase={BASE} csatTo={`#${RECENT_FEEDBACK_ID}`} />
       )}
 
       {/* Phones: what is waiting on the lead comes straight after the numbers */}
@@ -137,6 +138,9 @@ export default function LeadDashboard() {
               </>
             )}
           </SectionCard>
+
+          {/* S10: the CSAT tile scrolls here (p.19 step 6, p.54) */}
+          <RecentFeedback days={days} ticketBase={BASE} />
         </div>
 
         <div className="flex min-w-0 flex-col gap-6 lg:col-span-2">
