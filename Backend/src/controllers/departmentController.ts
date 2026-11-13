@@ -156,6 +156,16 @@ export const update = async (req: Request, res: Response) => {
 
   try {
     const lead = leadId !== undefined ? (leadId && String(leadId).trim() !== "" ? String(leadId).trim() : null) : undefined;
+    if (status === "inactive") {
+      const current = await departmentService.getDepartmentById(Number(idParam));
+      if (!current) {
+        return res.status(404).json({ message: "Department not found." });
+      }
+      const problem = current.status === "active" ? await departmentService.deactivationProblem(Number(idParam)) : null;
+      if (problem) {
+        return res.status(409).json({ message: problem });
+      }
+    }
     if (lead) {
       if (!(await departmentService.getDepartmentById(Number(idParam)))) {
         return res.status(404).json({ message: "Department not found." });
@@ -188,11 +198,17 @@ export const remove = async (req: Request, res: Response) => {
   }
 
   try {
-    const department = await departmentService.softDeleteDepartment(Number(idParam));
-    if (!department) {
+    const existing = await departmentService.getDepartmentById(Number(idParam));
+    if (!existing) {
       return res.status(404).json({ message: "Department not found." });
     }
-    return res.status(200).json({ message: "Department deleted.", department });
+    // Nothing is deleted: DELETE deactivates, and only a department with no live work or people
+    const problem = await departmentService.deactivationProblem(Number(idParam));
+    if (problem) {
+      return res.status(409).json({ message: problem });
+    }
+    const department = await departmentService.softDeleteDepartment(Number(idParam));
+    return res.status(200).json({ message: "Department deactivated.", department });
   } catch (error) {
     return handleError(res, error);
   }

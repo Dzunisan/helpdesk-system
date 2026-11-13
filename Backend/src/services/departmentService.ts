@@ -116,6 +116,28 @@ export const updateDepartment = async (
   });
 };
 
+/**
+ * Why this department can't be deactivated yet, or null. A department with live work (any ticket not
+ * Closed or Cancelled) or active people would strand them: their queue disappears and nobody can be
+ * routed there. Move the people and finish the tickets first.
+ */
+export const deactivationProblem = async (id: number): Promise<string | null> => {
+  const { rows } = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::int FROM ticket
+         WHERE ticket_department_id = $1 AND deleted_at IS NULL
+           AND ticket_status NOT IN ('Closed', 'Cancelled')) AS live_tickets,
+       (SELECT COUNT(*)::int FROM users WHERE department_id = $1 AND active) AS active_members`,
+    [id]
+  );
+  const { live_tickets: tickets, active_members: members } = rows[0];
+  const parts: string[] = [];
+  if (tickets > 0) parts.push(`${tickets} ticket${tickets === 1 ? "" : "s"} still in progress`);
+  if (members > 0) parts.push(`${members} active ${members === 1 ? "person" : "people"}`);
+  if (parts.length === 0) return null;
+  return `This department has ${parts.join(" and ")}. Move them or finish the work before you deactivate it.`;
+};
+
 export const softDeleteDepartment = async (id: number) => {
   const result = await pool.query(
     "UPDATE department SET status = 'inactive', updated_at = NOW() WHERE department_id = $1 RETURNING *",

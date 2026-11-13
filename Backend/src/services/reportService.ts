@@ -1,5 +1,6 @@
 import { pool } from "../config/database";
 import { ACTIVE_STATUSES } from "../types/ticket.types";
+import { SQL_IS_BREACHED } from "./sla";
 
 // Statuses that still need work. Kept here so every count agrees on what "open" means.
 const OPEN_STATUSES: string[] = ACTIVE_STATUSES;
@@ -12,6 +13,8 @@ export interface AdminOverviewDepartment {
   lead_name: string | null;
   agents: number;
   open_tickets: number;
+  /** Open tickets past a due time (the same rule as the queues' Breached view) */
+  breached_tickets: number;
 }
 
 export interface AdminOverview {
@@ -21,6 +24,7 @@ export interface AdminOverview {
     active_departments: number;
     inactive_departments: number;
     open_tickets: number;
+    breached_tickets: number;
   };
   departments: AdminOverviewDepartment[];
   checklist: {
@@ -47,9 +51,10 @@ export const getAdminOverview = async (): Promise<AdminOverview> => {
        FROM department`
     ),
     pool.query(
-      `SELECT COUNT(*)::int AS total
-       FROM ticket
-       WHERE deleted_at IS NULL AND ticket_status::text = ANY($1)`,
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE ${SQL_IS_BREACHED})::int AS breached
+       FROM ticket t
+       WHERE t.deleted_at IS NULL AND t.ticket_status::text = ANY($1)`,
       [OPEN_STATUSES]
     ),
     pool.query(
@@ -63,7 +68,12 @@ export const getAdminOverview = async (): Promise<AdminOverview> => {
               (SELECT COUNT(*)::int FROM ticket t
                 WHERE t.ticket_department_id = d.department_id
                   AND t.deleted_at IS NULL
-                  AND t.ticket_status::text = ANY($1)) AS open_tickets
+                  AND t.ticket_status::text = ANY($1)) AS open_tickets,
+              (SELECT COUNT(*)::int FROM ticket t
+                WHERE t.ticket_department_id = d.department_id
+                  AND t.deleted_at IS NULL
+                  AND t.ticket_status::text = ANY($1)
+                  AND ${SQL_IS_BREACHED}) AS breached_tickets
        FROM department d
        LEFT JOIN users l ON l.user_id = d.lead_id
        ORDER BY d.department_name`,
@@ -87,6 +97,7 @@ export const getAdminOverview = async (): Promise<AdminOverview> => {
       active_departments: departments.rows[0].active,
       inactive_departments: departments.rows[0].inactive,
       open_tickets: openTickets.rows[0].total,
+      breached_tickets: openTickets.rows[0].breached,
     },
     departments: departmentRows,
     checklist: {
