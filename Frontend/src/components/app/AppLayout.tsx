@@ -297,7 +297,7 @@ function StaffLayout({ user, children }: { user: User; children: ReactNode }) {
           <SidebarTrigger aria-label="Open navigation" />
           <Brand to={homePathFor(user.role)} />
         </header>
-        <div className="min-w-0 flex-1 px-6 py-8 sm:px-8 sm:py-10 lg:px-12">{children}</div>
+        <div className="min-w-0 flex-1 px-6 py-8 sm:px-10 sm:py-10 lg:px-16 xl:px-24">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );
@@ -333,7 +333,7 @@ function PortalLayout({ user, children }: { user: User; children: ReactNode }) {
   return (
     <div className="min-h-svh bg-muted/40">
       <header className="sticky top-0 z-10 border-b border-border bg-background">
-        <div className="flex h-16 items-center gap-8 px-6 sm:px-8 lg:px-12">
+        <div className="flex h-16 items-center gap-8 px-6 sm:px-10 lg:px-16 xl:px-24">
           <Brand to="/employee" />
           <nav aria-label="Main" className="hidden items-center gap-1 sm:flex">
             {navLinks}
@@ -361,7 +361,7 @@ function PortalLayout({ user, children }: { user: User; children: ReactNode }) {
           {navLinks}
         </nav>
       </header>
-      <main className="w-full px-6 py-8 sm:px-8 sm:py-10 lg:px-12">{children}</main>
+      <main className="w-full px-6 py-8 sm:px-10 sm:py-10 lg:px-16 xl:px-24">{children}</main>
     </div>
   );
 }
