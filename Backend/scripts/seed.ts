@@ -49,8 +49,9 @@ const users: U[] = [
   { id: 1011, name: "Megan", surname: "Fourie", email: "megan", role: "Agent", dept: 1 },
   { id: 1012, name: "Nomvula", surname: "Sithole", email: "nomvula", role: "Department Lead", dept: 2 },
   { id: 1013, name: "Priya", surname: "Naidoo", email: "priya", role: "Agent", dept: 2 },
-  { id: 1014, name: "Kagiso", surname: "Molefe", email: "kagiso", role: "Department Lead", dept: 3 },
-  { id: 1015, name: "Bongani", surname: "Zulu", email: "bongani", role: "Agent", dept: 3 },
+  { id: 1014, name: "Kagiso", surname: "Molefe", email: "kagiso", role: "Agent", dept: 3 },
+  // Facilities lead: the S12 move lands in his department and he is notified (p.30 step 8)
+  { id: 1015, name: "Bongani", surname: "Zulu", email: "bongani", role: "Department Lead", dept: 3 },
   { id: 1016, name: "Bongani", surname: "Mabaso", email: "bongani.mabaso", role: "Department Lead", dept: 4 },
   { id: 1017, name: "Fatima", surname: "Ismail", email: "fatima", role: "Agent", dept: 4 },
   { id: 1018, name: "Busisiwe", surname: "Mkhize", email: "busisiwe", role: "System Admin", dept: null },
@@ -63,7 +64,7 @@ const users: U[] = [
   { id: 1024, name: "Dawid", surname: "Pretorius", email: "dawid", role: "Employee", dept: 1, active: false },
 ];
 
-const leads: Record<number, number> = { 1: 1003, 2: 1012, 3: 1014, 4: 1016 };
+const leads: Record<number, number> = { 1: 1003, 2: 1012, 3: 1015, 4: 1016 };
 
 // SLA targets per priority (page 12), minutes
 const slaPolicies = [
@@ -176,25 +177,27 @@ const after = (date: Date, mins: number) => new Date(date.getTime() + mins * MIN
 const sast = (hhmm: string) => new Date(`2026-11-10T${hhmm}:00+02:00`);
 
 // SLA states depend on "now" (seed time). With the policies above:
-//   Unassigned IT queue: HD-1050 breached (the one rose row), HD-1044 due soon, the rest on track
+//   Unassigned IT queue: HD-1050 breached (the one rose row), the rest on track
 //   Thabo's open work: HD-1041 breached, HD-1045 on track, HD-1031 waiting on the employee
+// Every other live ticket has at least ~3.5 hours before a clock runs out, so a reset on the
+// morning of the demo still shows exactly two breaches and one "Run jobs now" alert (p.30).
 const tickets: T[] = [
   // ----- IT Support: unassigned queue (New) -----
   // Just past its 60-minute first response and not yet alerted: "Run jobs now" alerts Thandi (p.30)
   { id: 1050, title: "Laptop screen cracked after a fall", description: "Dropped my laptop at the Durban depot, the screen is cracked in the corner and half of it is black.",
     cat: 1, priority: "High", status: "New", requester: 1021, created: minsAgo(70), impact: "blocks_me" },
   { id: 1044, title: "3rd floor printer in Rosebank keeps jamming", description: "The HP on the 3rd floor jams on every second page. We have a board pack to print today.",
-    cat: 5, priority: "Normal", status: "New", requester: 1022, created: minsAgo(200), impact: "slows_me_down" },
+    cat: 5, priority: "Normal", status: "New", requester: 1022, created: minsAgo(25), impact: "slows_me_down" },
   { id: 1046, title: "New starter: laptop & accounts for Sizwe Ndlovu", description: "Sizwe starts in HR on 17 Nov and needs a laptop, email and VPN set up before then.",
-    cat: 9, priority: "Normal", status: "New", requester: 1012, created: hoursAgo(2), impact: "minor" },
+    cat: 9, priority: "Normal", status: "New", requester: 1012, created: minsAgo(15), impact: "minor" },
   { id: 1043, title: "Teams camera not working in Boardroom 2", description: "The room camera shows a black screen in every Teams meeting since this morning.",
-    cat: 4, priority: "Normal", status: "New", requester: 1017, created: hoursAgo(1), impact: "slows_me_down" },
+    cat: 4, priority: "Normal", status: "New", requester: 1017, created: minsAgo(15), impact: "slows_me_down" },
   { id: 1035, title: "Wi-Fi drops in the Durban office canteen", description: "Signal disappears near the canteen windows. Fine everywhere else in the building.",
-    cat: 2, priority: "Low", status: "New", requester: 1004, created: hoursAgo(5), impact: "minor" },
+    cat: 2, priority: "Low", status: "New", requester: 1004, created: hoursAgo(1), impact: "minor" },
   { id: 1039, title: "Monitor flickers when laptop is docked", description: "My second screen flickers every few seconds when the laptop is in the dock.",
-    cat: 1, priority: "Low", status: "New", requester: 1022, created: minsAgo(330), impact: "slows_me_down" },
+    cat: 1, priority: "Low", status: "New", requester: 1022, created: minsAgo(90), impact: "slows_me_down" },
   { id: 1037, title: "Aircon dripping onto my desk", description: "Water is dripping from the aircon onto my desk on the 3rd floor in Rosebank. The carpet is soaked.",
-    cat: 9, priority: "Normal", status: "New", requester: 1022, created: hoursAgo(1), impact: "blocks_me" }, // misfiled in IT on purpose (S12 demo)
+    cat: 9, priority: "Normal", status: "New", requester: 1022, created: minsAgo(20), impact: "blocks_me" }, // misfiled in IT on purpose (S12 demo)
 
   // ----- IT Support: owned work -----
   { id: 1045, title: "Can't log in to Sage after password change", description: "Sage 300 says invalid credentials since I changed my Windows password this morning.",
@@ -204,9 +207,9 @@ const tickets: T[] = [
   { id: 1031, title: "Dock not detecting second screen", description: "Only the laptop screen works when docked; the second monitor says no signal.",
     cat: 1, priority: "Low", status: "Waiting on employee", requester: 1021, assignee: 1002, created: hoursAgo(48), claimed: hoursAgo(47), waiting: hoursAgo(46), impact: "slows_me_down" },
   { id: 1033, title: "Sage server down for the Durban branch", description: "Nobody in the Durban branch can open Sage. Month-end invoicing has stopped.",
-    cat: 4, priority: "Urgent", status: "Open", requester: 1016, assignee: 1010, created: minsAgo(200), claimed: minsAgo(195), impact: "blocks_me" },
+    cat: 4, priority: "Urgent", status: "Open", requester: 1016, assignee: 1010, created: minsAgo(30), claimed: minsAgo(28), impact: "blocks_me" },
   { id: 1036, title: "Power BI Pro licence", description: "I need Power BI Pro to share the fleet dashboard with the regional managers.",
-    cat: 7, priority: "Normal", status: "Open", requester: 1004, assignee: 1010, created: hoursAgo(20), approved: { by: 1003, at: hoursAgo(19.5) }, claimed: hoursAgo(19), impact: "slows_me_down",
+    cat: 7, priority: "Normal", status: "Open", requester: 1004, assignee: 1010, created: hoursAgo(16), approved: { by: 1003, at: hoursAgo(15.5) }, claimed: hoursAgo(15), impact: "slows_me_down",
     extra: { software_name: "Power BI Pro", cost_per_year: 2400, reason: "Share the fleet dashboard with the regional managers.", needed_by: "2026-11-20" } },
 
   // ----- IT Support: waiting for the lead's approval (S6, Sprint 2) -----
@@ -239,7 +242,7 @@ const tickets: T[] = [
 
   // ----- Human Resources (private to HR: Thabo gets 404) -----
   { id: 1053, title: "October payslip is missing my travel allowance", description: "The R1 200 travel allowance isn't on my October payslip.",
-    cat: 10, priority: "Normal", status: "New", requester: 1001, created: minsAgo(210), impact: "minor", extra: { payslip_month: "October 2026" } },
+    cat: 10, priority: "Normal", status: "New", requester: 1001, created: minsAgo(20), impact: "minor", extra: { payslip_month: "October 2026" } },
   { id: 1049, title: "Employment letter for bond application", description: "The bank needs a letter confirming my salary and start date.",
     cat: 11, priority: "Low", status: "Open", requester: 1020, assignee: 1013, created: hoursAgo(20), claimed: hoursAgo(18), impact: "minor",
     extra: { purpose: "Home loan application at FNB" } },
@@ -248,14 +251,14 @@ const tickets: T[] = [
 
   // ----- Facilities -----
   { id: 1051, title: "Parking bay at Rosebank", description: "I need a parking bay from 1 December.",
-    cat: 14, priority: "Low", status: "New", requester: 1001, created: hoursAgo(7), impact: "minor", extra: { location: "Rosebank" } },
+    cat: 14, priority: "Low", status: "New", requester: 1001, created: hoursAgo(1), impact: "minor", extra: { location: "Rosebank" } },
   { id: 1038, title: "Broken chair on the 2nd floor", description: "The gas lift on my chair is gone; it sinks to the floor.",
-    cat: 13, priority: "Normal", status: "Open", requester: 1021, assignee: 1015, created: hoursAgo(9), claimed: hoursAgo(8), impact: "slows_me_down",
+    cat: 13, priority: "Normal", status: "Open", requester: 1021, assignee: 1014, created: hoursAgo(9), claimed: hoursAgo(8), impact: "slows_me_down",
     extra: { location: "Rosebank, 2nd floor" } },
 
   // ----- Finance -----
   { id: 1028, title: "Bidvest invoice not paid", description: "Bidvest says invoice INV-88213 from September is still unpaid.",
-    cat: 16, priority: "Normal", status: "New", requester: 1022, created: hoursAgo(2), impact: "minor", extra: { invoice_number: "INV-88213", supplier: "Bidvest" } },
+    cat: 16, priority: "Normal", status: "New", requester: 1022, created: minsAgo(30), impact: "minor", extra: { invoice_number: "INV-88213", supplier: "Bidvest" } },
   { id: 1042, title: "Claim for toll fees, Durban trip", description: "Toll receipts attached for the 4 Nov Durban trip.",
     cat: 15, priority: "Low", status: "Cancelled", requester: 1020, created: hoursAgo(96), cancelled: hoursAgo(95), impact: "minor",
     extra: { amount: 486, expense_date: "2026-11-04" } },
@@ -273,8 +276,8 @@ const comments: Cm[] = [
   { ticket: 1045, author: 1002, body: "Sage keeps its own copy of the password. Asking Megan to reset it in Sage Admin.", internal: true, at: minsAgo(158) },
   { ticket: 1041, author: 1002, body: "Hi Lerato, please remove and re-add the account in the iOS Mail settings, then let me know.", at: hoursAgo(28.5) },
   { ticket: 1031, author: 1002, body: "Hi Pieter, which dock model is it? The label is underneath.", at: hoursAgo(46) },
-  { ticket: 1033, author: 1010, body: "We're on it: the Durban Sage service stopped after last night's patch. Restarting it now.", at: minsAgo(190) },
-  { ticket: 1036, author: 1010, body: "Approved by Thandi. Buying the licence through the Microsoft portal today.", at: hoursAgo(18.5) },
+  { ticket: 1033, author: 1010, body: "We're on it: the Durban Sage service stopped after last night's patch. Restarting it now.", at: minsAgo(25) },
+  { ticket: 1036, author: 1010, body: "Approved by Thandi. Buying the licence through the Microsoft portal today.", at: hoursAgo(14.5) },
   { ticket: 1029, author: 1010, body: "Hi Lerato, I have a spare dock in the store room. I'll bring it to your desk in the morning.", at: hoursAgo(70.5) },
   { ticket: 1029, author: 1010, body: "Swapped your dock for a new Dell WD19S. Both screens tested at your desk.", at: hoursAgo(50) },
   { ticket: 1029, author: 1010, body: "Collecting the old dock for e-waste on Friday.", internal: true, at: hoursAgo(49.5) },
@@ -285,7 +288,7 @@ const comments: Cm[] = [
   { ticket: 1027, author: 1002, body: "Mailbox created. All five dispatchers can see it in Outlook now.", at: hoursAgo(100) },
   { ticket: 1049, author: 1013, body: "Hi Johan, the letter will be ready tomorrow. Which branch is the bank?", at: hoursAgo(17.5) },
   { ticket: 1034, author: 1013, body: "Hi Sizwe, did you also take a half day on 3 November? Please confirm.", at: hoursAgo(4) },
-  { ticket: 1038, author: 1015, body: "A new chair is on its way from the Midrand store.", at: hoursAgo(7.5) },
+  { ticket: 1038, author: 1014, body: "A new chair is on its way from the Midrand store.", at: hoursAgo(7.5) },
 ];
 
 type Ev = { ticket: number; actor: number | null; type: string; from?: string | null; to?: string | null; note?: string | null; internal?: boolean; at: Date };
@@ -446,6 +449,10 @@ const macros: Macro[] = [
 // ---------- seed ----------
 
 async function seed(c: PoolClient) {
+  // p.30 step 10: HD-1050's alert waits for "Run jobs now" (see migrations/006_app_setting.sql)
+  await c.query(`DELETE FROM app_setting WHERE key = 'hold_breach_alerts_for_demo'`);
+  await c.query(`INSERT INTO app_setting (key, value) VALUES ('hold_breach_alerts_for_demo', 'true'::jsonb)`);
+
   await c.query(
     `TRUNCATE attachment_blob, attachment, outbox, notification, notification_pref, canned_response, ticket_approval,
               ticket_event, ticket_feedback, internal_note, comment, ticket, request_type, category, sla_policy, users, department
@@ -586,9 +593,9 @@ async function seed(c: PoolClient) {
   const { rows: alerted } = await c.query(
     `UPDATE ticket t SET breach_notified_at = LEAST(t.first_response_due_at, t.resolution_due_at) + interval '5 minutes'
      WHERE t.ticket_status IN ('New', 'Open', 'Waiting on employee') AND t.ticket_id <> 1050
-       AND (t.first_response_due_at < COALESCE(t.first_response_at, now()) OR t.resolution_due_at < now())
+       AND ((t.first_response_at IS NULL AND t.first_response_due_at < now()) OR t.resolution_due_at < now())
      RETURNING t.ticket_id, t.title, t.assignee_id, t.ticket_department_id, t.breach_notified_at,
-               (t.first_response_due_at < COALESCE(t.first_response_at, now())) AS first_breached`,
+               (t.first_response_at IS NULL AND t.first_response_due_at < now()) AS first_breached`,
   );
   type N = { user: number | string; ticket: number | null; actor: number | null; type: string; title: string; body?: string | null; at: Date; read?: boolean };
   const notes: N[] = [];

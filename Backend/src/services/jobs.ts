@@ -44,7 +44,7 @@ export const raiseBreachAlerts = async (): Promise<number> =>
       assignee_name: string | null;
     }>(
       `SELECT t.ticket_id, t.title, t.assignee_id::text AS assignee_id, d.lead_id::text AS lead_id,
-              (t.first_response_due_at < COALESCE(t.first_response_at, t.resolved_at, now())) AS first_breached,
+              COALESCE(t.first_response_at IS NULL AND t.first_response_due_at < now(), false) AS first_breached,
               NULLIF(TRIM(CONCAT(a.name, ' ', a.surname)), '') AS assignee_name
        FROM ticket t
        JOIN department d ON d.department_id = t.ticket_department_id
@@ -67,13 +67,37 @@ export const raiseBreachAlerts = async (): Promise<number> =>
     return rows.length;
   });
 
-/** Runs every job once (see the header) and says what it did */
-export const runJobs = async (): Promise<JobsResult> => {
-  const closed = await closeExpiredResolved();
-  const breachAlerts = await raiseBreachAlerts();
+/** Set only by the demo seed (migrations/006_app_setting.sql): on-read runs leave breach alerts alone */
+const DEMO_HOLD = "hold_breach_alerts_for_demo";
+
+/**
+ * Runs every job once (see the header) and says what it did.
+ * @param source "read" = a queue or dashboard load (runJobsSoon); "admin" = Run jobs now or cron.
+ *   While the demo seed's hold is set, a "read" run skips breach alerts so the seeded overdue ticket
+ *   alerts on "Run jobs now" (p.30 step 10); the first "admin" run lifts the hold for good.
+ */
+export const runJobs = async (source: "read" | "admin" = "admin"): Promise<JobsResult> => {
+  const closed = await closeExpiredResolved(undefined, { sendNow: false });
+  let breachAlerts = 0;
+  if (source === "admin") {
+    await pool.query(`DELETE FROM app_setting WHERE key = $1`, [DEMO_HOLD]).catch(() => undefined);
+    breachAlerts = await raiseBreachAlerts();
+  } else if (!(await demoHoldSet())) {
+    breachAlerts = await raiseBreachAlerts();
+  }
   const emails = await sendPending({ retryFailed: true });
   lastRun = Date.now();
   return { closed, breach_alerts: breachAlerts, emails, ran_at: new Date().toISOString() };
+};
+
+/** True while the demo seed's hold is in place (false when the table or row doesn't exist) */
+const demoHoldSet = async (): Promise<boolean> => {
+  try {
+    const { rowCount } = await pool.query(`SELECT 1 FROM app_setting WHERE key = $1`, [DEMO_HOLD]);
+    return (rowCount ?? 0) > 0;
+  } catch {
+    return false;
+  }
 };
 
 /** Queue and dashboard loads run the jobs at most this often */
@@ -89,7 +113,7 @@ export const runJobsSoon = (): void => {
   if (inFlight || Date.now() - lastRun < JOBS_THROTTLE_MS) return;
   inFlight = true;
   lastRun = Date.now();
-  runJobs()
+  runJobs("read")
     .catch((error) => console.error("[jobs] runJobs failed:", error))
     .finally(() => {
       inFlight = false;

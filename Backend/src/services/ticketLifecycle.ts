@@ -149,7 +149,10 @@ const snippet = (text: string | null | undefined) => (text ? text.replace(/\s+/g
  * notification) in the same transaction. Call before any read that shows status: list, detail,
  * actions, timeline. The jobs runner (services/jobs.ts) calls it too.
  */
-export const closeExpiredResolved = async (ticketId?: number): Promise<number> => {
+export const closeExpiredResolved = async (
+  ticketId?: number,
+  { sendNow = true }: { sendNow?: boolean } = {}
+): Promise<number> => {
   const params: unknown[] = [REOPEN_WINDOW_DAYS, `Closed automatically ${REOPEN_WINDOW_DAYS} days after it was resolved.`];
   if (ticketId !== undefined) params.push(ticketId);
   // Cheap check first: most reads find nothing to close and never open a transaction
@@ -185,7 +188,8 @@ export const closeExpiredResolved = async (ticketId?: number): Promise<number> =
     for (const row of rows) await requestCsat(client, row.ticket_id);
     return rows.map((r) => r.ticket_id);
   });
-  if (closedIds.length) sendPendingSoon();
+  // The jobs runner sends (and counts) the survey emails itself: sendNow false
+  if (closedIds.length && sendNow) sendPendingSoon();
   return closedIds.length;
 };
 

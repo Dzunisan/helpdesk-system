@@ -54,6 +54,8 @@ const mark = (id: string, status: OutboxStatus, error: string | null = null) =>
 
 let running: Promise<SendSummary> | null = null;
 let again = false;
+/** A waiting caller asked for FAILED rows to be retried: the busy run picks it up on its next pass */
+let retryWanted = false;
 
 const drain = async (retryFailed: boolean): Promise<SendSummary> => {
   const summary: SendSummary = { sent: 0, failed: 0, simulated: 0 };
@@ -99,17 +101,21 @@ const drain = async (retryFailed: boolean): Promise<SendSummary> => {
  */
 export const sendPending = async ({ retryFailed = false } = {}): Promise<SendSummary> => {
   if (running) {
+    // The busy run does one more pass for us, and retries FAILED rows if we asked for that
     again = true;
+    if (retryFailed) retryWanted = true;
     await running.catch(() => undefined);
     if (running) return running;
   }
   const run = (async () => {
     const total: SendSummary = { sent: 0, failed: 0, simulated: 0 };
-    let retry = retryFailed;
+    let retry = retryFailed || retryWanted;
+    retryWanted = false;
     do {
       again = false;
       const s = await drain(retry);
-      retry = false;
+      retry = retryWanted;
+      retryWanted = false;
       total.sent += s.sent;
       total.failed += s.failed;
       total.simulated += s.simulated;
