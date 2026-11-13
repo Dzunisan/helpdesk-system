@@ -90,7 +90,7 @@ const SignInPage = () => {
 
   // A session already exists: go straight to the role's home
   if (user) {
-    return <Navigate to={homePathFor(user.role)} replace />;
+    return <Navigate to={user.must_change_password ? "/change-password" : homePathFor(user.role)} replace />;
   }
 
   const handleSignIn = async (e: FormEvent) => {
@@ -105,7 +105,8 @@ const SignInPage = () => {
       );
       const signedIn = response.data.user;
       login(signedIn);
-      navigate(homePathFor(signedIn.role), { replace: true });
+      // A temporary password must be replaced before anything else (S1)
+      navigate(signedIn.must_change_password ? "/change-password" : homePathFor(signedIn.role), { replace: true });
     } catch {
       // One generic message for any failure: never reveal whether the account exists or is inactive
       setFailed(true);
