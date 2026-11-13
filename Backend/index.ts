@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import { testDbConnection } from "./src/config/database";
+import { isEmailConfigured } from "./src/utils/smtp";
 import authRoutes from "./src/routes/authRoutes";
 import userRoutes from "./src/routes/userRoutes";
 import ticketRoutes from "./src/routes/ticketRoutes";
@@ -45,6 +46,11 @@ const startServer = async () => {
 
   app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    console.log(
+      isEmailConfigured()
+        ? `Email: sending through ${process.env.EMAIL_HOST} as ${process.env.EMAIL_USER}`
+        : "Email: not configured (EMAIL_HOST, EMAIL_USER, EMAIL_PASS), so emails are simulated",
+    );
   });
 };
 

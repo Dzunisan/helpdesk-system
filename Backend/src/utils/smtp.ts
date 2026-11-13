@@ -19,6 +19,20 @@ export const getTransport = (): Transporter => {
             secure: process.env.EMAIL_SECURE === "true",
             auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
         });
+        // One log line per email, success or failure, so the backend terminal shows every send
+        const send = transporter.sendMail.bind(transporter);
+        transporter.sendMail = (async (options: Parameters<typeof send>[0]) => {
+            const label = `"${options.subject}" to ${String(options.to)}`;
+            try {
+                const info = await send(options);
+                console.log(`[email] Sent ${label} via ${process.env.EMAIL_HOST} (${info.response})`);
+                return info;
+            } catch (error) {
+                console.error(`[email] FAILED ${label}: ${(error as Error).message}`);
+                throw error;
+            }
+        }) as typeof transporter.sendMail;
+        console.log(`[email] Using ${process.env.EMAIL_HOST}:${Number(process.env.EMAIL_PORT) || 587} as ${process.env.EMAIL_USER}`);
     }
     return transporter;
 };
