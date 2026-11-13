@@ -79,3 +79,40 @@ The client brief is available here:
 
 Development must not begin until the planning phase has been
 reviewed and approved by your mentor.
+
+---
+
+## Run locally
+
+You need Node.js 20+, pnpm (or npm) and a local PostgreSQL server.
+
+**Backend** (`Backend/`)
+
+```bash
+cd Backend
+pnpm install
+cp .env.example .env      # then set DB_USER / DB_PASSWORD / DB_DATABASE and JWT_SECRET
+createdb helpdesk_dev     # once; must match DB_DATABASE
+pnpm db:reset             # drops the local schema, applies db/migrations, loads demo data
+pnpm dev                  # API on http://localhost:$SERVER_PORT
+```
+
+Other scripts: `pnpm db:migrate` applies only new files in `db/migrations`,
+`pnpm db:seed` reloads the demo data, `pnpm typecheck` runs the TypeScript checker.
+`db:seed` and `db:reset` only run when `DB_HOST` is `localhost` or `127.0.0.1`.
+Schema changes go in a new numbered file such as `db/migrations/001_add_x.sql`;
+never edit a migration that has already been applied.
+
+Demo logins (password `Demo2026!`): `lerato@`, `thabo@`, `thandi@`, `ayesha@`,
+`ruan@` and `kerryanne@mzansifreight.co.za`.
+
+**Frontend** (`Frontend/`)
+
+```bash
+cd Frontend
+pnpm install
+cp .env.example .env      # VITE_API_URL=http://localhost:5050 (the backend's SERVER_PORT)
+pnpm dev                  # http://localhost:5173
+```
+
+npm works too (`npm install`, `npm run db:reset`, `npm run dev`).
