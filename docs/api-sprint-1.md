@@ -37,7 +37,16 @@ Fri 13 Nov). `legacy` marks older paths kept only until the screens that call th
 | `Backend/src/services/sla.ts` | `loadSlaPolicies`, `computeDueTimes(createdAt, priority, policies)`, `slaState(ticket, now)` -> `met \| breached \| due_soon \| on_track`, `nextDueAt`, and the SQL fragments `SQL_NEXT_DUE`, `SQL_IS_BREACHED` (alias `t`). |
 
 **Every change writes exactly one timeline event per fact** (claim, assign, status, priority,
-approve, reject, reopen, comment deleted) inside the same transaction as the change.
+approve, reject, reopen, comment edited, comment deleted, rating) inside the same transaction as the
+change. One action can be two facts: a claim (or a lead assigning a New ticket) logs `claimed` /
+`assigned` **and** `status_changed` New -> Open, and "Still broken" logs `reopened` **and**
+`status_changed` Resolved -> Open. Page 13's "exactly one event" is read per fact; the timeline UI
+folds the pair into one line, so the demo shows one entry per action.
+
+**Lead powers** (assign, approve, reject, the `lead` arrows) belong to the department whose
+`department.lead_id` is the user. A user with the Department Lead role who leads no department
+(just promoted, or replaced through `PUT /departments/:id/lead`) only has agent-level access to
+their own `users.department_id`.
 
 ### The lifecycle (page 4)
 
@@ -131,7 +140,12 @@ Field `type` is `text | number | long_text | date`; optional `help` (text under 
 | PUT | `/api/departments/:id/lead` | ready | `appointLead` |
 | GET | `/api/departments` | ready | `listDepartments` |
 | POST | `/api/auth/change-password` | ready | `changePassword` |
-| POST `/api/users/create`, GET `/api/users/getUser`, PUT `/api/users/update[/:id]`, PUT `/api/users/:id` | | legacy (profile page, UsersContext) | |
+| PUT | `/api/users/update` | ready (your own name and surname only) | `updateOwnName` |
+| POST `/api/users/create`, GET `/api/users/getUser`, PUT `/api/users/update/:id`, PUT `/api/users/:id` | | legacy aliases | |
+
+**PUT /api/users/update** - any signed-in user, their own profile. Body `{ name?, surname? }`.
+Response `{ user }`. A `password` (use `POST /api/auth/change-password`) or `email` (managed by
+your admin) is **400**. With someone else's id the admin rules of `PATCH /api/users/:id` apply.
 
 **GET /api/tickets** - Employee, Agent, Department Lead. System Admin and Platform Admin: **403**.
 The WHERE clause comes from the role (`ticketScopeCondition`); a `department_id` sent by an Agent or
@@ -159,8 +173,10 @@ System Admin. Body `{ name, surname, email, role, department_id, must_change_pas
 `department_id` is required for Employee, Agent and Department Lead (**400** "Choose a department"),
 must be null for admins. Sends the welcome email with a temporary password and sets
 `must_change_password` (default `true`: the "ask them to set a new password" box on page 61).
-Without email settings outside production the temporary password is written to the server log.
-Response **201** `{ user, welcome_email_sent: boolean }`. Errors: 400, 403 (role you may not create),
+Response **201** `{ user, welcome_email_sent: boolean, simulated_welcome_email? }`. Without email
+settings (local and the free demo; no paid service) or when the send fails, `welcome_email_sent` is
+false and the response carries `simulated_welcome_email: { to, temporary_password }` once, which the
+Add user drawer shows under a "Simulated email" label. The password is never logged. Errors: 400, 403 (role you may not create),
 409 email already used.
 
 **PATCH /api/users/:id** - same admins, same role limits. Body: any of `name, surname, email, role,
@@ -179,11 +195,23 @@ The user must be an active Department Lead who leads no other department (**409*
 the same transaction. Response `{ message, department }` (the full Department shape, with
 `departmentLead`). Errors: 400, 403, 404 department or user, 409.
 
+**DELETE /api/departments/:id** (and `PUT /api/departments/:id { status: "inactive" }`) - System
+Admin. Deactivates; nothing is deleted. **409** while the department has tickets that aren't Closed
+or Cancelled, or active people ("Move them or finish the work before you deactivate it.").
+Response `{ message: "Department deactivated.", department }`.
+
+**GET /api/reports/admin-overview** - System Admin, counts only (page 60). `totals` has
+`active_users, inactive_users, active_departments, inactive_departments, open_tickets,
+breached_tickets`; each `departments[]` row has `lead_name, agents, open_tickets, breached_tickets`.
+
 **POST /api/auth/change-password** - any signed-in user. Body `{ current_password, new_password }`
 (password rules as reset). Clears `must_change_password`. Response `{ user }`. Errors: 400 wrong
-current password ("Your current password is wrong.") or weak new password, 401 not signed in. `POST /api/auth/login` and `GET /api/auth/me` return
+current password or weak new password, 401 not signed in. `POST /api/auth/login` and `GET /api/auth/me` return
 `must_change_password` and stamp `last_login_at` (login); while it is true the app sends the user to
-`/change-password` (`ProtectedRoute`, `SignInPage`). The server does not block other calls meanwhile.
+`/change-password` (`ProtectedRoute`, `SignInPage`), and every other authenticated call answers
+**403** `{ message, code: "must_change_password", must_change_password: true }` (only `/auth/me`,
+`/auth/logout` and `/auth/change-password` work). Wrong current password: "Your current password is
+incorrect." Sessions are looked up by the token's user id (an email change signs the person out).
 
 ## S2 Ticket lifecycle & ownership (page 11)
 
@@ -201,7 +229,8 @@ current password ("Your current password is wrong.") or weak new password, 401 n
 (`FOR UPDATE`), requires `New` and no assignee, sets `assignee_id = me` and `Open` in one transaction,
 logs `claimed` (to = my id) and `status_changed` New -> Open. Response `{ ticket }`.
 Errors: 404 can't view; 403 can view but not staff of the department (e.g. the requester);
-409 already claimed ("Sipho claimed this a moment ago") or not New.
+409 not New ("This ticket is Closed, so it can't be claimed.") or already claimed ("Sipho claimed
+this a moment ago", "You already own this ticket.").
 
 **PATCH /api/tickets/:id/assign** - the department's lead. Body `{ assignee_id, note? }`. The assignee
 must be an active Agent or Lead of the department (400 otherwise). Allowed while New, Open or
@@ -237,7 +266,8 @@ load from `GET /api/tickets?status=Open,Waiting on employee`.
 
 **POST /api/tickets/:id/feedback** - the requester, once the ticket is Resolved or Closed. Body
 `{ rating: 1-5, comment? }`. Response **201** `{ feedback }`; `GET /api/tickets/:id` returns it as
-`ticket.feedback`. Sending it again replaces the rating. Errors: 400 (not finished, bad rating),
+`ticket.feedback`. Sending it again replaces the rating and keeps the earlier comment unless a new
+one is sent. Logs `feedback_given` (from = previous rating or null, to = rating, note = comment). Errors: 400 (not finished, bad rating),
 403 not the requester, 404. The CSAT reports on top of it are S10 (Sprint 2).
 
 ## S3 Priority triage & SLA timers (page 12)
@@ -252,16 +282,18 @@ load from `GET /api/tickets?status=Open,Waiting on employee`.
 Every new ticket gets `first_response_due_at` and `resolution_due_at` = `created_at` + the policy
 (ready in `POST /api/tickets`). Pending approval tickets have none until approved (clock starts then).
 
-**PATCH /api/tickets/:id/priority** - Agent or Lead of the department. Body `{ priority }`.
+**PATCH /api/tickets/:id/priority** - Agent or Lead of the department while nobody owns the ticket
+(New, Pending approval); once owned (Open, Waiting on employee) only the owner or the department's
+lead (page 4: "only the owner (or the lead) may change an Open ticket"). Body `{ priority }`.
 Recomputes both due times **from `created_at`** with the current policies (`computeDueTimes`), logs
 `priority_changed` (from, to). Response `{ ticket }`. Errors: 400 unknown priority, 403 not department
-staff (employees), 404, 409 Closed/Cancelled. An employee sending `priority` to `POST /api/tickets`
-is ignored (ready).
+staff or not the owner/lead, 404, 409 Closed/Cancelled. An employee sending `priority` to
+`POST /api/tickets` is ignored, and so is staff `priority` for another department's category.
 
 **GET /api/tickets?sort=due** orders by `SQL_NEXT_DUE ASC NULLS LAST` (breached first, then nearest
 due); **`sla=breached`** filters with `SQL_IS_BREACHED`, `sla=due_soon` = running and under 25% left.
-`SQL_IS_BREACHED` also matches tickets that were resolved or closed late, so the Breached queues send
-`status=New,Open,Waiting on employee` with it to list only overdue open work.
+Without a `status` list both `sla` filters mean the live statuses (New, Open, Waiting on employee),
+so a ticket closed late long ago never shows as overdue; send `status` to widen it.
 
 **GET /api/sla-policies** - everyone signed in. Response
 `{ "policies": [{ "priority": "Urgent", "first_response_mins": 30, "resolution_mins": 240, "updated_at": "..." }, ...] }`
@@ -311,7 +343,9 @@ the requester's reply on a `Waiting on employee` ticket moves it to `Open` with 
 event (S2). Stop writing `internal_note` (done). Errors: 400 empty/too long, 403, 404,
 **409 Closed or Cancelled** ("This ticket is closed. Start a new request.").
 
-**PATCH /api/comments/:id** - the author, within 15 minutes. Body `{ body }`. Sets `edited_at`.
+**PATCH /api/comments/:id** - the author, within 15 minutes. Body `{ body }`. Sets `edited_at` and
+logs `comment_edited` (to = comment id, `is_internal` = the comment's; the UI shows the "edited"
+marker on the message instead of a separate line).
 Response `{ comment }`. Errors: 400, 403 not author / window passed, 404 (also for an internal note
 the caller can't see), 409 deleted.
 
@@ -334,7 +368,8 @@ department, kind, name. System Admin may add `?include_inactive=true`. Response
 
 **POST /api/tickets** - Employee, Agent, Lead (admins 403). Body
 `{ category_id, title, description, impact?, extra_fields? }`. The server derives
-`ticket_department_id` from the category, priority = `default_priority` (staff may send `priority`),
+`ticket_department_id` from the category, priority = `default_priority` (Agents and Leads may send
+`priority` for their own department's categories only, page 12),
 status = `Pending approval` if `needs_approval` else `New`; it sets both due times and logs `created`
 in one transaction. Anything else the browser sends (department, status, `requester_id`) is ignored:
 nobody raises a ticket for someone else in Sprint 1.
@@ -342,8 +377,10 @@ Response **201** `{ message, reference: "HD-1054", ticket }` (the confirmation s
 `first_response_due_at`).
 Errors: 400 missing/unknown/inactive category, title 1-255 chars, bad impact, and required extra
 fields: `{ "message": "Validation failed", "errors": [...], "field_errors": { "software_name": "Software name is required." } }`.
-Legacy bridge (remove with the new form): a body with only `department_id` goes to that department's
-"Something else" category; `POST /api/tickets/create` is an alias.
+`category_id` is required: the department-only bridge and the `POST /api/tickets/create` alias are
+gone. There is no free edit or delete of a ticket (`PUT /api/tickets/update/:id` and
+`DELETE /api/tickets/:id` were removed): the requester withdraws with `POST /:id/transition
+{ to: "Cancelled" }`, and moving a ticket to another department is a lead action in Sprint 2.
 
 **POST /api/categories** - System Admin. Body `{ category_name, department_id, kind, icon,
 description?, default_priority, needs_approval, fields, active? }`. Response **201** `{ category }`.
@@ -392,3 +429,16 @@ Unassigned queue has exactly one breached ticket (HD-1050) and one due soon (HD-
 HD-1041 is breached. HD-1048 replays page 5 (Tue 10 Nov, first response met in 48 min, resolved in
 5 h 41 min, closed, 5 stars) with its full event history. The highest seeded id is 1053, so the
 first request made in the demo is **HD-1054**.
+
+### Running the page 28 demo
+
+- Run `pnpm db:reset` right before the demo and don't sign in as `karabo@` beforehand (signing in
+  stamps `last_login_at`, so the Users table no longer shows Karabo as Invited).
+- **Step 1:** `thabo@` (Thabo Nkosi, IT agent) is a seeded demo login that steps 3-7 need, so
+  creating "Thabo Nkosi" with `thabo@` returns 409 and another email would leave two IT agents with
+  the same name. Ruan creates a new agent with another name instead, e.g. **Lwazi Dube**,
+  `lwazi@mzansifreight.co.za`, Agent, IT Support. With no SMTP configured the drawer shows the
+  simulated welcome email with the temporary password; Lwazi can sign in, set a password and claim
+  an IT ticket within a minute. Thabo then carries on from step 3 with his seeded login.
+- **Step 4:** Thabo sets High while the ticket is still New (anyone in IT may triage it); once he
+  has claimed it, only he or Thandi can change the priority.
