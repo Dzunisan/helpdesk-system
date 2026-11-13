@@ -14,6 +14,14 @@ import commentRoutes from "./src/routes/commentRoutes";
 import reportRoutes from "./src/routes/reportRoutes";
 import categoryRoutes from "./src/routes/categoryRoutes";
 import slaPolicyRoutes from "./src/routes/slaPolicyRoutes";
+// Sprint 2 (docs/api-sprint-2.md): each file has one feature owner
+import approvalRoutes from "./src/routes/approvalRoutes";
+import macroRoutes from "./src/routes/macroRoutes";
+import notificationRoutes from "./src/routes/notificationRoutes";
+import meRoutes from "./src/routes/meRoutes";
+import adminRoutes from "./src/routes/adminRoutes";
+import csatRoutes from "./src/routes/csatRoutes";
+import attachmentRoutes from "./src/routes/attachmentRoutes";
 
 dotenv.config();
 
@@ -40,6 +48,13 @@ app.use("/api/departments", departmentRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/sla-policies", slaPolicyRoutes);
+app.use("/api/approvals", approvalRoutes); // S6
+app.use("/api/macros", macroRoutes); // S7
+app.use("/api/reports", csatRoutes); // S10 /api/reports/csat, next to reportRoutes (S8)
+app.use("/api/notifications", notificationRoutes); // S9
+app.use("/api/me", meRoutes); // S9 notification prefs
+app.use("/api/admin", adminRoutes); // S9 outbox + jobs
+app.use("/api/attachments", attachmentRoutes); // S14
 
 const startServer = async () => {
   await testDbConnection();

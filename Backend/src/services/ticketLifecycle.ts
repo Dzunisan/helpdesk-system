@@ -1,7 +1,8 @@
 // S2 Ticket lifecycle & ownership (briefing p.4, p.11) and S3 priority triage (p.12).
-// Contract: docs/api-sprint-1.md "S2" / "S3". Every change locks the ticket row, checks the rules,
-// writes the change and its timeline event(s) in ONE transaction (withTransaction + logEvent), and
-// only then sends emails (fire and forget).
+// Contract: docs/api-sprint-1.md "S2" / "S3", docs/api-sprint-2.md (S6 approvals, S9 notifications).
+// Every change locks the ticket row, checks the rules, writes the change, its timeline event(s) and
+// its notifications (S9 notify(): in-app rows + queued emails) in ONE transaction, and only after
+// commit hands the queued emails to the outbox (sendPendingSoon, fire and forget).
 import type { PoolClient } from "pg";
 import { pool, withTransaction } from "../config/database";
 import { logEvent } from "./events";
@@ -29,7 +30,8 @@ import {
 } from "../types/ticket.types";
 import type { User } from "../types/user.types";
 import { HttpError } from "../utils/httpError";
-import { sendTicketAssignedEmail, sendTicketStatusEmail } from "../utils/emailService";
+import { notify, requestCsat, ticketRef } from "./notify";
+import { sendPendingSoon } from "./outbox";
 
 /** The ticket fields the lifecycle rules need, read with the row lock */
 export interface LifecycleTicket extends TransitionTicket {
@@ -132,30 +134,8 @@ const loadResponseTicket = async (ticketId: number, staff: boolean): Promise<Tic
   return ticket;
 };
 
-const notifyAssigned = (ticket: TicketDetail) => {
-  if (!ticket.requester_email) return;
-  sendTicketAssignedEmail({
-    recipientEmail: ticket.requester_email,
-    recipientName: ticket.requester_name || "there",
-    ticketId: ticket.ticket_id,
-    ticketTitle: ticket.title,
-    assigneeName: ticket.assignee_name || "Support agent",
-    status: ticket.ticket_status,
-  }).catch((err) => console.error("[ticketLifecycle] Failed to send assignment email:", err));
-};
-
-const notifyStatus = (ticket: TicketDetail, oldStatus: TicketStatus, actorName: string) => {
-  if (!ticket.requester_email || oldStatus === ticket.ticket_status) return;
-  sendTicketStatusEmail({
-    recipientEmail: ticket.requester_email,
-    recipientName: ticket.requester_name || "there",
-    ticketId: ticket.ticket_id,
-    ticketTitle: ticket.title,
-    oldStatus,
-    newStatus: ticket.ticket_status,
-    updatedByName: actorName,
-  }).catch((err) => console.error("[ticketLifecycle] Failed to send status email:", err));
-};
+/** Plain-text first words of a note for a notification's second line */
+const snippet = (text: string | null | undefined) => (text ? text.replace(/\s+/g, " ").trim().slice(0, 200) : null);
 
 // ---------------------------------------------------------------------------------------------
 // Resolved -> Closed after REOPEN_WINDOW_DAYS ("check on read is fine", p.11)
@@ -165,29 +145,48 @@ const notifyStatus = (ticket: TicketDetail, oldStatus: TicketStatus, actorName: 
  * Closes every Resolved ticket whose 5-day "Still broken" window has passed (or just `ticketId`),
  * with a system `status_changed` event (actor null) in the same statement. closed_at and the event
  * time are the moment the window ended, so the timeline reads true however late the check runs.
- * Call before any read that shows status: list, detail, actions, timeline.
+ * Each closed ticket also gets its CSAT survey (S10: csat_requested_at + a csat_requested
+ * notification) in the same transaction. Call before any read that shows status: list, detail,
+ * actions, timeline. The jobs runner (services/jobs.ts) calls it too.
  */
 export const closeExpiredResolved = async (ticketId?: number): Promise<number> => {
   const params: unknown[] = [REOPEN_WINDOW_DAYS, `Closed automatically ${REOPEN_WINDOW_DAYS} days after it was resolved.`];
   if (ticketId !== undefined) params.push(ticketId);
-  const result = await pool.query(
-    `WITH closed AS (
-       UPDATE ticket
-       SET ticket_status = 'Closed',
-           closed_at = resolved_at + make_interval(days => $1::int),
-           updated_at = now()
-       WHERE ticket_status = 'Resolved'
-         AND deleted_at IS NULL
-         AND resolved_at IS NOT NULL
-         AND resolved_at + make_interval(days => $1::int) < now()
-         ${ticketId !== undefined ? "AND ticket_id = $3" : ""}
-       RETURNING ticket_id, closed_at
-     )
-     INSERT INTO ticket_event (ticket_id, actor_id, type, from_value, to_value, note, is_internal, created_at)
-     SELECT ticket_id, NULL, 'status_changed', 'Resolved', 'Closed', $2, false, closed_at FROM closed`,
-    params
+  // Cheap check first: most reads find nothing to close and never open a transaction
+  const due = await pool.query(
+    `SELECT 1 FROM ticket
+     WHERE ticket_status = 'Resolved' AND deleted_at IS NULL AND resolved_at IS NOT NULL
+       AND resolved_at + make_interval(days => $1::int) < now()
+       ${ticketId !== undefined ? "AND ticket_id = $2" : ""}
+     LIMIT 1`,
+    ticketId !== undefined ? [REOPEN_WINDOW_DAYS, ticketId] : [REOPEN_WINDOW_DAYS]
   );
-  return result.rowCount ?? 0;
+  if (!due.rowCount) return 0;
+
+  const closedIds = await withTransaction(async (client) => {
+    const { rows } = await client.query<{ ticket_id: number }>(
+      `WITH closed AS (
+         UPDATE ticket
+         SET ticket_status = 'Closed',
+             closed_at = resolved_at + make_interval(days => $1::int),
+             updated_at = now()
+         WHERE ticket_status = 'Resolved'
+           AND deleted_at IS NULL
+           AND resolved_at IS NOT NULL
+           AND resolved_at + make_interval(days => $1::int) < now()
+           ${ticketId !== undefined ? "AND ticket_id = $3" : ""}
+         RETURNING ticket_id, closed_at
+       )
+       INSERT INTO ticket_event (ticket_id, actor_id, type, from_value, to_value, note, is_internal, created_at)
+       SELECT ticket_id, NULL, 'status_changed', 'Resolved', 'Closed', $2, false, closed_at FROM closed
+       RETURNING ticket_id`,
+      params
+    );
+    for (const row of rows) await requestCsat(client, row.ticket_id);
+    return rows.map((r) => r.ticket_id);
+  });
+  if (closedIds.length) sendPendingSoon();
+  return closedIds.length;
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -216,6 +215,15 @@ const claimLocked = async (client: PoolClient, ticket: LifecycleTicket, access: 
   );
   await logEvent(client, { ticketId: ticket.ticket_id, actorId: user.user_id, type: "claimed", to: String(user.user_id) });
   await logEvent(client, { ticketId: ticket.ticket_id, actorId: user.user_id, type: "status_changed", from: "New", to: "Open" });
+  // S9: the requester hears that someone has it
+  await notify(client, {
+    userIds: [ticket.requester_id],
+    ticketId: ticket.ticket_id,
+    actorId: user.user_id,
+    type: "status_changed",
+    title: `${fullName(user)} is working on ${ticketRef(ticket.ticket_id)}`,
+    body: ticket.title,
+  });
 };
 
 /** POST /api/tickets/:id/claim */
@@ -224,9 +232,8 @@ export const claimTicket = async (ticketId: number, user: User): Promise<TicketD
     const { ticket, access } = await lockTicket(client, ticketId, user);
     await claimLocked(client, ticket, access, user);
   });
-  const ticket = await loadResponseTicket(ticketId, true);
-  notifyAssigned(ticket);
-  return ticket;
+  sendPendingSoon();
+  return loadResponseTicket(ticketId, true);
 };
 
 /**
@@ -291,10 +298,28 @@ export const assignTicket = async (
     if (opens) {
       await logEvent(client, { ticketId, actorId: user.user_id, type: "status_changed", from: "New", to: "Open" });
     }
+    // S9: the new owner always; the requester only when their request just got an owner (New -> Open)
+    await notify(client, {
+      userIds: [target],
+      ticketId,
+      actorId: user.user_id,
+      type: "assigned",
+      title: `${fullName(user)} assigned ${ticketRef(ticketId)} to you`,
+      body: ticket.title,
+    });
+    if (opens) {
+      await notify(client, {
+        userIds: [ticket.requester_id],
+        ticketId,
+        actorId: user.user_id,
+        type: "status_changed",
+        title: `${fullName(assignee)} is working on ${ticketRef(ticketId)}`,
+        body: ticket.title,
+      });
+    }
   });
-  const ticket = await loadResponseTicket(ticketId, true);
-  notifyAssigned(ticket);
-  return ticket;
+  sendPendingSoon();
+  return loadResponseTicket(ticketId, true);
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -323,11 +348,103 @@ const otherEndpointProblem = (
 const transitionTargets = (access: TicketAccessUser, ticket: LifecycleTicket, now = new Date()): TicketStatus[] =>
   allowedTransitions(access, ticket, now).filter((to) => !otherEndpointProblem(access, ticket, to));
 
+/** Readable status line for notifications: "HD-1048 is now Waiting on employee" */
+const statusTitle = (ticketId: number, to: TicketStatus, actorName: string, reopen: boolean) => {
+  const ref = ticketRef(ticketId);
+  if (reopen) return `${actorName} says ${ref} is still broken`;
+  if (to === "Resolved") return `${actorName} resolved ${ref}`;
+  if (to === "Closed") return `${ref} is closed`;
+  if (to === "Cancelled") return `${ref} was cancelled`;
+  if (to === "Waiting on employee") return `${actorName} is waiting on your reply on ${ref}`;
+  return `${ref} is now ${to}`;
+};
+
+export interface TransitionOptions {
+  /**
+   * false: skip the status_changed notification (a reply sent with set_status already told the
+   * requester through reply_added). Default true.
+   */
+  notifyStatus?: boolean;
+}
+
 /**
- * POST /api/tickets/:id/transition { to, note? }. Resolved needs a note (resolution_note) and stamps
- * resolved_at; Closed stamps closed_at; Resolved -> Open ("Still broken") adds 1 to reopen_count and
- * restarts the resolution clock.
+ * The transition itself, inside the caller's transaction: locks the row, checks the arrow and the
+ * person, writes the change + events + notifications. Used by POST /:id/transition and by a reply
+ * sent with set_status (services/ticketTimeline.ts addComment). Throws HttpError 403/409/400.
+ * Resolved needs a note (resolution_note) and stamps resolved_at; Closed stamps closed_at and sends
+ * the CSAT survey (S10); Resolved -> Open ("Still broken") adds 1 to reopen_count and restarts the
+ * resolution clock.
  */
+export const transitionInTransaction = async (
+  client: PoolClient,
+  ticketId: number,
+  user: User,
+  to: TicketStatus,
+  note: string | null,
+  options: TransitionOptions = {}
+): Promise<{ from: TicketStatus; staff: boolean }> => {
+  const { ticket, access } = await lockTicket(client, ticketId, user);
+  const from = ticket.ticket_status;
+  const staff = canWork(access, ticket);
+
+  const elsewhere = otherEndpointProblem(access, ticket, to);
+  if (elsewhere) throw new HttpError(409, elsewhere);
+
+  const check = checkTransition(access, ticket, to);
+  if (!check.ok) throw new HttpError(check.status, check.message);
+
+  if (to === "Resolved" && !note) {
+    throw new HttpError(400, "Add a resolution note so the employee knows what was done.");
+  }
+
+  const reopen = from === "Resolved" && to === "Open";
+  const sets = ["ticket_status = $1", "updated_at = now()"];
+  const values: unknown[] = [to];
+  if (to === "Resolved") {
+    values.push(note);
+    sets.push("resolved_at = now()", `resolution_note = $${values.length}`);
+  }
+  if (to === "Closed") sets.push("closed_at = now()");
+  if (reopen) sets.push("reopen_count = reopen_count + 1", "resolved_at = NULL", "resolution_note = NULL");
+  values.push(ticketId);
+  await client.query(`UPDATE ticket SET ${sets.join(", ")} WHERE ticket_id = $${values.length}`, values);
+
+  if (reopen) {
+    await logEvent(client, {
+      ticketId,
+      actorId: user.user_id,
+      type: "reopened",
+      from: String(ticket.reopen_count),
+      to: String(ticket.reopen_count + 1),
+      note,
+    });
+  }
+  await logEvent(client, {
+    ticketId,
+    actorId: user.user_id,
+    type: "status_changed",
+    from,
+    to,
+    note: reopen ? null : note,
+  });
+
+  // S9: requester and owner hear about status changes (never the person who made it)
+  if (options.notifyStatus !== false) {
+    await notify(client, {
+      userIds: [ticket.requester_id, ticket.assignee_id],
+      ticketId,
+      actorId: user.user_id,
+      type: "status_changed",
+      title: statusTitle(ticketId, to, fullName(user), reopen),
+      body: snippet(note) ?? ticket.title,
+    });
+  }
+  // S10: a ticket the employee confirmed fixed gets its "How did we do?" survey
+  if (to === "Closed") await requestCsat(client, ticketId);
+  return { from, staff };
+};
+
+/** POST /api/tickets/:id/transition { to, note? } (see transitionInTransaction) */
 export const transitionTicket = async (
   ticketId: number,
   user: User,
@@ -335,57 +452,9 @@ export const transitionTicket = async (
   rawNote: unknown
 ): Promise<TicketDetail> => {
   const note = cleanNote(rawNote);
-  let from: TicketStatus = to;
-  let staff = false;
-  await withTransaction(async (client) => {
-    const { ticket, access } = await lockTicket(client, ticketId, user);
-    from = ticket.ticket_status;
-    staff = canWork(access, ticket);
-
-    const elsewhere = otherEndpointProblem(access, ticket, to);
-    if (elsewhere) throw new HttpError(409, elsewhere);
-
-    const check = checkTransition(access, ticket, to);
-    if (!check.ok) throw new HttpError(check.status, check.message);
-
-    if (to === "Resolved" && !note) {
-      throw new HttpError(400, "Add a resolution note so the employee knows what was done.");
-    }
-
-    const reopen = from === "Resolved" && to === "Open";
-    const sets = ["ticket_status = $1", "updated_at = now()"];
-    const values: unknown[] = [to];
-    if (to === "Resolved") {
-      values.push(note);
-      sets.push("resolved_at = now()", `resolution_note = $${values.length}`);
-    }
-    if (to === "Closed") sets.push("closed_at = now()");
-    if (reopen) sets.push("reopen_count = reopen_count + 1", "resolved_at = NULL", "resolution_note = NULL");
-    values.push(ticketId);
-    await client.query(`UPDATE ticket SET ${sets.join(", ")} WHERE ticket_id = $${values.length}`, values);
-
-    if (reopen) {
-      await logEvent(client, {
-        ticketId,
-        actorId: user.user_id,
-        type: "reopened",
-        from: String(ticket.reopen_count),
-        to: String(ticket.reopen_count + 1),
-        note,
-      });
-    }
-    await logEvent(client, {
-      ticketId,
-      actorId: user.user_id,
-      type: "status_changed",
-      from,
-      to,
-      note: reopen ? null : note,
-    });
-  });
-  const ticket = await loadResponseTicket(ticketId, staff);
-  notifyStatus(ticket, from, fullName(user));
-  return ticket;
+  const { staff } = await withTransaction((client) => transitionInTransaction(client, ticketId, user, to, note));
+  sendPendingSoon();
+  return loadResponseTicket(ticketId, staff);
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -522,7 +591,21 @@ export const approveTicket = async (ticketId: number, user: User, rawNote: unkno
       [next, due.first_response_due_at, due.resolution_due_at, ticketId]
     );
     await logEvent(client, { ticketId, actorId: user.user_id, type: "approved", from: "Pending approval", to: next, note });
+    // S6: the decision row (GET /api/approvals?decided_by=me) and S9: the requester hears about it
+    await client.query(
+      `INSERT INTO ticket_approval (ticket_id, approver_id, decision, reason) VALUES ($1, $2, 'approved', $3)`,
+      [ticketId, user.user_id, note]
+    );
+    await notify(client, {
+      userIds: [ticket.requester_id],
+      ticketId,
+      actorId: user.user_id,
+      type: "approval_decided",
+      title: `${fullName(user)} approved ${ticketRef(ticketId)}`,
+      body: note ?? `${ticket.title} is now with the team.`,
+    });
   });
+  sendPendingSoon();
   return loadResponseTicket(ticketId, true);
 };
 
@@ -549,6 +632,19 @@ export const rejectTicket = async (ticketId: number, user: User, rawReason: unkn
       to: "Cancelled",
       note: reason,
     });
+    await client.query(
+      `INSERT INTO ticket_approval (ticket_id, approver_id, decision, reason) VALUES ($1, $2, 'rejected', $3)`,
+      [ticketId, user.user_id, reason]
+    );
+    await notify(client, {
+      userIds: [ticket.requester_id],
+      ticketId,
+      actorId: user.user_id,
+      type: "approval_decided",
+      title: `${fullName(user)} rejected ${ticketRef(ticketId)}`,
+      body: reason,
+    });
   });
+  sendPendingSoon();
   return loadResponseTicket(ticketId, true);
 };

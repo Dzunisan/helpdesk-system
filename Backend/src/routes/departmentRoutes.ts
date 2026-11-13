@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { requireAuth, requireRole } from "../middleware/authMiddlware";
 import { create, getAll, getOne, update, remove,assignLead, removeLead, addMembers, removeMember } from "../controllers/departmentController";
+import { departmentCategories } from "../controllers/moveDepartmentController";
 
 const router = Router();
 const adminOnly = requireRole("System Admin");
@@ -17,6 +18,8 @@ router.use(requireAuth);
 router.post("/", adminOnly, create);
 router.get("/", getAll); // Allow all authenticated users to view departments
 router.get("/:id", adminOnly, getOne);
+// S12: active categories of a department for the move picker (Agents and Leads; OWNER: moveDepartmentController)
+router.get("/:id/categories", departmentCategories);
 router.put("/:id", adminOnly, update);
 router.patch("/:id", adminOnly, update);
 router.delete("/:id", adminOnly, remove);

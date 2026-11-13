@@ -4,13 +4,17 @@
 // Comments are never hard-deleted: a deleted comment keeps its place with body null.
 import { pool, withTransaction } from "../config/database";
 import { logEvent } from "./events";
-import { closeExpiredResolved } from "./ticketLifecycle";
+import { closeExpiredResolved, transitionInTransaction } from "./ticketLifecycle";
+import { notify, ticketRef } from "./notify";
+import { sendPendingSoon } from "./outbox";
+import type { CommentContext } from "./extensions/commentContext";
+import { applyMacro } from "./extensions/commentMacro";
+import { type AttachmentSummary, linkAttachments, loadCommentAttachments } from "./extensions/commentAttachments";
 import { COMMENT_SELECT } from "./ticketService";
 import { TICKET_NOT_FOUND, TicketAccessUser, canView, canWork, isRequester, loadTicketAccess } from "./ticketAccess";
 import { checkTransition, FINAL_STATUSES, TicketStatus } from "../types/ticket.types";
 import type { User } from "../types/user.types";
 import { HttpError } from "../utils/httpError";
-import { sendTicketCommentEmail } from "../utils/emailService";
 
 /** Authors may edit or delete their own comment for this long (page 13) */
 export const COMMENT_EDIT_WINDOW_MINUTES = 15;
@@ -49,6 +53,8 @@ export interface TimelineCommentItem {
   edited_at: string | null;
   deleted_at: string | null;
   can_edit: boolean;
+  /** S14: files sent with this comment (internal ones only for staff); [] when none or deleted */
+  attachments: AttachmentSummary[];
 }
 
 export type TimelineItem = TimelineEventItem | TimelineCommentItem;
@@ -174,6 +180,11 @@ export const getTimeline = async (ticketId: number, user: User): Promise<Timelin
     );
     for (const row of rows) names.set(row.user_id, row.name);
   }
+  // S14 extension point: the files sent with each comment (internal ones only for staff)
+  const attachments = await loadCommentAttachments(
+    commentsResult.rows.map((c: CommentDto) => c.comment_id),
+    staff
+  );
   const label = (type: string, value: string | null) =>
     value === null ? null : PERSON_EVENTS.has(type) ? names.get(value) ?? "Someone" : value;
 
@@ -219,6 +230,7 @@ export const getTimeline = async (ticketId: number, user: User): Promise<Timelin
           !c.deleted_at &&
           !FINAL_STATUSES.includes(ticket.ticket_status) &&
           now - new Date(c.created_at).getTime() <= EDIT_WINDOW_MS,
+        attachments: c.deleted_at ? [] : attachments.get(c.comment_id) ?? [],
       })
     ),
   ];
@@ -255,23 +267,51 @@ export const listComments = async (ticketId: number, user: User): Promise<Commen
 };
 
 /**
- * POST /api/tickets/:id/comments { body, is_internal? }. In the same transaction: the first public
- * reply by department staff stamps first_response_at (S3); the requester's reply on a Waiting on
- * employee ticket moves it back to Open with a status_changed event (S2).
+ * Optional parts of POST /api/tickets/:id/comments (Sprint 2, docs/api-sprint-2.md). Each one is
+ * handled by an extension point so its feature owner never edits addComment itself:
+ *   attachmentIds -> extensions/commentAttachments.ts linkAttachments (S14)
+ *   macroId       -> extensions/commentMacro.ts applyMacro (S7): use_count, default set_status
+ *   setStatus     -> ticketLifecycle.transitionInTransaction with the normal arrows (S2/S7)
+ */
+export interface CommentExtras {
+  attachmentIds?: number[];
+  macroId?: number | null;
+  /** undefined = use the macro's set_status (if any); null = reply only, even with a macro */
+  setStatus?: TicketStatus | null;
+}
+
+/** What happened to set_status (applied only when the transition is allowed for this person) */
+export interface SetStatusResult {
+  requested: TicketStatus;
+  applied: boolean;
+  /** Why it wasn't applied ("This ticket can't move from New to Waiting on employee.") */
+  message: string | null;
+}
+
+export type AddedComment = CommentDto & { set_status: SetStatusResult | null; macro_id: number | null };
+
+/**
+ * POST /api/tickets/:id/comments { body, is_internal?, attachment_ids?, macro_id?, set_status? }.
+ * In the same transaction: the first public reply by department staff stamps first_response_at
+ * (S3); the requester's reply on a Waiting on employee ticket moves it back to Open with a
+ * status_changed event (S2); the extras above; and the S9 notifications (reply_added: staff reply ->
+ * requester, requester reply -> owner, internal note -> owner, never the employee).
  */
 export const addComment = async (
   ticketId: number,
   user: User,
   rawBody: unknown,
-  isInternal: boolean
-): Promise<CommentDto> => {
+  isInternal: boolean,
+  extras: CommentExtras = {}
+): Promise<AddedComment> => {
   const body = cleanBody(rawBody);
   // A Resolved ticket past its 5-day window is Closed: no more comments
   await closeExpiredResolved(ticketId);
-  let ticket!: TicketRow;
+  let setStatus: SetStatusResult | null = null;
+  let macroId: number | null = null;
   const commentId = await withTransaction(async (client) => {
     const { rows } = await client.query<TicketRow>(`${TICKET_SELECT} FOR UPDATE OF t`, [ticketId]);
-    ticket = rows[0];
+    const ticket = rows[0];
     if (!ticket) throw new HttpError(404, TICKET_NOT_FOUND);
     const access = await loadTicketAccess(user);
     if (!canView(access, ticket)) throw new HttpError(404, TICKET_NOT_FOUND);
@@ -282,6 +322,19 @@ export const addComment = async (
       throw new HttpError(403, "Only agents and leads of this ticket's department can write internal notes.");
     }
     if (FINAL_STATUSES.includes(ticket.ticket_status)) throw new HttpError(409, finalMessage(ticket.ticket_status));
+    if (extras.setStatus && !staff) {
+      throw new HttpError(403, "Only agents and leads of this ticket's department can set a status with a reply.");
+    }
+
+    const ctx: CommentContext = { client, user, access, ticket, staff, requester, isInternal };
+
+    // ---- EXTENSION POINT (S7 macros): before the comment is written ----
+    let wantedStatus: TicketStatus | null = extras.setStatus ?? null;
+    if (extras.macroId !== undefined && extras.macroId !== null) {
+      const macro = await applyMacro(ctx, extras.macroId);
+      macroId = macro.id;
+      if (extras.setStatus === undefined) wantedStatus = macro.set_status;
+    }
 
     const inserted = await client.query(
       `INSERT INTO comment (ticket_id, author_id, body, is_internal, created_at, updated_at)
@@ -289,6 +342,12 @@ export const addComment = async (
        RETURNING comment_id`,
       [ticketId, user.user_id, body, isInternal]
     );
+    const newCommentId = inserted.rows[0].comment_id as number;
+
+    // ---- EXTENSION POINT (S14 attachments): after the comment is written ----
+    if (extras.attachmentIds && extras.attachmentIds.length > 0) {
+      await linkAttachments(ctx, newCommentId, extras.attachmentIds);
+    }
 
     if (!isInternal && staff && !requester && !ticket.first_response_at) {
       await client.query(
@@ -310,36 +369,54 @@ export const addComment = async (
     } else {
       await client.query(`UPDATE ticket SET updated_at = now() WHERE ticket_id = $1`, [ticketId]);
     }
-    return inserted.rows[0].comment_id as number;
+
+    // S9: who hears about this message (notify() never tells the author)
+    const author = fullName(user);
+    const ref = ticketRef(ticketId);
+    if (isInternal) {
+      await notify(client, {
+        userIds: [ticket.assignee_id],
+        ticketId,
+        actorId: user.user_id,
+        type: "reply_added",
+        title: `${author} added an internal note on ${ref}`,
+        body,
+      });
+    } else {
+      await notify(client, {
+        userIds: requester ? [ticket.assignee_id] : [ticket.requester_id],
+        ticketId,
+        actorId: user.user_id,
+        type: "reply_added",
+        title: `${author} replied on ${ref}`,
+        body,
+      });
+    }
+
+    // set_status (S7 "Send and set Waiting on employee"): only when the arrow is allowed for this
+    // person. A refused move keeps the reply and reports why (savepoint keeps the rest intact).
+    if (wantedStatus && wantedStatus !== ticket.ticket_status) {
+      await client.query("SAVEPOINT set_status");
+      try {
+        await transitionInTransaction(client, ticketId, user, wantedStatus, wantedStatus === "Resolved" ? body : null, {
+          notifyStatus: isInternal,
+        });
+        await client.query("RELEASE SAVEPOINT set_status");
+        setStatus = { requested: wantedStatus, applied: true, message: null };
+      } catch (error) {
+        await client.query("ROLLBACK TO SAVEPOINT set_status");
+        if (!(error instanceof HttpError)) throw error;
+        setStatus = { requested: wantedStatus, applied: false, message: error.message };
+      }
+    } else if (wantedStatus) {
+      setStatus = { requested: wantedStatus, applied: false, message: `The ticket is already ${wantedStatus}.` };
+    }
+    return newCommentId;
   });
 
+  sendPendingSoon();
   const comment = (await loadComment(commentId))!;
-  notifyComment(ticket, user, body, isInternal);
-  return comment;
-};
-
-/** Emails after commit, fire and forget: requester <-> owner; internal notes never reach the requester */
-const notifyComment = (ticket: TicketRow, user: User, body: string, isInternal: boolean) => {
-  const send = (recipientEmail: string | null, recipientName: string | null) => {
-    if (!recipientEmail) return;
-    sendTicketCommentEmail({
-      recipientEmail,
-      recipientName: recipientName || "there",
-      ticketId: ticket.ticket_id,
-      ticketTitle: ticket.title,
-      authorName: fullName(user),
-      authorRole: user.role,
-      commentBody: body,
-      isInternal,
-    }).catch((err) => console.error("[ticketTimeline] Failed to send comment email:", err));
-  };
-  const byRequester = sameId(user.user_id, ticket.requester_id);
-  const byAssignee = sameId(user.user_id, ticket.assignee_id);
-  if (isInternal || byRequester) {
-    if (!byAssignee) send(ticket.assignee_email, ticket.assignee_name);
-  } else {
-    send(ticket.requester_email, ticket.requester_name);
-  }
+  return { ...comment, set_status: setStatus, macro_id: macroId };
 };
 
 /**

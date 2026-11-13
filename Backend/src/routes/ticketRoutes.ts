@@ -19,6 +19,8 @@ import { claimTicket, getTicketActions, transitionTicket } from "../controllers/
 import { changePriority } from "../controllers/triageController";
 import { getTimeline } from "../controllers/timelineController";
 import { createTicket } from "../services/ticketCreate";
+import { moveDepartment } from "../controllers/moveDepartmentController";
+import { uploadAttachments } from "../controllers/attachmentsController";
 
 const router = Router();
 
@@ -62,7 +64,14 @@ router.post("/:id/approve", approveTicket);
 router.patch("/:id/reject", rejectTicket);
 router.post("/:id/reject", rejectTicket);
 
-// Comments endpoints
+// S12 move to another department (OWNER: controllers/moveDepartmentController.ts)
+router.patch("/:id/department", moveDepartment);
+
+// S14 upload files to attach to a comment (OWNER: controllers/attachmentsController.ts)
+router.post("/:id/attachments", uploadAttachments);
+
+// Comments endpoints. POST takes the Sprint 2 extras { attachment_ids, macro_id, set_status }
+// (docs/api-sprint-2.md "POST /api/tickets/:id/comments")
 router.post("/:ticket_id/comments", addComment);
 router.get("/:ticket_id/comments", getComments);
 router.patch("/:ticket_id/comments/:id", editComment);
@@ -76,7 +85,7 @@ router.get("/:ticket_id/feedback", getFeedback);
 router.get("/:id", getTicketById);
 
 // There is no free edit or delete: title and description belong to the requester's original
-// message, a department move is a Sprint 2 lead action, and a requester withdraws a request with
-// POST /:id/transition { to: "Cancelled" }.
+// message, a department move is PATCH /:id/department (S12), and a requester withdraws a request
+// with POST /:id/transition { to: "Cancelled" }.
 
 export default router;

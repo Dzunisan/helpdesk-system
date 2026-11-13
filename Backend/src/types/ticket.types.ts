@@ -261,7 +261,10 @@ export type TicketEventType =
   | "reopened"
   | "comment_deleted"
   | "comment_edited"
-  | "feedback_given";
+  | "feedback_given"
+  // Sprint 2 (db/migrations/003_sprint2.sql)
+  | "department_changed"
+  | "attached";
 
 export interface TicketEvent {
   event_id: string; // bigserial comes back from pg as a string

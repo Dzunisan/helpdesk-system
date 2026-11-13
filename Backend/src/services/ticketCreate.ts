@@ -11,6 +11,8 @@
 import { Request, Response } from "express";
 import { withTransaction } from "../config/database";
 import { logEvent } from "./events";
+import { departmentLeadId, notify, ticketRef } from "./notify";
+import { sendPendingSoon } from "./outbox";
 import { computeDueTimes, loadSlaPolicies } from "./sla";
 import { NO_TICKET_ACCESS_ROLES, STAFF_ROLES, departmentsOf, loadTicketAccess } from "./ticketAccess";
 import { getCategoryForTicket, isIntId } from "./categoryService";
@@ -211,8 +213,20 @@ export const createTicket = async (req: Request, res: Response) => {
       );
       const id: number = rows[0].ticket_id;
       await logEvent(client, { ticketId: id, actorId: requesterId, type: "created", to: status });
+      // S6 + S9: a request that needs approval tells the department's lead it is waiting
+      if (status === "Pending approval") {
+        await notify(client, {
+          userIds: [await departmentLeadId(client, category.department_id)],
+          ticketId: id,
+          actorId: requesterId,
+          type: "approval_waiting",
+          title: `${`${user.name} ${user.surname ?? ""}`.trim()} needs your approval on ${ticketRef(id)}`,
+          body: title,
+        });
+      }
       return id;
     });
+    sendPendingSoon();
 
     const ticket = await getTicketById(ticketId, false);
     return res.status(201).json({ message: "Request submitted", reference: `HD-${ticketId}`, ticket });

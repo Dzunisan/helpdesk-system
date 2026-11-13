@@ -14,6 +14,7 @@ import {
 import * as lifecycle from "../services/ticketLifecycle";
 import * as timeline from "../services/ticketTimeline";
 import { closeExpiredResolved } from "../services/ticketLifecycle";
+import { runJobsSoon } from "../services/jobs";
 import { HttpError, parseIntId, sendError } from "../utils/httpError";
 
 // Helper for normalizing status strings case-insensitively
@@ -131,6 +132,8 @@ export const fetchTickets = async (req: Request, res: Response) => {
 
     // Resolved tickets past the 5-day window close on read (S2)
     await closeExpiredResolved();
+    // S9: breach alerts and queued emails ride along on queue loads (at most once a minute)
+    runJobsSoon();
     const { tickets, total } = await ticketService.getTickets(filters, access);
     return res.status(200).json({
       tickets,
@@ -249,7 +252,10 @@ export const rejectTicket = async (req: Request, res: Response) => {
 // S4 comments (services/ticketTimeline.ts)
 // ---------------------------------------------------------------------------------------------
 
-/** POST /api/tickets/:id/comments { body, is_internal? } -> 201 { comment } */
+/**
+ * POST /api/tickets/:id/comments { body, is_internal?, attachment_ids?, macro_id?, set_status? }
+ * -> 201 { comment, set_status } (docs/api-sprint-2.md: the Sprint 2 extras)
+ */
 export const addComment = async (req: Request, res: Response) => {
   const user = req.user;
   if (!user) {
@@ -260,8 +266,37 @@ export const addComment = async (req: Request, res: Response) => {
     const body = req.body?.body !== undefined ? req.body.body : req.body?.comment;
     const flag = req.body?.is_internal ?? req.body?.internal_note ?? false;
     if (typeof flag !== "boolean") throw new HttpError(400, "is_internal must be true or false.");
-    const comment = await timeline.addComment(ticketId, user, body, flag);
-    return res.status(201).json({ message: flag ? "Internal note added." : "Reply sent.", comment });
+
+    // S14: ids from POST /api/tickets/:id/attachments
+    const rawAttachments = req.body?.attachment_ids;
+    let attachmentIds: number[] = [];
+    if (rawAttachments !== undefined && rawAttachments !== null) {
+      if (!Array.isArray(rawAttachments) || !rawAttachments.every(isIntId)) {
+        throw new HttpError(400, "attachment_ids must be a list of attachment IDs.");
+      }
+      attachmentIds = rawAttachments.map(Number);
+    }
+    // S7: the macro that was inserted (use_count, default "then set status")
+    const rawMacro = req.body?.macro_id;
+    let macroId: number | null = null;
+    if (rawMacro !== undefined && rawMacro !== null && rawMacro !== "") {
+      if (!isIntId(rawMacro)) throw new HttpError(400, "macro_id must be a valid integer.");
+      macroId = Number(rawMacro);
+    }
+    // set_status: omitted = the macro's; null = reply only; a status = that move if allowed
+    const rawStatus = req.body?.set_status;
+    let setStatus: TicketStatus | null | undefined = undefined;
+    if (rawStatus === null || rawStatus === "") setStatus = null;
+    else if (rawStatus !== undefined) {
+      setStatus = normalizeStatus(String(rawStatus));
+      if (!setStatus) throw new HttpError(400, `set_status must be one of: ${VALID_STATUSES.join(", ")}.`);
+    }
+
+    const comment = await timeline.addComment(ticketId, user, body, flag, { attachmentIds, macroId, setStatus });
+    const { set_status, ...rest } = comment;
+    return res
+      .status(201)
+      .json({ message: flag ? "Internal note added." : "Reply sent.", comment: rest, set_status });
   } catch (error) {
     return sendError(res, error);
   }

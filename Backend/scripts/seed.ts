@@ -6,6 +6,17 @@
 // times from sla_policy, categories that route to a department, and a ticket_event history for every
 // ticket. HD-1048 replays the worked example on briefing page 5 (Tuesday 10 November). The highest
 // seeded reference is HD-1053, so the first request made in the demo is HD-1054 (pages 14 and 28).
+//
+// Sprint 2 (db/migrations/003_sprint2.sql, briefing p.30 "Seed for the demo"):
+//   - approval categories are ACTIVE (S6); Ayesha's Adobe licence (HD-1052), Nomvula's laptop for
+//     Sizwe (HD-1047) and Pieter's Finance folder access (HD-1040) wait in Pending approval: Approvals (3)
+//   - 6 IT and 3 HR macros with usage counts (S7, p.16 / p.58)
+//   - Zanele's "Aircon dripping onto my desk" (HD-1037) is misfiled in IT (S12)
+//   - HD-1050 is just past its first-response time and NOT yet alerted, so "Run jobs now" raises one
+//     sla_breached notification for Thandi; every other breached live ticket was already alerted (S9)
+//   - HD-1001..HD-1026: 30 days of closed tickets with ratings (two 2-star IT comments last week), so
+//     CSAT and the dashboard aren't empty (S8, S10); HD-1026 is a rejected approval for the History tab
+//   - a few notifications (read and unread) and their outbox rows (S9)
 import bcrypt from "bcryptjs";
 import { Pool, PoolClient } from "pg";
 import { assertLocalDb, dbConfig } from "./db";
@@ -72,7 +83,7 @@ type C = {
 const reasonField: Field = { key: "reason", label: "Why do you need it?", type: "long_text", required: true };
 
 // Categories (pages 14, 38, 63). "fix" = Something is broken, "request" = I need something.
-// Approval categories are seeded INACTIVE: they stay off the form until S6 adds approvals in Sprint 2.
+// Approval categories are active since Sprint 2 (S6 approvals): a request lands in Pending approval.
 const categories: C[] = [
   // IT Support
   { id: 1, dept: 1, name: "Laptop or hardware fault", kind: "fix", icon: "laptop", description: "Laptop, screen, dock, keyboard or mouse not working" },
@@ -150,6 +161,8 @@ type T = {
   cancelled?: Date;
   /** Approval categories that already got past the lead */
   approved?: { by: number; at: Date };
+  /** Approval categories the lead turned down (status Cancelled, the reason is public) */
+  rejected?: { by: number; at: Date; reason: string };
   impact?: "blocks_me" | "slows_me_down" | "minor";
   extra?: Record<string, unknown>;
 };
@@ -167,8 +180,9 @@ const sast = (hhmm: string) => new Date(`2026-11-10T${hhmm}:00+02:00`);
 //   Thabo's open work: HD-1041 breached, HD-1045 on track, HD-1031 waiting on the employee
 const tickets: T[] = [
   // ----- IT Support: unassigned queue (New) -----
+  // Just past its 60-minute first response and not yet alerted: "Run jobs now" alerts Thandi (p.30)
   { id: 1050, title: "Laptop screen cracked after a fall", description: "Dropped my laptop at the Durban depot, the screen is cracked in the corner and half of it is black.",
-    cat: 1, priority: "High", status: "New", requester: 1021, created: hoursAgo(2), impact: "blocks_me" },
+    cat: 1, priority: "High", status: "New", requester: 1021, created: minsAgo(70), impact: "blocks_me" },
   { id: 1044, title: "3rd floor printer in Rosebank keeps jamming", description: "The HP on the 3rd floor jams on every second page. We have a board pack to print today.",
     cat: 5, priority: "Normal", status: "New", requester: 1022, created: minsAgo(200), impact: "slows_me_down" },
   { id: 1046, title: "New starter: laptop & accounts for Sizwe Ndlovu", description: "Sizwe starts in HR on 17 Nov and needs a laptop, email and VPN set up before then.",
@@ -202,9 +216,9 @@ const tickets: T[] = [
   { id: 1047, title: "New laptop for Sizwe Ndlovu", description: "Standard staff laptop for our new HR starter.",
     cat: 6, priority: "Normal", status: "Pending approval", requester: 1012, created: hoursAgo(5), impact: "minor",
     extra: { item: "Dell Latitude 5450 (standard staff laptop)", estimated_cost: 18500, reason: "Sizwe Ndlovu starts in HR on 17 November." } },
-  { id: 1040, title: "Access to the Finance reporting folder", description: "I need read access to the reporting folder for month-end.",
-    cat: 8, priority: "Low", status: "Pending approval", requester: 1001, created: hoursAgo(24), impact: "slows_me_down",
-    extra: { system: "\\\\finance\\reporting", reason: "Month-end reporting pack." } },
+  { id: 1040, title: "Access to the Finance reporting folder", description: "I need read access to the Finance reporting folder to pull the fleet cost reports for month-end.",
+    cat: 8, priority: "Low", status: "Pending approval", requester: 1021, created: hoursAgo(24), impact: "slows_me_down",
+    extra: { system: "\\\\finance\\reporting", reason: "Facilities pays the fleet fuel and repair invoices; I need the monthly cost reports for the month-end pack." } },
 
   // ----- IT Support: finished -----
   { id: 1048, title: "VPN drops every 10 minutes on home fibre", description: "Since Monday my VPN (FortiClient) disconnects roughly every 10 minutes when I work from home in Midrand. Office Wi-Fi is fine. Month-end close is Friday, so this is urgent for me.",
@@ -316,22 +330,125 @@ function eventsFor(t: T): Ev[] {
   if (t.closed) {
     events.push({ ticket: t.id, actor: t.requester, type: "status_changed", from: "Resolved", to: "Closed", note: "Yes, it's fixed", at: t.closed });
   }
+  if (t.rejected) {
+    events.push({ ticket: t.id, actor: t.rejected.by, type: "rejected", from: "Pending approval", to: "Cancelled", note: t.rejected.reason, at: t.rejected.at });
+  }
   if (t.cancelled) {
     events.push({ ticket: t.id, actor: t.requester, type: "status_changed", from: firstStatus, to: "Cancelled", note: "Withdrawn by the employee", at: t.cancelled });
   }
   return events;
 }
 
-const feedback = [
-  { ticket: 1048, user: 1001, rating: 5, comment: "Fixed the same day, thanks Thabo!", at: sast("14:30") },
-  { ticket: 1027, user: 1004, rating: 5, comment: "Sorted the same day, thanks!", at: hoursAgo(96) },
+type Fb = { ticket: number; user: number; rating: number; comment: string | null; tags?: string[]; at: Date };
+
+const feedback: Fb[] = [
+  { ticket: 1048, user: 1001, rating: 5, comment: "Fixed the same day, thanks Thabo!", tags: ["Fast reply", "Fixed first time"], at: sast("14:30") },
+  { ticket: 1027, user: 1004, rating: 5, comment: "Sorted the same day, thanks!", tags: ["Fast reply"], at: hoursAgo(96) },
+];
+
+// ---------- Sprint 2: 30 days of history (HD-1001..HD-1026) ----------
+
+const DAY = 24 * 60;
+const daysAgo = (days: number, hour = 9) => {
+  // A working-hours time `days` ago, in SAST
+  const d = new Date(Date.now() - days * DAY * MIN);
+  const sastDate = new Date(d.getTime() + 2 * 60 * MIN).toISOString().slice(0, 10);
+  return new Date(`${sastDate}T${String(hour).padStart(2, "0")}:15:00+02:00`);
+};
+
+/**
+ * Closed, rated tickets: [id, title, category, priority, requester, agent, days ago, hours to fix,
+ * rating, comment, tags]. Agents: Thabo 1002, Sipho 1010, Megan 1011 (IT), Priya 1013 (HR).
+ */
+type H = [number, string, number, Priority, number, number, number, number, number, string | null, string[]];
+const history: H[] = [
+  [1001, "Laptop won't charge", 1, "Normal", 1020, 1010, 29, 5, 5, "New charger the same afternoon.", ["Fast reply", "Fixed first time"]],
+  [1002, "Can't connect to the office Wi-Fi", 2, "Normal", 1022, 1002, 28, 2, 5, null, ["Fast reply"]],
+  [1003, "Locked out after too many attempts", 3, "High", 1004, 1011, 27, 1, 5, "Back in within the hour.", ["Fast reply", "Friendly"]],
+  [1004, "Payslip shows the wrong tax number", 10, "Normal", 1001, 1013, 26, 20, 4, null, ["Kept me updated"]],
+  [1005, "Teams keeps signing me out", 4, "Normal", 1021, 1002, 25, 6, 5, null, ["Fixed first time"]],
+  [1006, "Printer on 2nd floor offline", 5, "Normal", 1017, 1010, 23, 3, 4, null, []],
+  [1007, "VPN slow from the Durban depot", 2, "High", 1020, 1002, 22, 7, 5, "Thabo explained exactly what changed.", ["Kept me updated", "Friendly"]],
+  [1008, "Employment letter for a visa", 11, "Low", 1022, 1013, 21, 26, 5, "Letter was perfect, thank you.", ["Friendly"]],
+  [1009, "MFA codes not arriving", 3, "High", 1001, 1011, 20, 2, 5, null, ["Fast reply"]],
+  [1010, "Excel add-in missing after update", 4, "Normal", 1004, 1010, 18, 9, 4, null, ["Fixed first time"]],
+  [1011, "Keyboard keys sticking", 1, "Low", 1023, 1011, 17, 30, 4, "Took a while to get a replacement, but it works well now.", ["Kept me updated"]],
+  [1012, "Leave days not updated after cancelling leave", 12, "Normal", 1020, 1013, 15, 22, 5, null, ["Kept me updated"]],
+  [1013, "Shared drive mapping lost", 9, "Normal", 1021, 1002, 14, 4, 5, null, ["Fast reply", "Fixed first time"]],
+  [1014, "Second screen upside down", 1, "Low", 1022, 1010, 13, 3, 5, "Quick and friendly.", ["Friendly"]],
+  [1015, "Outlook search not finding old mail", 4, "Normal", 1001, 1002, 11, 8, 4, null, []],
+  [1016, "Password reset for Sage", 3, "High", 1020, 1011, 10, 1, 5, null, ["Fast reply"]],
+  [1017, "Payroll query: overtime missing", 10, "Normal", 1021, 1013, 9, 30, 4, null, ["Kept me updated"]],
+  [1018, "Wi-Fi drops in Boardroom 1", 2, "Normal", 1017, 1010, 8, 6, 5, null, ["Fixed first time"]],
+  // Last week's two low scores (p.19: "Thandi reads the two 2-star comments from last week")
+  [1019, "Laptop very slow after the update", 1, "Normal", 1004, 1011, 6, 50, 2, "Took three days and I had to chase twice.", []],
+  [1020, "Scanner not sending to email", 5, "Normal", 1022, 1010, 5, 28, 2, "Fixed, but nobody told me it was done.", []],
+  [1021, "Can't open PDF attachments", 4, "Normal", 1023, 1002, 4, 3, 5, "Sorted in a morning.", ["Fast reply", "Fixed first time"]],
+  [1022, "New mouse please", 1, "Low", 1001, 1011, 3, 4, 5, null, ["Fast reply"]],
+  [1023, "Leave form won't submit", 12, "Normal", 1004, 1013, 3, 6, 5, null, ["Fast reply"]],
+  [1024, "Calendar not syncing to my phone", 4, "Normal", 1020, 1002, 2, 5, 4, null, ["Kept me updated"]],
+  [1025, "Teams audio crackles", 4, "Normal", 1021, 1010, 2, 4, 5, null, []],
+];
+
+const historyReplies = [
+  "Hi {name}, I'm on it and will update you shortly.",
+  "Hi {name}, thanks for the detail. I'll come to your desk in 20 minutes.",
+  "Hi {name}, I've found the cause and I'm fixing it now.",
+];
+
+const firstName = (id: number) => users.find((u) => u.id === id)!.name;
+
+for (const [id, title, cat, priority, requester, agent, days, hoursToFix, rating, comment, tags] of history) {
+  const created = daysAgo(days, 8 + (id % 4));
+  const claimed = after(created, 20);
+  const resolved = after(created, hoursToFix * 60);
+  const closed = after(resolved, rating <= 2 ? 3 * 60 : 60);
+  tickets.push({
+    id, title, description: `${title}.`, cat, priority, status: "Closed", requester, assignee: agent,
+    created, claimed, resolved, resolutionNote: "Fixed and tested with the employee.", closed, impact: "slows_me_down",
+  });
+  comments.push({ ticket: id, author: agent, body: historyReplies[id % historyReplies.length].replace("{name}", firstName(requester)), at: after(claimed, 10) });
+  feedback.push({ ticket: id, user: requester, rating, comment, tags, at: after(closed, 5) });
+}
+
+// A rejected approval for the lead's History tab (S6)
+tickets.push({
+  id: 1026, title: "Second monitor for my home office", description: "A second 27-inch screen for working from home.",
+  cat: 6, priority: "Normal", status: "Cancelled", requester: 1020, created: daysAgo(12, 10), impact: "minor",
+  rejected: { by: 1003, at: daysAgo(12, 14), reason: "Home office screens aren't covered by the IT budget this year. Please use the hot desks in Midrand, which have two screens." },
+  extra: { item: "Dell 27-inch monitor", estimated_cost: 4200, reason: "Working from home three days a week." },
+});
+
+// ---------- Sprint 2: macros (S7, p.16 / p.58) ----------
+
+type Macro = { dept: number; title: string; body: string; set: Status | null; uses: number; by: number };
+const macros: Macro[] = [
+  { dept: 1, by: 1003, uses: 41, set: "Waiting on employee", title: "VPN: switch to TCP profile",
+    body: "Hi {{requester.first_name}},\n\nThanks for reporting this. Home fibre routers sometimes drop VPN traffic. Please open FortiClient, choose the Johannesburg-TCP profile and reconnect. If it still drops, reply with a screenshot of the VPN check tool and I'll dig deeper.\n\nReference: {{ticket.ref}}\n{{agent.first_name}}, IT Support" },
+  { dept: 1, by: 1003, uses: 18, set: "Waiting on employee", title: "Sage: password re-sync steps",
+    body: "Hi {{requester.first_name}},\n\nSage keeps its own copy of your password. Please sign out of Sage, sign in to Windows with your new password, then open Sage and choose \"Use my Windows password\". Let me know if it still says invalid credentials.\n\n{{agent.first_name}}, IT Support" },
+  { dept: 1, by: 1003, uses: 63, set: null, title: "Password reset: self-service link",
+    body: "Hi {{requester.first_name}},\n\nYou can reset your password yourself at https://passwordreset.microsoftonline.com with your work email and the code sent to your phone. It takes about two minutes.\n\n{{agent.first_name}}, IT Support" },
+  { dept: 1, by: 1003, uses: 12, set: "Waiting on employee", title: "Laptop on order",
+    body: "Hi {{requester.first_name}},\n\nYour replacement laptop is on order and should arrive within 3 working days. I'll set it up and let you know when it's ready to collect.\n\nReference: {{ticket.ref}}\n{{agent.first_name}}, IT Support" },
+  { dept: 1, by: 1003, uses: 88, set: "Resolved", title: "Resolved: please confirm",
+    body: "Hi {{requester.first_name}},\n\nThis should be fixed now. Please check and click \"Yes, it's fixed\" on your request, or \"Still broken\" if it isn't.\n\n{{agent.first_name}}, IT Support" },
+  { dept: 1, by: 1003, uses: 9, set: "Waiting on employee", title: "Printer: clear a paper jam",
+    body: "Hi {{requester.first_name}},\n\nPlease open the front panel, pull the jammed sheet out gently towards you and close the panel. If the printer still shows a jam, reply here and I'll come past.\n\n{{agent.first_name}}, IT Support" },
+  { dept: 2, by: 1012, uses: 22, set: "Waiting on employee", title: "Payslip: send the month and the line",
+    body: "Hi {{requester.first_name}},\n\nThanks for flagging this. Please reply with the payslip month and the line that looks wrong, and we'll check it against your contract.\n\n{{agent.first_name}}, Human Resources" },
+  { dept: 2, by: 1012, uses: 15, set: "Resolved", title: "Employment letter ready",
+    body: "Hi {{requester.first_name}},\n\nYour employment letter is ready. Collect the signed copy at HR reception or reply here and we'll email the PDF.\n\nReference: {{ticket.ref}}\n{{agent.first_name}}, Human Resources" },
+  { dept: 2, by: 1012, uses: 7, set: null, title: "Leave balance explained",
+    body: "Hi {{requester.first_name}},\n\nYour leave balance updates on the last working day of the month. Leave you cancel is added back in the next run. If it still looks wrong after that, reply here.\n\n{{agent.first_name}}, Human Resources" },
 ];
 
 // ---------- seed ----------
 
 async function seed(c: PoolClient) {
   await c.query(
-    `TRUNCATE ticket_event, ticket_feedback, internal_note, comment, ticket, request_type, category, sla_policy, users, department
+    `TRUNCATE attachment_blob, attachment, outbox, notification, notification_pref, canned_response, ticket_approval,
+              ticket_event, ticket_feedback, internal_note, comment, ticket, request_type, category, sla_policy, users, department
      RESTART IDENTITY CASCADE`
   );
 
@@ -362,7 +479,7 @@ async function seed(c: PoolClient) {
       `INSERT INTO category (category_id, department_id, category_name, kind, icon, description, default_priority, needs_approval, fields, active)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [cat.id, cat.dept, cat.name, cat.kind, cat.icon, cat.description, cat.priority ?? "Normal", approval,
-       JSON.stringify(cat.fields ?? []), !approval],
+       JSON.stringify(cat.fields ?? []), true],
     );
   }
 
@@ -375,7 +492,7 @@ async function seed(c: PoolClient) {
 
   for (const t of tickets) {
     const cat = categoryById.get(t.cat)!;
-    const lastChange = t.closed ?? t.cancelled ?? t.resolved ?? t.waiting ?? t.claimed ?? t.created;
+    const lastChange = t.closed ?? t.cancelled ?? t.rejected?.at ?? t.resolved ?? t.waiting ?? t.claimed ?? t.created;
     await c.query(
       `INSERT INTO ticket (ticket_id, title, description, ticket_department_id, ticket_category_id, ticket_priority, ticket_status,
                            impact, extra_fields, requester_id, assignee_id, created_at, updated_at,
@@ -430,12 +547,85 @@ async function seed(c: PoolClient) {
     }
   }
 
+  // S10: one rating per ticket, with the agent and department at closing time; the survey was sent at close
   for (const f of feedback) {
     await c.query(
-      `INSERT INTO ticket_feedback (ticket_id, user_id, rating, comment, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$5)`,
-      [f.ticket, f.user, f.rating, f.comment, f.at],
+      `INSERT INTO ticket_feedback (ticket_id, user_id, rating, comment, tags, agent_id, department_id, created_at, updated_at)
+       SELECT $1, $2, $3, $4, $5, t.assignee_id, t.ticket_department_id, $6, $6 FROM ticket t WHERE t.ticket_id = $1`,
+      [f.ticket, f.user, f.rating, f.comment, f.tags ?? [], f.at],
+    );
+    await c.query(
+      `INSERT INTO ticket_event (ticket_id, actor_id, type, to_value, note, created_at) VALUES ($1, $2, 'feedback_given', $3, $4, $5)`,
+      [f.ticket, f.user, String(f.rating), f.comment, f.at],
     );
   }
+  await c.query(`UPDATE ticket SET csat_requested_at = closed_at WHERE ticket_status = 'Closed'`);
+
+  // S6: one ticket_approval row per decision already made
+  for (const t of tickets) {
+    if (t.approved) {
+      await c.query(`INSERT INTO ticket_approval (ticket_id, approver_id, decision, reason, decided_at) VALUES ($1, $2, 'approved', NULL, $3)`,
+        [t.id, t.approved.by, t.approved.at]);
+    }
+    if (t.rejected) {
+      await c.query(`INSERT INTO ticket_approval (ticket_id, approver_id, decision, reason, decided_at) VALUES ($1, $2, 'rejected', $3, $4)`,
+        [t.id, t.rejected.by, t.rejected.reason, t.rejected.at]);
+    }
+  }
+
+  // S7: macros
+  for (const m of macros) {
+    await c.query(
+      `INSERT INTO canned_response (department_id, title, body, set_status, created_by, updated_by, use_count, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $7)`,
+      [m.dept, m.title, m.body, m.set, m.by, m.uses, daysAgo(10)],
+    );
+  }
+
+  // S9: every breached live ticket except HD-1050 already raised its one alert (to the lead and owner)
+  const { rows: alerted } = await c.query(
+    `UPDATE ticket t SET breach_notified_at = LEAST(t.first_response_due_at, t.resolution_due_at) + interval '5 minutes'
+     WHERE t.ticket_status IN ('New', 'Open', 'Waiting on employee') AND t.ticket_id <> 1050
+       AND (t.first_response_due_at < COALESCE(t.first_response_at, now()) OR t.resolution_due_at < now())
+     RETURNING t.ticket_id, t.title, t.assignee_id, t.ticket_department_id, t.breach_notified_at,
+               (t.first_response_due_at < COALESCE(t.first_response_at, now())) AS first_breached`,
+  );
+  type N = { user: number | string; ticket: number | null; actor: number | null; type: string; title: string; body?: string | null; at: Date; read?: boolean };
+  const notes: N[] = [];
+  for (const a of alerted) {
+    const what = `${a.first_breached ? "First response" : "Resolution"} breached on HD-${a.ticket_id}`;
+    for (const who of [leads[a.ticket_department_id], a.assignee_id].filter(Boolean)) {
+      notes.push({ user: who, ticket: a.ticket_id, actor: null, type: "sla_breached", title: what, body: a.title, at: a.breach_notified_at, read: true });
+    }
+  }
+  notes.push(
+    // Lerato: Thabo's reply on her Outlook ticket (unread: the red dot), Sipho resolved her dock
+    { user: 1001, ticket: 1041, actor: 1002, type: "reply_added", title: "Thabo Nkosi replied on HD-1041", body: "Hi Lerato, please remove and re-add the account in the iOS Mail settings, then let me know.", at: hoursAgo(28.5) },
+    { user: 1001, ticket: 1029, actor: 1010, type: "status_changed", title: "Sipho Mahlangu resolved HD-1029", body: "Swapped the dock for a new Dell WD19S. Both screens tested at your desk.", at: hoursAgo(50), read: true },
+    // Thabo: Lerato's reply on HD-1048 (read)
+    { user: 1002, ticket: 1048, actor: 1001, type: "reply_added", title: "Lerato Mokoena replied on HD-1048", body: "Done, screenshot attached. The TCP profile has held for 40 minutes so far!", at: sast("11:40"), read: true },
+    // Thandi: the three requests waiting for her approval, and last week's low rating
+    { user: 1003, ticket: 1040, actor: 1021, type: "approval_waiting", title: "Pieter Botha needs your approval on HD-1040", body: "Access to the Finance reporting folder", at: hoursAgo(24) },
+    { user: 1003, ticket: 1047, actor: 1012, type: "approval_waiting", title: "Nomvula Sithole needs your approval on HD-1047", body: "New laptop for Sizwe Ndlovu", at: hoursAgo(5) },
+    { user: 1003, ticket: 1052, actor: 1004, type: "approval_waiting", title: "Ayesha Patel needs your approval on HD-1052", body: "Adobe Acrobat Pro licence", at: hoursAgo(2) },
+    { user: 1003, ticket: 1020, actor: 1022, type: "low_csat", title: "Zanele Khumalo rated HD-1020 2 stars", body: "Fixed, but nobody told me it was done.", at: daysAgo(5, 16), read: true },
+  );
+  for (const n of notes) {
+    const { rows } = await c.query(
+      `INSERT INTO notification (user_id, ticket_id, actor_id, type, title, body, read_at, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING notification_id`,
+      [n.user, n.ticket, n.actor, n.type, n.title, n.body ?? null, n.read ? n.at : null, n.at],
+    );
+    // Each one was also an email: simulated (no SMTP while seeding), so "Sent messages" isn't empty
+    await c.query(
+      `INSERT INTO outbox (channel, recipient, user_id, notification_id, ticket_id, subject, body, status, attempts, created_at)
+       SELECT 'email', u.email, u.user_id, $2, $3, $4, '<p>' || replace(replace(replace($4, '&', '&amp;'), '<', '&lt;'), '>', '&gt;') || '</p>', 'SIMULATED', 1, $5
+       FROM users u WHERE u.user_id = $1`,
+      [n.user, rows[0].notification_id, n.ticket, n.title, n.at],
+    );
+  }
+  // Pieter turned off email for status changes (p.18: "turning off email keeps the in-app item")
+  await c.query(`INSERT INTO notification_pref (user_id, type, email) VALUES (1021, 'status_changed', false)`);
 
   // We inserted fixed ids, so move each id counter past them for new rows. The next ticket is HD-1054.
   for (const [table, col] of [["department", "department_id"], ["category", "category_id"], ["request_type", "request_type_id"], ["ticket", "ticket_id"]]) {
@@ -456,7 +646,7 @@ export async function runSeed(): Promise<void> {
     console.log(
       `Seeded ${departments.length} departments, ${users.length} users, ${categories.length} categories, ` +
         `${slaPolicies.length} SLA policies, ${tickets.length} tickets, ${comments.length} comments, ${events} events, ` +
-        `${feedback.length} ratings.`,
+        `${feedback.length} ratings, ${macros.length} macros.`,
     );
     console.log(`Every login uses the password ${DEMO_PASSWORD}`);
   } catch (error) {
