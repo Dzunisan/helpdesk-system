@@ -6,7 +6,7 @@ import { formatSast } from "@/lib/format";
 
 /**
  * SLA clock chip (briefing p.12 S3, p.31):
- *   "Due 16:14"      grey   plenty of time
+ *   "Due 16:14"      grey   plenty of time ("Due Thu 09:00" on another day this week)
  *   "Due in 1h 54m"  amber  under 25% of the target left
  *   "Breached 25m"   rose   past due
  *   "Met 48m"        green  target achieved (time taken from `start`)
@@ -44,9 +44,15 @@ const formatDuration = (ms: number): string => {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 };
 
-/** "16:14" today, otherwise "Sat, 14 Nov, 16:14" (SAST) */
-const formatDue = (ms: number, now: number): string =>
-  formatSast(ms, "day") === formatSast(now, "day") ? formatSast(ms, "time") : formatSast(ms);
+/** Within this many days a due time shows as "Thu 09:00" (the weekday is unambiguous) */
+const WEEKDAY_WINDOW_MS = 6 * 24 * 60 * MINUTE;
+
+/** "16:14" today, "Thu 09:00" within 6 days, otherwise "Sat, 14 Nov, 16:14" (SAST) */
+const formatDue = (ms: number, now: number): string => {
+  if (formatSast(ms, "day") === formatSast(now, "day")) return formatSast(ms, "time");
+  if (Math.abs(ms - now) <= WEEKDAY_WINDOW_MS) return `${formatSast(ms, "day").split(",")[0]} ${formatSast(ms, "time")}`;
+  return formatSast(ms);
+};
 
 /** Re-renders every 30 seconds so the countdown stays current */
 function useNow(intervalMs = 30_000): number {
