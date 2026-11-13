@@ -22,7 +22,8 @@ const departments = [
 ];
 
 type Role = "Employee" | "Agent" | "Department Lead" | "System Admin" | "Platform Admin";
-type U = { id: number; name: string; surname: string; email: string; role: Role; dept: number | null; active?: boolean };
+/** invited: created by an admin and never signed in, so the Users table shows "Invited" (S1) */
+type U = { id: number; name: string; surname: string; email: string; role: Role; dept: number | null; active?: boolean; invited?: boolean };
 
 const users: U[] = [
   // The demo logins from the briefing (page 28)
@@ -42,6 +43,7 @@ const users: U[] = [
   { id: 1016, name: "Bongani", surname: "Mabaso", email: "bongani.mabaso", role: "Department Lead", dept: 4 },
   { id: 1017, name: "Fatima", surname: "Ismail", email: "fatima", role: "Agent", dept: 4 },
   { id: 1018, name: "Busisiwe", surname: "Mkhize", email: "busisiwe", role: "System Admin", dept: null },
+  { id: 1019, name: "Karabo", surname: "Sello", email: "karabo", role: "Agent", dept: 2, invited: true },
   // Extra employees
   { id: 1020, name: "Johan", surname: "van Wyk", email: "johan", role: "Employee", dept: 4 },
   { id: 1021, name: "Pieter", surname: "Botha", email: "pieter", role: "Employee", dept: 3 },
@@ -340,8 +342,9 @@ async function seed(c: PoolClient) {
   const hash = await bcrypt.hash(DEMO_PASSWORD, 10);
   for (const u of users) {
     await c.query(
-      `INSERT INTO users (user_id, name, surname, email, password, role, active, department_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [u.id, u.name, u.surname, `${u.email}@mzansifreight.co.za`, hash, u.role, u.active ?? true, u.dept],
+      `INSERT INTO users (user_id, name, surname, email, password, role, active, department_id, must_change_password)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [u.id, u.name, u.surname, `${u.email}@mzansifreight.co.za`, hash, u.role, u.active ?? true, u.dept, u.invited ?? false],
     );
   }
 
