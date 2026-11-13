@@ -1,13 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import SignInPage from "../pages/Auth pages/SignInPage";
-import EmployeeHomePage from "../pages/employee/EmployeeHomePage";
-import AgentHomePage from "../pages/agent/AgentHomePage";
-import DepartmentLeadHomePage from "../pages/department lead/DepartmentLeadHomePage";
-import SystemAdminHomePage from "../pages/system admin/SystemAdminHomePage";
-import PlatformAdminHomePage from "../pages/platform admin/PlatformAdminHomePage";
-
 import ProtectedRoute from "../components/ProtectedRoute";
+import AppLayout from "../components/app/AppLayout";
 
 import EmployeeSubmitRequest from "../pages/employee/EmployeeSubmitRequest";
 import EmployeeDashboard from "../pages/employee/EmployeeDashboard";
@@ -40,7 +35,7 @@ const AppRouter = () => {
 
         {/* Protected Employee Routes */}
         <Route element={<ProtectedRoute allowedRoles={["Employee"]} />}>
-          <Route path="/employee" element={<EmployeeHomePage />}>
+          <Route path="/employee" element={<AppLayout />}>
             <Route index element={<EmployeeDashboard />} />
             <Route path="my-requests" element={<EmployeeDashboard />} />
             <Route path="tickets/:id" element={<TicketDetails />} />
@@ -51,7 +46,7 @@ const AppRouter = () => {
 
         {/* Protected Agent Routes */}
         <Route element={<ProtectedRoute allowedRoles={["Agent"]} />}>
-          <Route path="/agent" element={<AgentHomePage />}>
+          <Route path="/agent" element={<AppLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="ticket-queue" element={<TicketQueue />} />
             <Route path="assigned-tickets" element={<AssignedTickets />} />
@@ -63,7 +58,7 @@ const AppRouter = () => {
 
         {/* Protected Department Lead Routes */}
         <Route element={<ProtectedRoute allowedRoles={["Department Lead"]} />}>
-          <Route path="/department-lead" element={<DepartmentLeadHomePage />}>
+          <Route path="/department-lead" element={<AppLayout />}>
             <Route path="ticket-queue" element={<TicketQueue />} />
             <Route path="approvals" element={<Approvals />} />
             <Route path="team" element={<TeamAgents />} />
@@ -75,7 +70,7 @@ const AppRouter = () => {
 
         {/* Protected System Admin Routes */}
         <Route element={<ProtectedRoute allowedRoles={["System Admin"]} />}>
-          <Route path="/system-admin" element={<SystemAdminHomePage />}>
+          <Route path="/system-admin" element={<AppLayout />}>
             <Route path="users" element={<Users />} />
             <Route path="departments" element={<Departments />} />
             <Route path="reports" element={<Reports />} />
@@ -85,7 +80,7 @@ const AppRouter = () => {
 
         {/* Protected Platform Admin Routes (no ticket access) */}
         <Route element={<ProtectedRoute allowedRoles={["Platform Admin"]} />}>
-          <Route path="/platform-admin" element={<PlatformAdminHomePage />}>
+          <Route path="/platform-admin" element={<AppLayout />}>
             <Route path="users" element={<Users />} />
             <Route path="profile" element={<UserProfile />} />
           </Route>
