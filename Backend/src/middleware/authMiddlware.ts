@@ -22,8 +22,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
         if (!user || !user.active) {
             return res.status(401).json({ message: "Not authenticated" });
         }
-        const { password: _, ...userWithoutPassword } = user;
-        req.user = userWithoutPassword;
+        req.user = userServices.toPublicUser(user);
         next();
     } catch (error) {
         return res.status(401).json({ message: "Not authenticated" });

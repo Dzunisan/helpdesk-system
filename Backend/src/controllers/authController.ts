@@ -38,8 +38,7 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
         const token = jwt.sign({id: user.user_id, email: user.email, role: user.role}, JWT_SECRET, {expiresIn: "1h"})
         res.cookie(COOKIE_NAME, token, COOKIE_OPTIONS);
 
-        const { password: _, ...userWithoutPassword } = user;
-        res.status(200).json({ user: userWithoutPassword})
+        res.status(200).json({ user: userServices.toPublicUser(user) })
     } 
     catch (error) {
 
@@ -69,8 +68,7 @@ export const me = async (req: Request, res: Response, next: NextFunction) => {
         if(!user || !user.active) {
             return res.status(401).json({message: "Not authenticated"})
         }
-        const { password: _, ...userWithoutPassword } = user;
-        res.status(200).json({user: userWithoutPassword})
+        res.status(200).json({ user: userServices.toPublicUser(user) })
     } catch (error) {
         return res.status(401).json({message: "Not authenticated"})
     }

@@ -2,6 +2,19 @@ import { query } from "../config/database";
 import bcrypt from "bcryptjs";
 import { User, CreateUserDto, UpdateUserDto } from "../types/user.types";
 
+// The only user fields that leave the server for the signed-in user (login, /me, req.user).
+// password, reset_token and reset_token_expiry never do.
+export const toPublicUser = (user: User): User => ({
+  user_id: user.user_id,
+  name: user.name,
+  surname: user.surname,
+  email: user.email,
+  role: user.role,
+  active: user.active,
+  department_id: user.department_id ?? null,
+  created_at: user.created_at,
+});
+
 export const findUserByEmail = async (email: string): Promise<User | null> => {
   const { rows } = await query("SELECT * FROM users WHERE email = $1", [email]);
   return rows[0] || null;
