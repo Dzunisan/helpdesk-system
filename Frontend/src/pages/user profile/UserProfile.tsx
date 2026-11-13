@@ -114,7 +114,7 @@ const UserProfile: React.FC = () => {
   const initials = `${name?.[0] || user?.name?.[0] || ""}${surname?.[0] || user?.surname?.[0] || ""}`.toUpperCase() || "U";
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="space-y-6">
       {/* Header section */}
       <div>
         <h2 className="text-2xl font-bold text-foreground">Account Profile</h2>

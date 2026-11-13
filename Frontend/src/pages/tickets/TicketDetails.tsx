@@ -439,7 +439,7 @@ export default function TicketDetails() {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl mx-auto pb-16">
+    <div className="space-y-6 pb-16">
       <div className="flex items-center gap-2">
         <h1 className="text-xl font-bold text-foreground">Ticket Details</h1>
       </div>

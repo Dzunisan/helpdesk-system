@@ -297,7 +297,7 @@ function StaffLayout({ user, children }: { user: User; children: ReactNode }) {
           <SidebarTrigger aria-label="Open navigation" />
           <Brand to={homePathFor(user.role)} />
         </header>
-        <div className="min-w-0 flex-1 p-4 md:p-6">{children}</div>
+        <div className="min-w-0 flex-1 px-6 py-8 sm:px-8 sm:py-10 lg:px-12">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );
@@ -333,7 +333,7 @@ function PortalLayout({ user, children }: { user: User; children: ReactNode }) {
   return (
     <div className="min-h-svh bg-muted/40">
       <header className="sticky top-0 z-10 border-b border-border bg-background">
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-4 px-4 sm:px-6">
+        <div className="flex h-16 items-center gap-8 px-6 sm:px-8 lg:px-12">
           <Brand to="/employee" />
           <nav aria-label="Main" className="hidden items-center gap-1 sm:flex">
             {navLinks}
@@ -357,11 +357,11 @@ function PortalLayout({ user, children }: { user: User; children: ReactNode }) {
           </div>
         </div>
         {/* Phones: the two links get their own row so nothing is squeezed at 390px */}
-        <nav aria-label="Main" className="flex items-center gap-1 border-t border-border px-4 py-2 sm:hidden">
+        <nav aria-label="Main" className="flex items-center gap-1 border-t border-border px-6 py-2 sm:hidden">
           {navLinks}
         </nav>
       </header>
-      <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">{children}</main>
+      <main className="w-full px-6 py-8 sm:px-8 sm:py-10 lg:px-12">{children}</main>
     </div>
   );
 }

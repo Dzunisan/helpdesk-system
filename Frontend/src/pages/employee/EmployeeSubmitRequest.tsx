@@ -65,7 +65,7 @@ const EmployeeSubmitRequest = () => {
   };
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="">
 
       <h1 className="font-bold text-lg border-b pb-4 mb-6">
         Submit a new request

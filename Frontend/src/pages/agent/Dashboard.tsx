@@ -109,7 +109,7 @@ const AgentDashboard = () => {
   }, [deptError]);
 
   return (
-    <div className="min-h-screen p-6">
+    <div>
 
       {/* Dashboard Heading */}
       <div className="mb-6">

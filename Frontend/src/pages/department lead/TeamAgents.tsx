@@ -21,7 +21,7 @@ export default function TeamAgents() {
   }, []);
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl mx-auto">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Support Team & Agents</h1>
         <p className="text-sm text-gray-600 mt-1">
