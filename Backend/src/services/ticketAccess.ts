@@ -70,6 +70,10 @@ export const canWork = (user: TicketAccessUser, ticket: TicketAccessTicket): boo
   return departmentsOf(user).includes(Number(ticket.ticket_department_id));
 };
 
+// A Department Lead of the ticket's department: may assign / reassign, approve and reject.
+export const isDepartmentLead = (user: TicketAccessUser, ticket: TicketAccessTicket): boolean =>
+  user.role === "Department Lead" && canWork(user, ticket);
+
 // May this user see the ticket at all? Requesters see their own; staff see their department's.
 export const canView = (user: TicketAccessUser, ticket: TicketAccessTicket): boolean => {
   if (NO_TICKET_ACCESS_ROLES.includes(user.role)) return false;
