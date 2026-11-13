@@ -21,6 +21,17 @@ import type {
   AgentUser,
 } from "../../types/ticket.types";
 import { toast } from "sonner";
+import ReasonDialog from "@/components/app/ReasonDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import Loader from "../../components/legacy/Loader";
 import { Button } from "../../components/legacy/Button";
 
@@ -79,6 +90,10 @@ export default function TicketDetails() {
 
   // Actions loading state
   const [actionLoading, setActionLoading] = useState(false);
+  // Dialogs that replace window.confirm / window.prompt (briefing p.34 #4)
+  const [approveOpen, setApproveOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [deleteCommentId, setDeleteCommentId] = useState<number | null>(null);
 
   // Role permissions
   const userRole = normalizeRole(user);
@@ -201,8 +216,7 @@ export default function TicketDetails() {
 
   // Delete Comment
   const handleDeleteComment = async (commentId: number) => {
-    if (!window.confirm("Are you sure you want to delete this comment?"))
-      return;
+    setDeleteCommentId(null);
     try {
       await deleteComment(commentId);
       setComments((prev) => prev.filter((c) => c.comment_id !== commentId));
@@ -258,12 +272,12 @@ export default function TicketDetails() {
   };
 
   // Approve Ticket (Lead/Admin)
-  const handleApprove = async () => {
+  const handleApprove = async (note: string) => {
     if (!ticket || actionLoading) return;
-    const note = window.prompt("Optional approval note:") ?? undefined;
+    setApproveOpen(false);
     setActionLoading(true);
     try {
-      const updated = await approveTicket(ticket.ticket_id, note);
+      const updated = await approveTicket(ticket.ticket_id, note || undefined);
       setTicket((prev) =>
         prev ? { ...prev, ticket_status: updated.ticket_status } : null,
       );
@@ -278,11 +292,9 @@ export default function TicketDetails() {
   };
 
   // Reject Ticket (Lead/Admin)
-  const handleReject = async () => {
+  const handleReject = async (reason: string) => {
     if (!ticket || actionLoading) return;
-    const reason = window.prompt("Please enter the reason for rejection:");
-    if (reason === null) return; // User cancelled prompt
-
+    setRejectOpen(false);
     setActionLoading(true);
     try {
       const updated = await rejectTicket(ticket.ticket_id, reason || undefined);
@@ -517,14 +529,14 @@ export default function TicketDetails() {
             <div className="flex items-center gap-2">
               <button
                 disabled={actionLoading}
-                onClick={handleApprove}
+                onClick={() => setApproveOpen(true)}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-md shadow transition disabled:opacity-50"
               >
                 Approve Request
               </button>
               <button
                 disabled={actionLoading}
-                onClick={handleReject}
+                onClick={() => setRejectOpen(true)}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-md shadow transition disabled:opacity-50"
               >
                 Reject Request
@@ -881,7 +893,7 @@ export default function TicketDetails() {
                         </button>
                         <span className="text-gray-300">|</span>
                         <button
-                          onClick={() => handleDeleteComment(c.comment_id)}
+                          onClick={() => setDeleteCommentId(c.comment_id)}
                           className="text-gray-500 hover:text-red-600 font-medium"
                         >
                           Delete
@@ -989,6 +1001,55 @@ export default function TicketDetails() {
           </div>
         </form>
       </div>
+
+      <ReasonDialog
+        open={approveOpen}
+        onOpenChange={setApproveOpen}
+        title={`Approve HD-${ticket.ticket_id}?`}
+        description="The request moves on to the department's agents."
+        label="Approval note"
+        placeholder="Anything the agent should know"
+        confirmLabel="Approve"
+        busy={actionLoading}
+        onConfirm={handleApprove}
+      />
+      <ReasonDialog
+        open={rejectOpen}
+        onOpenChange={setRejectOpen}
+        title={`Reject HD-${ticket.ticket_id}?`}
+        description="The requester sees this reason."
+        label="Reason"
+        placeholder="Why is this request rejected?"
+        required
+        destructive
+        confirmLabel="Reject"
+        busy={actionLoading}
+        onConfirm={handleReject}
+      />
+      <AlertDialog
+        open={deleteCommentId !== null}
+        onOpenChange={(open) => !open && setDeleteCommentId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this comment?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The comment is removed from the ticket. This can't be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() =>
+                deleteCommentId !== null && handleDeleteComment(deleteCommentId)
+              }
+            >
+              Delete comment
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

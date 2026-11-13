@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { fetchTickets, approveTicket, rejectTicket } from "../../services/ticketService";
 import type { Ticket } from "../../types/ticket.types";
 import { toast } from "sonner";
+import ReasonDialog from "@/components/app/ReasonDialog";
 import Loader from "../../components/legacy/Loader";
 import { Button } from "../../components/legacy/Button";
 
@@ -10,6 +11,9 @@ export default function Approvals() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
+  // Which ticket the approve / reject dialog is open for (replaces window.prompt)
+  const [approveId, setApproveId] = useState<number | null>(null);
+  const [rejectId, setRejectId] = useState<number | null>(null);
 
   const loadPendingTickets = async () => {
     setLoading(true);
@@ -28,12 +32,12 @@ export default function Approvals() {
     loadPendingTickets();
   }, []);
 
-  const handleApprove = async (ticketId: number) => {
-    const note = window.prompt("Optional approval note:") ?? undefined;
+  const handleApprove = async (ticketId: number, note: string) => {
+    setApproveId(null);
     setActionLoading(ticketId);
     try {
-      await approveTicket(ticketId, note);
-      toast.success(`Ticket #${ticketId} approved successfully!`);
+      await approveTicket(ticketId, note || undefined);
+      toast.success(`HD-${ticketId} approved`);
       setTickets((prev) => prev.filter((t) => t.ticket_id !== ticketId));
     } catch (err: any) {
       toast.error(err.message || "Approval failed");
@@ -42,14 +46,12 @@ export default function Approvals() {
     }
   };
 
-  const handleReject = async (ticketId: number) => {
-    const reason = window.prompt("Enter rejection reason:");
-    if (reason === null) return;
-
+  const handleReject = async (ticketId: number, reason: string) => {
+    setRejectId(null);
     setActionLoading(ticketId);
     try {
-      await rejectTicket(ticketId, reason || undefined);
-      toast.success(`Ticket #${ticketId} rejected.`);
+      await rejectTicket(ticketId, reason);
+      toast.success(`HD-${ticketId} rejected`);
       setTickets((prev) => prev.filter((t) => t.ticket_id !== ticketId));
     } catch (err: any) {
       toast.error(err.message || "Rejection failed");
@@ -146,14 +148,14 @@ export default function Approvals() {
                   <td className="px-6 py-4 text-right space-x-2">
                     <button
                       disabled={actionLoading === t.ticket_id}
-                      onClick={() => handleApprove(t.ticket_id)}
+                      onClick={() => setApproveId(t.ticket_id)}
                       className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded shadow-xs transition disabled:opacity-50"
                     >
                       Approve
                     </button>
                     <button
                       disabled={actionLoading === t.ticket_id}
-                      onClick={() => handleReject(t.ticket_id)}
+                      onClick={() => setRejectId(t.ticket_id)}
                       className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded shadow-xs transition disabled:opacity-50"
                     >
                       Reject
@@ -171,6 +173,35 @@ export default function Approvals() {
           </table>
         </div>
       )}
+
+      <ReasonDialog
+        open={approveId !== null}
+        onOpenChange={(open) => !open && setApproveId(null)}
+        title={`Approve HD-${approveId}?`}
+        description="The request moves on to the department's agents."
+        label="Approval note"
+        placeholder="Anything the agent should know"
+        confirmLabel="Approve"
+        busy={actionLoading !== null}
+        onConfirm={(note) => {
+          if (approveId !== null) return handleApprove(approveId, note);
+        }}
+      />
+      <ReasonDialog
+        open={rejectId !== null}
+        onOpenChange={(open) => !open && setRejectId(null)}
+        title={`Reject HD-${rejectId}?`}
+        description="The requester sees this reason."
+        label="Reason"
+        placeholder="Why is this request rejected?"
+        required
+        destructive
+        confirmLabel="Reject"
+        busy={actionLoading !== null}
+        onConfirm={(reason) => {
+          if (rejectId !== null) return handleReject(rejectId, reason);
+        }}
+      />
     </div>
   );
 }
