@@ -1,5 +1,6 @@
 
 import nodemailer from "nodemailer";
+import { escapeHtml } from "./escapeHtml";
 
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
@@ -12,7 +13,7 @@ const transporter = nodemailer.createTransport({
 });
 
 export const sendPasswordResetEmail = async (to: string, token: string) => {
-  const resetLink = `${process.env.CLIENT_URL || "http://localhost:5173"}/reset-password?token=${token}`;
+  const resetLink = `${process.env.CLIENT_URL || "http://localhost:5173"}/reset-password?token=${encodeURIComponent(token)}`;
 
  return await transporter.sendMail({
     from: `"Help Desk" <${process.env.EMAIL_USER}>`,
@@ -25,7 +26,7 @@ Here is your link to reset your Help Desk password. It expires in 30 minutes.
 Didn’t request this? Ignore this email. Your current password will keep working.:\n\n${resetLink}\n\nIf you didn't request this, you can ignore this email.`,
     html: `
       <p>You requested a password reset.</p>
-      <p><a href="${resetLink}">Click here to choose a new password</a> (valid for 30 minutes).</p>
+      <p><a href="${escapeHtml(resetLink)}">Click here to choose a new password</a> (valid for 30 minutes).</p>
       <p>If you didn't request this, you can ignore this email.</p>
     `,
   });

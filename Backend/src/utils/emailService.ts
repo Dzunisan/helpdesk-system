@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { escapeHtml } from './escapeHtml';
 
 export interface TicketAssignedEmailData {
     recipientEmail: string;
@@ -50,7 +51,7 @@ export const sendTempPasswordEmail = async (email: string, tempPassword: string)
             <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
                 <h2>Welcome to the Helpdesk System!</h2>
                 <p>Your account has been created successfully.</p>
-                <p>Your temporary password is: <strong>${tempPassword}</strong></p>
+                <p>Your temporary password is: <strong>${escapeHtml(tempPassword)}</strong></p>
                 <p>Please log in and update your password immediately.</p>
                 <p>Best regards,<br/>The Helpdesk Team</p>
             </div>
@@ -93,13 +94,13 @@ export const sendTicketAssignedEmail = async (data: TicketAssignedEmailData) => 
         html: `
             <div style="font-family: Arial, sans-serif; padding: 24px; color: #1f2937; line-height: 1.6; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px;">
                 <h2 style="color: #2563eb; margin-top: 0;">Ticket Assignment Update</h2>
-                <p>Hello <strong>${recipientName || 'User'}</strong>,</p>
+                <p>Hello <strong>${escapeHtml(recipientName || 'User')}</strong>,</p>
                 <p>Your support ticket has been assigned to a support agent who is now reviewing your request.</p>
                 <div style="background-color: #f8fafc; padding: 16px; border-radius: 4px; margin: 20px 0;">
-                    <p style="margin: 0 0 8px 0;"><strong>Ticket ID:</strong> #${ticketId}</p>
-                    <p style="margin: 0 0 8px 0;"><strong>Title:</strong> ${ticketTitle}</p>
-                    <p style="margin: 0 0 8px 0;"><strong>Status:</strong> <span style="background-color: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-weight: 500;">${status}</span></p>
-                    <p style="margin: 0;"><strong>Assigned Agent:</strong> ${assigneeName}</p>
+                    <p style="margin: 0 0 8px 0;"><strong>Ticket ID:</strong> #${escapeHtml(ticketId)}</p>
+                    <p style="margin: 0 0 8px 0;"><strong>Title:</strong> ${escapeHtml(ticketTitle)}</p>
+                    <p style="margin: 0 0 8px 0;"><strong>Status:</strong> <span style="background-color: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-weight: 500;">${escapeHtml(status)}</span></p>
+                    <p style="margin: 0;"><strong>Assigned Agent:</strong> ${escapeHtml(assigneeName)}</p>
                 </div>
                 <p>You can track the progress of your ticket on the Helpdesk portal.</p>
                 <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
@@ -144,14 +145,14 @@ export const sendTicketCommentEmail = async (data: TicketCommentEmailData) => {
         text: `Hello ${recipientName || 'User'},\n\nA new ${commentTypeLabel.toLowerCase()} has been posted on ticket #${ticketId} ("${ticketTitle}") by ${authorName} (${authorRole}):\n\n"${commentBody}"\n\nLog in to the Helpdesk portal to respond or view details.\n\nBest regards,\nThe Helpdesk Team`,
         html: `
             <div style="font-family: Arial, sans-serif; padding: 24px; color: #1f2937; line-height: 1.6; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px;">
-                <h2 style="color: #2563eb; margin-top: 0;">New ${commentTypeLabel} on Ticket #${ticketId}</h2>
-                <p>Hello <strong>${recipientName || 'User'}</strong>,</p>
-                <p><strong>${authorName}</strong> (${authorRole}) posted a new ${commentTypeLabel.toLowerCase()}:</p>
+                <h2 style="color: #2563eb; margin-top: 0;">New ${escapeHtml(commentTypeLabel)} on Ticket #${escapeHtml(ticketId)}</h2>
+                <p>Hello <strong>${escapeHtml(recipientName || 'User')}</strong>,</p>
+                <p><strong>${escapeHtml(authorName)}</strong> (${escapeHtml(authorRole)}) posted a new ${escapeHtml(commentTypeLabel.toLowerCase())}:</p>
                 <div style="background-color: ${isInternal ? '#fefce8' : '#f8fafc'}; border-left: 4px solid ${isInternal ? '#eab308' : '#2563eb'}; padding: 16px; border-radius: 4px; margin: 20px 0;">
-                    <p style="margin: 0; font-style: italic; white-space: pre-wrap;">${commentBody}</p>
+                    <p style="margin: 0; font-style: italic; white-space: pre-wrap;">${escapeHtml(commentBody)}</p>
                 </div>
                 <div style="background-color: #f3f4f6; padding: 12px; border-radius: 4px; font-size: 13px; margin: 16px 0;">
-                    <p style="margin: 0 0 4px 0;"><strong>Ticket:</strong> #${ticketId} - ${ticketTitle}</p>
+                    <p style="margin: 0 0 4px 0;"><strong>Ticket:</strong> #${escapeHtml(ticketId)} - ${escapeHtml(ticketTitle)}</p>
                 </div>
                 <p>You can view and reply to this ticket in the Helpdesk portal.</p>
                 <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
@@ -193,13 +194,13 @@ export const sendTicketStatusEmail = async (data: TicketStatusEmailData) => {
         html: `
             <div style="font-family: Arial, sans-serif; padding: 24px; color: #1f2937; line-height: 1.6; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px;">
                 <h2 style="color: #2563eb; margin-top: 0;">Ticket Status Update</h2>
-                <p>Hello <strong>${recipientName || 'User'}</strong>,</p>
-                <p>The status of your ticket has been updated by <strong>${updatedByName}</strong>:</p>
+                <p>Hello <strong>${escapeHtml(recipientName || 'User')}</strong>,</p>
+                <p>The status of your ticket has been updated by <strong>${escapeHtml(updatedByName)}</strong>:</p>
                 <div style="background-color: #f8fafc; padding: 16px; border-radius: 4px; margin: 20px 0;">
-                    <p style="margin: 0 0 8px 0;"><strong>Ticket ID:</strong> #${ticketId}</p>
-                    <p style="margin: 0 0 8px 0;"><strong>Title:</strong> ${ticketTitle}</p>
-                    <p style="margin: 0 0 8px 0;"><strong>Previous Status:</strong> ${oldStatus}</p>
-                    <p style="margin: 0;"><strong>New Status:</strong> <span style="background-color: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-weight: 500;">${newStatus}</span></p>
+                    <p style="margin: 0 0 8px 0;"><strong>Ticket ID:</strong> #${escapeHtml(ticketId)}</p>
+                    <p style="margin: 0 0 8px 0;"><strong>Title:</strong> ${escapeHtml(ticketTitle)}</p>
+                    <p style="margin: 0 0 8px 0;"><strong>Previous Status:</strong> ${escapeHtml(oldStatus)}</p>
+                    <p style="margin: 0;"><strong>New Status:</strong> <span style="background-color: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-weight: 500;">${escapeHtml(newStatus)}</span></p>
                 </div>
                 <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
                 <p style="font-size: 13px; color: #6b7280; margin: 0;">Best regards,<br/><strong>The Helpdesk Support Team</strong></p>
