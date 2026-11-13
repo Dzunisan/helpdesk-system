@@ -12,24 +12,26 @@ import { Spinner } from "@/components/ui/spinner";
 interface ChangePasswordCardProps {
   /** The signed-in user's email, so password managers save against the right account */
   email: string;
-  /** Saves the new password; resolves true on success */
-  onSubmit: (newPassword: string) => Promise<boolean>;
+  /** Checks the current password and saves the new one; resolves true on success */
+  onSubmit: (currentPassword: string, newPassword: string) => Promise<boolean>;
   saving: boolean;
   /** Server error from the last attempt, shown above the button */
   error: string | null;
   className?: string;
 }
 
-/** New + confirm password with the shared rule checklist (briefing p.36, p.68) */
+/** Current, new and confirm password with the shared rule checklist (briefing p.36, p.68) */
 export default function ChangePasswordCard({ email, onSubmit, saving, error, className }: ChangePasswordCardProps) {
+  const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const canSubmit = passwordAcceptable(password, confirm) && !saving;
+  const canSubmit = current !== "" && passwordAcceptable(password, confirm) && !saving;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
-    if (await onSubmit(password.trim())) {
+    if (await onSubmit(current, password.trim())) {
+      setCurrent("");
       setPassword("");
       setConfirm("");
     }
@@ -45,6 +47,21 @@ export default function ChangePasswordCard({ email, onSubmit, saving, error, cla
       <form onSubmit={handleSubmit} className="flex w-full flex-col gap-6">
         <input type="email" name="username" autoComplete="username" value={email} readOnly hidden />
         <FieldGroup className="gap-5">
+          {/* Same two-column grid as the new password pair, so the fields line up */}
+          <div className="grid gap-5 @lg:grid-cols-2">
+            <Field>
+              <FieldLabel htmlFor="profile-current-password">Current password</FieldLabel>
+              <PasswordInput
+                groupClassName="h-10"
+                id="profile-current-password"
+                autoComplete="current-password"
+                value={current}
+                onChange={(e) => setCurrent(e.target.value)}
+                disabled={saving}
+                required
+              />
+            </Field>
+          </div>
           <div className="grid gap-5 @lg:grid-cols-2">
             <Field>
               <FieldLabel htmlFor="profile-new-password">New password</FieldLabel>

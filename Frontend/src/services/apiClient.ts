@@ -79,6 +79,15 @@ api.interceptors.response.use(
       const url = error.config?.url ?? "";
       if (!AUTH_PROBES.some((probe) => url.includes(probe))) onUnauthorized?.();
     }
+    // Still on the temporary password: the server allows nothing else until it is changed (S1)
+    if (
+      error instanceof AxiosError &&
+      error.response?.status === 403 &&
+      (error.response.data as { code?: string } | undefined)?.code === "must_change_password" &&
+      window.location.pathname !== "/change-password"
+    ) {
+      window.location.assign("/change-password");
+    }
     return Promise.reject(error);
   },
 );

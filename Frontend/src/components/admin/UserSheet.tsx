@@ -3,8 +3,9 @@ import { Info } from "lucide-react";
 import { toast } from "sonner";
 import { createUser, updateUser } from "@/services/users";
 import { toApiError } from "@/services/apiClient";
-import type { Department, Role, User } from "@/types/api";
+import type { Department, Role, SimulatedWelcomeEmail, User } from "@/types/api";
 import FormSheet, { FormSheetBody } from "@/components/admin/FormSheet";
+import SimulatedEmailDialog from "@/components/admin/SimulatedEmailDialog";
 import { roleLabel } from "@/components/admin/roles";
 import { fullNameOf, needsDepartment } from "@/components/admin/users";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -54,21 +55,33 @@ export interface UserSheetProps {
  */
 export default function UserSheet({ open, onOpenChange, ...props }: UserSheetProps) {
   const [busy, setBusy] = useState(false);
+  // The welcome email the server couldn't send, shown once after the drawer closes
+  const [simulated, setSimulated] = useState<{ name: string; email: SimulatedWelcomeEmail } | null>(null);
   return (
-    <FormSheet open={open} onOpenChange={onOpenChange} busy={busy}>
-      <UserForm {...props} setBusy={setBusy} busy={busy} onDone={() => onOpenChange(false)} />
-    </FormSheet>
+    <>
+      <FormSheet open={open} onOpenChange={onOpenChange} busy={busy}>
+        <UserForm
+          {...props}
+          setBusy={setBusy}
+          busy={busy}
+          onSimulatedEmail={(name, email) => setSimulated({ name, email })}
+          onDone={() => onOpenChange(false)}
+        />
+      </FormSheet>
+      <SimulatedEmailDialog email={simulated?.email ?? null} name={simulated?.name ?? ""} onClose={() => setSimulated(null)} />
+    </>
   );
 }
 
 type UserFormProps = Omit<UserSheetProps, "open" | "onOpenChange"> & {
   busy: boolean;
   setBusy: (busy: boolean) => void;
+  onSimulatedEmail: (name: string, email: SimulatedWelcomeEmail) => void;
   onDone: () => void;
 };
 
 /** Mounted each time the drawer opens, so every open starts from the user as they are now */
-function UserForm({ user, scope, departments = [], onSaved, busy, setBusy, onDone }: UserFormProps) {
+function UserForm({ user, scope, departments = [], onSaved, busy, setBusy, onSimulatedEmail, onDone }: UserFormProps) {
   const isEdit = user !== null;
   const staff = scope === "staff";
 
@@ -124,11 +137,21 @@ function UserForm({ user, scope, departments = [], onSaved, busy, setBusy, onDon
 
     setBusy(true);
     try {
-      const saved = isEdit ? await updateUser(user.user_id, body) : await createUser(body);
-      const who = fullNameOf(saved);
-      if (isEdit) toast.success(`${who} was updated`);
-      else toast.success(`${who} was added`, { description: `A temporary password is on its way to ${saved.email}.` });
-      onSaved(saved, !isEdit);
+      if (isEdit) {
+        const saved = await updateUser(user.user_id, body);
+        toast.success(`${fullNameOf(saved)} was updated`);
+        onSaved(saved, false);
+      } else {
+        const created = await createUser(body);
+        const who = fullNameOf(created.user);
+        if (created.simulated_welcome_email) {
+          toast.success(`${who} was added`);
+          onSimulatedEmail(who, created.simulated_welcome_email);
+        } else {
+          toast.success(`${who} was added`, { description: `A temporary password is on its way to ${created.user.email}.` });
+        }
+        onSaved(created.user, true);
+      }
       onDone();
     } catch (err) {
       const apiError = toApiError(err, isEdit ? "Couldn't save the user." : "Couldn't add the user.");
