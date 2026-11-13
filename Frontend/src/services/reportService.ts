@@ -13,6 +13,8 @@ export interface AdminOverviewDepartment {
   lead_name: string | null;
   agents: number;
   open_tickets: number;
+  /** Open tickets past a due time (the queues' Breached rule) */
+  breached_tickets: number;
 }
 
 export interface AdminOverview {
@@ -22,6 +24,7 @@ export interface AdminOverview {
     active_departments: number;
     inactive_departments: number;
     open_tickets: number;
+    breached_tickets: number;
   };
   departments: AdminOverviewDepartment[];
   checklist: {

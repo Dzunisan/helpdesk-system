@@ -30,8 +30,9 @@ interface FilterChipProps<T extends string> {
 }
 
 /**
- * A filter chip for the queue toolbar (briefing p.47 "Priority: Any ⌄"): an outline button that
- * turns indigo-tinted (secondary) while it filters, with a radio menu of choices.
+ * The one toolbar filter (briefing p.47 "Priority: Any ⌄", p.61 "Role: Any ⌄"), on the queues and
+ * the admin pages alike: an outline button that turns indigo-tinted (secondary) while it filters,
+ * with a radio menu of choices. Put the "Any" choice first in `options`.
  */
 export default function FilterChip<T extends string>({
   label,

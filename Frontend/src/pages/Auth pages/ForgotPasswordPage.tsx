@@ -45,13 +45,9 @@ const ForgotPasswordPage = () => {
           </AuthMessage>
           <p className="rounded-lg bg-muted px-4 py-3 text-center text-xs text-pretty text-muted-foreground">
             Nothing after 5 minutes? Check your spam folder, or{" "}
-            <button
-              type="button"
-              onClick={() => setSent(false)}
-              className="rounded-sm font-medium text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-            >
+            <Button type="button" variant="link" onClick={() => setSent(false)} className="h-auto p-0 text-xs">
               try again
-            </button>
+            </Button>
             .
           </p>
           <BackToSignIn />

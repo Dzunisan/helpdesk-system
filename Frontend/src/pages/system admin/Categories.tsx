@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ChevronRight, Plus, RotateCw, SearchX, Shapes } from "lucide-react";
+import { Building2, ChevronRight, Plus, RotateCw, SearchX, Shapes } from "lucide-react";
 import { listCategories } from "@/services/categories";
 import { listDepartments } from "@/services/departments";
 import type { Category } from "@/types/api";
@@ -14,7 +14,7 @@ import { ListBody, ListCaption, ListCard, ListHeaderRow, ListRow, LoadingRows } 
 import { ActiveBadge, NeedsApprovalBadge } from "@/components/admin/AdminBadges";
 import CategoryIconTile from "@/components/admin/CategoryIconTile";
 import CategorySheet from "@/components/admin/CategorySheet";
-import FilterSelect from "@/components/admin/FilterSelect";
+import FilterChip from "@/components/app/FilterChip";
 import { useLoader } from "@/components/admin/useLoader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -127,12 +127,13 @@ export default function Categories() {
               { value: "inactive", label: "Inactive", count: firstLoad || loadFailed ? undefined : counts.inactive },
             ]}
           />
-          <FilterSelect
+          <FilterChip
             label="Department"
-            allLabel="All departments"
+            icon={Building2}
             value={department}
+            anyValue="all"
             onValueChange={setDepartment}
-            options={departmentOptions}
+            options={[{ value: "all", label: "Any" }, ...departmentOptions]}
           />
         </div>
         <SearchInput id="search-categories" value={search} onValueChange={setSearch} placeholder="Search categories" />
@@ -231,19 +232,20 @@ export default function Categories() {
 function CategoryRow({ category: c, onOpen }: { category: Category; onOpen: () => void }) {
   const fieldCount = c.fields.length;
   return (
-    <ListRow grid={GRID} className="has-[button[data-row-edit]:hover]:bg-muted/50">
+    <ListRow grid={GRID} className="has-[[data-row-edit]:hover]:bg-muted/50">
       <div className={cn("flex min-w-0 items-center gap-3", !c.active && "opacity-60")}>
         <CategoryIconTile name={c.icon} muted={!c.active} />
         <div className="grid min-w-0 leading-tight">
-          <button
+          <Button
             type="button"
+            variant="link"
             data-row-edit=""
             onClick={onOpen}
             aria-label={`Edit ${c.category_name}`}
-            className="truncate text-left text-sm font-medium text-foreground outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+            className="block h-auto truncate rounded-none border-0 p-0 text-left text-sm font-medium text-foreground hover:no-underline focus-visible:ring-0 active:not-aria-[haspopup]:translate-y-0 after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
           >
             {c.category_name}
-          </button>
+          </Button>
           {c.description && <span className="truncate text-xs text-muted-foreground">{c.description}</span>}
         </div>
       </div>

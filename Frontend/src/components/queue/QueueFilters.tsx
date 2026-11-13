@@ -2,7 +2,7 @@ import { Shapes, SignalHigh, Timer } from "lucide-react";
 import type { Category } from "@/types/api";
 import { SearchInput } from "@/components/app/Toolbar";
 import { Button } from "@/components/ui/button";
-import FilterChip from "./FilterChip";
+import FilterChip from "@/components/app/FilterChip";
 import { ANY, PRIORITY_OPTIONS, SLA_OPTIONS, type QueueFilterState } from "./useQueueFilters";
 
 

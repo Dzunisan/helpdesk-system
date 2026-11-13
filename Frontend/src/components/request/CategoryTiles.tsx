@@ -1,6 +1,6 @@
-import { RadioGroup as RadioGroupPrimitive } from "radix-ui";
 import { ChevronRight, CircleCheck } from "lucide-react";
 import type { Category, CategoryKind } from "@/types/api";
+import { RadioGroup, RadioGroupIndicator, RadioGroupItem } from "@/components/ui/radio-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import CategoryIcon from "./CategoryIcon";
@@ -28,7 +28,7 @@ interface CategoryTilesProps {
  */
 export default function CategoryTiles({ categories, value, onValueChange, onPick }: CategoryTilesProps) {
   return (
-    <RadioGroupPrimitive.Root
+    <RadioGroup
       value={value}
       onValueChange={onValueChange}
       aria-label="What do you need help with?"
@@ -50,14 +50,15 @@ export default function CategoryTiles({ categories, value, onValueChange, onPick
           </section>
         );
       })}
-    </RadioGroupPrimitive.Root>
+    </RadioGroup>
   );
 }
 
 function CategoryTile({ category, onPick }: { category: Category; onPick?: (value: string) => void }) {
   const value = String(category.category_id);
   return (
-    <RadioGroupPrimitive.Item
+    <RadioGroupItem
+      variant="card"
       value={value}
       onDoubleClick={() => onPick?.(value)}
       onKeyDown={(event) => {
@@ -87,14 +88,14 @@ function CategoryTile({ category, onPick }: { category: Category; onPick?: (valu
         )}
         <span className="text-xs text-muted-foreground md:mt-auto md:pt-1">{category.department_name}</span>
       </span>
-      <RadioGroupPrimitive.Indicator className="absolute top-3 right-3 hidden text-primary md:block">
+      <RadioGroupIndicator className="absolute top-3 right-3 hidden text-primary md:block">
         <CircleCheck className="size-5 fill-primary text-primary-foreground" aria-hidden />
-      </RadioGroupPrimitive.Indicator>
+      </RadioGroupIndicator>
       <ChevronRight
         aria-hidden
         className="size-4 shrink-0 text-muted-foreground/60 group-data-[state=checked]/tile:text-primary md:hidden"
       />
-    </RadioGroupPrimitive.Item>
+    </RadioGroupItem>
   );
 }
 

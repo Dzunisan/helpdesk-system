@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Pencil, Plus, RotateCw, SearchX, UserRoundCheck, UserRoundX, Users as UsersIcon } from "lucide-react";
+import { Building2, ChevronLeft, ChevronRight, CircleDot, Pencil, Plus, RotateCw, SearchX, UserCog, UserRoundCheck, UserRoundX, Users as UsersIcon } from "lucide-react";
 import { listUsers } from "@/services/users";
 import { listDepartments } from "@/services/departments";
 import type { User } from "@/types/api";
@@ -13,7 +13,7 @@ import ErrorState from "@/components/app/ErrorState";
 import { SearchInput, Toolbar } from "@/components/app/Toolbar";
 import { ListBody, ListCaption, ListCard, ListHeaderRow, ListRow, LoadingRows } from "@/components/app/ListCard";
 import { AccountStatusBadge, RoleBadge } from "@/components/admin/AdminBadges";
-import FilterSelect from "@/components/admin/FilterSelect";
+import FilterChip from "@/components/app/FilterChip";
 import RowMenu from "@/components/admin/RowMenu";
 import UserSheet from "@/components/admin/UserSheet";
 import { useAccountActions } from "@/components/admin/useAccountActions";
@@ -27,6 +27,8 @@ import { DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/co
 const GRID = "xl:grid xl:grid-cols-[minmax(0,1fr)_9.5rem_10rem_7rem_9rem_2rem] xl:items-center xl:gap-6";
 const PAGE_SIZE = 25;
 
+/** The first choice of every filter: no filtering */
+const ANY = { value: "all", label: "Any" };
 const ROLE_OPTIONS = [
   { value: "Department Lead", label: "Department leads" },
   { value: "Agent", label: "Agents" },
@@ -151,15 +153,16 @@ export default function StaffUsers() {
 
       <Toolbar>
         <div className="grid grid-cols-[1fr_1.4fr_1fr] gap-2 sm:flex sm:items-center">
-          <FilterSelect label="Role" allLabel="All roles" value={role} onValueChange={withReset(setRole)} options={ROLE_OPTIONS} />
-          <FilterSelect
+          <FilterChip label="Role" icon={UserCog} value={role} anyValue="all" onValueChange={withReset(setRole)} options={[ANY, ...ROLE_OPTIONS]} />
+          <FilterChip
             label="Department"
-            allLabel="All departments"
+            icon={Building2}
             value={department}
+            anyValue="all"
             onValueChange={withReset(setDepartment)}
-            options={departmentOptions}
+            options={[ANY, ...departmentOptions]}
           />
-          <FilterSelect label="Status" allLabel="All statuses" value={status} onValueChange={withReset(setStatus)} options={STATUS_OPTIONS} />
+          <FilterChip label="Status" icon={CircleDot} value={status} anyValue="all" onValueChange={withReset(setStatus)} options={[ANY, ...STATUS_OPTIONS]} />
         </div>
         <SearchInput id="search-users" value={search} onValueChange={withReset(setSearch)} placeholder="Search name or email" />
       </Toolbar>
@@ -278,20 +281,21 @@ function UserRow({ user, departmentName, busy, onEdit, onDeactivate, onReactivat
   const lastSignIn = user.last_login_at ? formatSast(user.last_login_at, "smart") : null;
 
   return (
-    <ListRow grid={GRID} className="has-[button[data-row-edit]:hover]:bg-muted/50">
+    <ListRow grid={GRID} className="has-[[data-row-edit]:hover]:bg-muted/50">
       {/* Who: the name button stretches over the row, so a click anywhere opens Edit */}
       <div className={cn("flex min-w-0 items-center gap-3 pr-10 xl:pr-0", !user.active && "opacity-60")}>
         <UserAvatar name={name} />
         <div className="grid min-w-0 leading-tight">
-          <button
+          <Button
             type="button"
+            variant="link"
             data-row-edit=""
             onClick={onEdit}
             aria-label={`Edit ${name}`}
-            className="truncate text-left text-sm font-medium text-foreground outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+            className="block h-auto truncate rounded-none border-0 p-0 text-left text-sm font-medium text-foreground hover:no-underline focus-visible:ring-0 active:not-aria-[haspopup]:translate-y-0 after:absolute after:inset-0 after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
           >
             {name}
-          </button>
+          </Button>
           <span className="truncate text-xs text-muted-foreground">{user.email}</span>
         </div>
       </div>

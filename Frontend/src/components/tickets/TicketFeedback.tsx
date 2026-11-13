@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { Star } from "lucide-react";
 import type { Ticket, TicketFeedback } from "@/types/api";
-import { formatSast } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import SectionCard from "@/components/app/SectionCard";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { firstName } from "./ticketDetail";
+import { firstNameOf, formatSast } from "@/lib/format";
 
 const RATING_WORD = ["", "Poor", "Fair", "Okay", "Good", "Great"] as const;
 
@@ -19,7 +19,7 @@ function Stars({ value, className }: { value: number; className?: string }) {
         <Star
           key={n}
           aria-hidden
-          className={cn("size-4", n <= value ? "fill-amber-400 text-amber-400" : "fill-muted text-muted-foreground/30")}
+          className={cn("size-4", n <= value ? "fill-rating text-rating" : "fill-muted text-muted-foreground/30")}
         />
       ))}
     </span>
@@ -38,7 +38,7 @@ export function FeedbackForm({ ticket, onSubmit }: FeedbackFormProps) {
   const [comment, setComment] = useState("");
   const [sending, setSending] = useState(false);
   const shown = hover || rating;
-  const who = ticket.assignee_name ? firstName(ticket.assignee_name) : (ticket.department_name ?? "the team");
+  const who = ticket.assignee_name ? firstNameOf(ticket.assignee_name, "them") : (ticket.department_name ?? "the team");
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,29 +56,35 @@ export function FeedbackForm({ ticket, onSubmit }: FeedbackFormProps) {
     >
       <form onSubmit={submit} className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div role="radiogroup" aria-label="Rating" className="-ml-2 flex items-center" onMouseLeave={() => setHover(0)}>
+          {/* One tab stop; arrow keys move between the stars (ui RadioGroup) */}
+          <RadioGroup
+            aria-label="Rating"
+            orientation="horizontal"
+            value={rating ? String(rating) : ""}
+            onValueChange={(v) => setRating(Number(v))}
+            onMouseLeave={() => setHover(0)}
+            className="-ml-2 flex w-auto items-center gap-0"
+          >
             {[1, 2, 3, 4, 5].map((n) => (
-              <button
+              <RadioGroupItem
                 key={n}
-                type="button"
-                role="radio"
-                aria-checked={rating === n}
+                variant="card"
+                value={String(n)}
                 aria-label={`${n} star${n > 1 ? "s" : ""}, ${RATING_WORD[n].toLowerCase()}`}
-                onClick={() => setRating(n)}
                 onMouseEnter={() => setHover(n)}
-                className="flex size-11 items-center justify-center rounded-lg transition-colors outline-none hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="flex size-11 items-center justify-center rounded-lg transition-colors hover:bg-muted"
               >
                 <Star
                   aria-hidden
                   className={cn(
                     "size-7 transition-transform",
-                    n <= shown ? "fill-amber-400 text-amber-400" : "fill-transparent text-muted-foreground/40",
+                    n <= shown ? "fill-rating text-rating" : "fill-transparent text-muted-foreground/40",
                     n === hover && "scale-110",
                   )}
                 />
-              </button>
+              </RadioGroupItem>
             ))}
-          </div>
+          </RadioGroup>
           <span className="min-w-12 text-sm font-medium text-foreground" aria-live="polite">
             {shown ? RATING_WORD[shown] : <span className="font-normal text-muted-foreground">Tap a star</span>}
           </span>
@@ -140,7 +146,7 @@ export function FeedbackAwaiting({ requesterName }: { requesterName: string | nu
         <span className="text-sm text-muted-foreground">Not rated yet</span>
       </div>
       <p className="mt-3 text-xs text-muted-foreground">
-        {firstName(requesterName, "The requester")} can rate this now that it's resolved.
+        {firstNameOf(requesterName, "The requester")} can rate this now that it's resolved.
       </p>
     </SectionCard>
   );

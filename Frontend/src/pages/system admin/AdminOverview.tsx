@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Building2, Inbox, Shapes, Timer, UserRoundX, Users } from "lucide-react";
+import { AlarmClock, Building2, Inbox, Shapes, Timer, UserRoundX, Users } from "lucide-react";
 import { fetchAdminOverview, type AdminOverview as Overview } from "@/services/reportService";
 import { listCategories } from "@/services/categories";
 import { listSlaPolicies } from "@/services/slaPolicies";
@@ -22,8 +22,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 type LoadState = { status: "loading" } | { status: "error" } | { status: "ready"; data: Overview };
 
-/* Department · Lead · Agents · Open. Stacks below sm. */
-const GRID = "sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_4rem_4rem] sm:items-center sm:gap-6";
+/* Department · Lead · Agents · Open · Breached (page 60). Stacks below sm. */
+const GRID = "sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_4rem_4rem_4.5rem] sm:items-center sm:gap-6";
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -68,7 +68,7 @@ export default function AdminOverview() {
         <ErrorState title="Couldn't load the overview" onRetry={retry} />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             <StatCard
               label="Active users"
               icon={Users}
@@ -89,9 +89,16 @@ export default function AdminOverview() {
               label="Open tickets"
               icon={Inbox}
               loading={loading}
-              className="col-span-2 lg:col-span-1"
               value={data?.totals.open_tickets}
               hint="Across all departments"
+            />
+            <StatCard
+              label="Breached"
+              icon={AlarmClock}
+              loading={loading}
+              tone={data && data.totals.breached_tickets > 0 ? "danger" : "default"}
+              value={data?.totals.breached_tickets}
+              hint="Open tickets past a due time"
             />
           </div>
 
@@ -126,9 +133,10 @@ function DepartmentsCard({ data }: { data: Overview | null }) {
         <span>Lead</span>
         <span className="text-right">Agents</span>
         <span className="text-right">Open</span>
+        <span className="text-right">Breached</span>
       </ListHeaderRow>
       {!data ? (
-        <LoadingRows grid={GRID} breakpoint="sm" rows={4} columns={["text", "avatar", "meta", "meta"]} />
+        <LoadingRows grid={GRID} breakpoint="sm" rows={4} columns={["text", "avatar", "meta", "meta", "meta"]} />
       ) : departments.length === 0 ? (
         <EmptyState
           icon={Building2}
@@ -157,9 +165,18 @@ function DepartmentsCard({ data }: { data: Overview | null }) {
                   </div>
                   <span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums sm:hidden">
                     {plural(d.agents, "agent", "agents")} · {d.open_tickets} open
+                    {d.breached_tickets > 0 && <span className="text-destructive"> · {d.breached_tickets} breached</span>}
                   </span>
                   <span className="hidden text-right text-sm tabular-nums sm:block">{d.agents}</span>
                   <span className="hidden text-right text-sm tabular-nums sm:block">{d.open_tickets}</span>
+                  <span
+                    className={cn(
+                      "hidden text-right text-sm tabular-nums sm:block",
+                      d.breached_tickets > 0 ? "font-medium text-destructive" : "text-muted-foreground",
+                    )}
+                  >
+                    {d.breached_tickets}
+                  </span>
                 </div>
               </ListRow>
             );

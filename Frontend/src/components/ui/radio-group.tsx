@@ -17,8 +17,32 @@ function RadioGroup({
 
 function RadioGroupItem({
   className,
+  variant = "default",
+  children,
   ...props
-}: React.ComponentProps<typeof RadioGroupPrimitive.Item>) {
+}: React.ComponentProps<typeof RadioGroupPrimitive.Item> & {
+  /**
+   * `default`: the round radio. `card`: an unstyled item that renders its children (selectable
+   * tiles, rating stars); style it with data-[state=checked]: and add a RadioGroupIndicator if needed.
+   * Focus, arrow keys and one tab stop come from the group either way.
+   */
+  variant?: "default" | "card"
+}) {
+  if (variant === "card") {
+    return (
+      <RadioGroupPrimitive.Item
+        data-slot="radio-group-item"
+        data-variant="card"
+        className={cn(
+          "outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
+          className
+        )}
+        {...props}
+      >
+        {children}
+      </RadioGroupPrimitive.Item>
+    )
+  }
   return (
     <RadioGroupPrimitive.Item
       data-slot="radio-group-item"
@@ -38,4 +62,9 @@ function RadioGroupItem({
   )
 }
 
-export { RadioGroup, RadioGroupItem }
+/** Shows its children only while the surrounding card item is checked */
+function RadioGroupIndicator(props: React.ComponentProps<typeof RadioGroupPrimitive.Indicator>) {
+  return <RadioGroupPrimitive.Indicator data-slot="radio-group-indicator" {...props} />
+}
+
+export { RadioGroup, RadioGroupItem, RadioGroupIndicator }
