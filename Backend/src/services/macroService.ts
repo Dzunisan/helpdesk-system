@@ -184,6 +184,26 @@ const cleanBoolean = (value: unknown, field: string): boolean => {
   throw new HttpError(400, `${field} must be true or false.`);
 };
 
+/** An internal macro can't resolve: the resolution note is shown to the employee */
+const checkInternalResolve = (setStatus: TicketStatus | null, isInternal: boolean) => {
+  if (isInternal && setStatus === "Resolved") {
+    throw new HttpError(400, "An internal note can't resolve a ticket.", [
+      "Send it as a public reply, or pick another status, so the employee sees what was done.",
+    ]);
+  }
+};
+
+/** Titles are unique per department whatever the letter case */
+const checkTitleFree = async (departmentId: number, title: string, exceptId: number | null) => {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM canned_response
+     WHERE department_id = $1 AND lower(title) = lower($2) AND ($3::int IS NULL OR id <> $3::int)
+     LIMIT 1`,
+    [departmentId, title, exceptId]
+  );
+  if (rows.length > 0) throw new HttpError(409, "A macro with this title already exists in your department.");
+};
+
 const uniqueTitle = (error: unknown) => {
   if ((error as { code?: string })?.code === "23505") {
     throw new HttpError(409, "A macro with this title already exists in your department.");
@@ -206,6 +226,8 @@ export const createMacro = async (user: User, input: Record<string, unknown>): P
   const body = cleanText(input.body, "body");
   const setStatus = cleanStatus(input.set_status);
   const isInternal = input.is_internal === undefined ? false : cleanBoolean(input.is_internal, "is_internal");
+  checkInternalResolve(setStatus, isInternal);
+  await checkTitleFree(departmentId, title, null);
 
   const { rows } = await pool
     .query(
@@ -231,10 +253,23 @@ export const updateMacro = async (user: User, macroId: number, input: Record<str
     values.push(value);
     sets.push(`${column} = $${values.length}`);
   };
-  if ("title" in input) set("title", cleanText(input.title, "title"));
+  let nextStatus = macro.set_status;
+  let nextInternal = macro.is_internal;
+  if ("title" in input) {
+    const title = cleanText(input.title, "title");
+    await checkTitleFree(macro.department_id, title, macro.id);
+    set("title", title);
+  }
   if ("body" in input) set("body", cleanText(input.body, "body"));
-  if ("set_status" in input) set("set_status", cleanStatus(input.set_status));
-  if ("is_internal" in input) set("is_internal", cleanBoolean(input.is_internal, "is_internal"));
+  if ("set_status" in input) {
+    nextStatus = cleanStatus(input.set_status);
+    set("set_status", nextStatus);
+  }
+  if ("is_internal" in input) {
+    nextInternal = cleanBoolean(input.is_internal, "is_internal");
+    set("is_internal", nextInternal);
+  }
+  checkInternalResolve(nextStatus, nextInternal);
   if ("active" in input) set("active", cleanBoolean(input.active, "active"));
   if (sets.length === 0) throw new HttpError(400, "Nothing to change.");
 

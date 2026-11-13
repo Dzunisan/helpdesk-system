@@ -395,10 +395,18 @@ export const addComment = async (
 
     // set_status (S7 "Send and set Waiting on employee"): only when the arrow is allowed for this
     // person. A refused move keeps the reply and reports why (savepoint keeps the rest intact).
-    if (wantedStatus && wantedStatus !== ticket.ticket_status) {
+    if (wantedStatus === "Resolved" && isInternal) {
+      // An internal note is never the resolution note: it would reach the employee as the
+      // ticket's resolution, a status notification, an email and a public timeline event.
+      setStatus = {
+        requested: wantedStatus,
+        applied: false,
+        message: "Resolve with a public reply so the employee sees what was done.",
+      };
+    } else if (wantedStatus && wantedStatus !== ticket.ticket_status) {
       await client.query("SAVEPOINT set_status");
       try {
-        await transitionInTransaction(client, ticketId, user, wantedStatus, wantedStatus === "Resolved" ? body : null, {
+        await transitionInTransaction(client, ticketId, user, wantedStatus, wantedStatus === "Resolved" && !isInternal ? body : null, {
           notifyStatus: isInternal,
         });
         await client.query("RELEASE SAVEPOINT set_status");
