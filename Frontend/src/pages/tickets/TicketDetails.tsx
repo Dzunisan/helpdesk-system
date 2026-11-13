@@ -97,16 +97,13 @@ export default function TicketDetails() {
   const isEmployee = userRole === "Employee";
   const isAgent = userRole === "Agent";
   const isLead = userRole === "Department Lead";
-  const isSystemAdmin = userRole === "System Admin";
-  const isPlatformAdmin = userRole === "Platform Admin";
-  const isAdmin = isSystemAdmin || isPlatformAdmin;
 
-  // Capabilities
+  // Capabilities (System Admin and Platform Admin have no ticket access on the server)
   const canSeeInternal = !isEmployee;
-  const canAddInternal = isAgent || isLead || isAdmin;
-  const canChangeStatus = isAgent || isLead || isAdmin;
-  const canApproveReject = isLead || isAdmin;
-  const canReassign = isLead || isAdmin;
+  const canAddInternal = isAgent || isLead;
+  const canChangeStatus = isAgent || isLead;
+  const canApproveReject = isLead;
+  const canReassign = isLead;
 
   // Load ticket & comments
   const loadTicketData = async () => {
@@ -148,7 +145,6 @@ export default function TicketDetails() {
 
   // Check if comment is editable/deletable by current user
   const canModifyComment = (c: TicketComment): boolean => {
-    if (isAdmin) return true;
     if (String(c.author_id) === currentUserId) {
       // Configurable 15 minute window check
       const ageMinutes =
@@ -314,6 +310,32 @@ export default function TicketDetails() {
     }
   };
 
+  // Assign to me: claim the ticket so the current user becomes the assignee.
+  // The server sets the status (Open -> In progress) as part of the assignment.
+  const handleAssignToMe = async () => {
+    if (!ticket || actionLoading) return;
+    setActionLoading(true);
+    try {
+      const updated = await assignTicket(ticket.ticket_id);
+      setTicket((prev) =>
+        prev
+          ? {
+              ...prev,
+              assignee_id: updated.assignee_id,
+              assignee_name: updated.assignee_name,
+              assignee_email: updated.assignee_email,
+              ticket_status: updated.ticket_status,
+            }
+          : null,
+      );
+      showToast("Ticket assigned to you");
+    } catch (err: any) {
+      showToast(err.message || "Failed to assign ticket", "error");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Reassign Ticket (Lead/Admin)
   const handleReassign = async (newAssigneeId: string) => {
     if (!ticket || actionLoading) return;
@@ -467,7 +489,7 @@ export default function TicketDetails() {
                 type="button"
                 variant="secondary"
                 disabled={actionLoading}
-                onClick={() => handleStatusChange("In progress")}
+                onClick={handleAssignToMe}
                 className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium shadow-sm transition disabled:opacity-50"
               >
                 Assign to Me

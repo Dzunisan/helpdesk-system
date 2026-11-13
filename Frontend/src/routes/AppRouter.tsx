@@ -79,16 +79,14 @@ const AppRouter = () => {
             <Route path="users" element={<Users />} />
             <Route path="departments" element={<Departments />} />
             <Route path="reports" element={<Reports />} />
-            <Route path="tickets/:id" element={<TicketDetails />} />
             <Route path="profile" element={<UserProfile />} />
           </Route>
         </Route>
 
-        {/* Protected Platform Admin Routes */}
+        {/* Protected Platform Admin Routes (no ticket access) */}
         <Route element={<ProtectedRoute allowedRoles={["Platform Admin"]} />}>
           <Route path="/platform-admin" element={<PlatformAdminHomePage />}>
             <Route path="users" element={<Users />} />
-            <Route path="tickets/:id" element={<TicketDetails />} />
             <Route path="profile" element={<UserProfile />} />
           </Route>
         </Route>
