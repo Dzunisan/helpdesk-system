@@ -32,15 +32,18 @@ export interface ApprovalPage {
   total: number;
 }
 
-const PENDING_WHERE = `t.deleted_at IS NULL AND t.ticket_status = 'Pending approval' AND t.ticket_department_id = ANY($1::int[])`;
+/** $1 = led department ids, $<self> = the lead's own user id: nobody approves their own request */
+const pendingWhere = (self: number) =>
+  `t.deleted_at IS NULL AND t.ticket_status = 'Pending approval' AND t.ticket_department_id = ANY($1::int[])
+   AND t.requester_id <> $${self}::bigint`;
 
 /** GET /api/approvals/count: the sidebar's "Approvals (3)" */
 export const countPendingApprovals = async (access: TicketAccessUser): Promise<number> => {
   const led = ledDepartmentsOf(access);
   if (!led.length) return 0;
   const { rows } = await pool.query<{ pending: number }>(
-    `SELECT COUNT(*)::int AS pending FROM ticket t WHERE ${PENDING_WHERE}`,
-    [led]
+    `SELECT COUNT(*)::int AS pending FROM ticket t WHERE ${pendingWhere(2)}`,
+    [led, access.user_id]
   );
   return rows[0]?.pending ?? 0;
 };
@@ -68,8 +71,8 @@ export const listPendingApprovals = async (
   const led = ledDepartmentsOf(access);
   if (!led.length) return { approvals: [], total: 0 };
   const count = await pool.query<{ total: number }>(
-    `SELECT COUNT(*)::int AS total FROM ticket t WHERE ${PENDING_WHERE}`,
-    [led]
+    `SELECT COUNT(*)::int AS total FROM ticket t WHERE ${pendingWhere(2)}`,
+    [led, access.user_id]
   );
   const { rows } = await pool.query(
     `SELECT ${TICKET_SELECT_FIELDS},
@@ -78,10 +81,10 @@ export const listPendingApprovals = async (
             FLOOR(EXTRACT(EPOCH FROM (now() - t.created_at)) / 60)::int AS ap_waiting_mins
      FROM ticket t
      ${TICKET_JOINS}
-     WHERE ${PENDING_WHERE}
+     WHERE ${pendingWhere(4)}
      ORDER BY t.created_at ASC, t.ticket_id ASC
      LIMIT $2 OFFSET $3`,
-    [led, limit, (page - 1) * limit]
+    [led, limit, (page - 1) * limit, access.user_id]
   );
   const now = new Date();
   return { approvals: rows.map((row) => toItem(row, now)), total: count.rows[0]?.total ?? 0 };

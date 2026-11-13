@@ -341,6 +341,10 @@ const otherEndpointProblem = (
   if (ticket.ticket_status === "Pending approval" && !isRequester(access, ticket) && isDepartmentLead(access, ticket)) {
     if (to === "New" || to === "Cancelled") return "Approve or reject this request instead.";
   }
+  // A lead who raised the request may still cancel it, never approve it (Pending approval -> New)
+  if (ticket.ticket_status === "Pending approval" && isRequester(access, ticket) && to === "New") {
+    return "You can't approve your own request.";
+  }
   return null;
 };
 
@@ -507,7 +511,7 @@ export const getTicketActions = async (ticketId: number, user: User): Promise<Ti
   if (status === "Resolved" && requester && can("Closed")) actions.push("confirm_fixed");
   if (status === "Resolved" && requester && can("Open")) actions.push("still_broken");
   if (requester && (status === "New" || status === "Pending approval") && can("Cancelled")) actions.push("cancel");
-  if (lead && status === "Pending approval") actions.push("approve", "reject");
+  if (lead && !requester && status === "Pending approval") actions.push("approve", "reject");
 
   const reopenUntil =
     status === "Resolved" && ticket.resolved_at
@@ -585,6 +589,7 @@ export const approveTicket = async (ticketId: number, user: User, rawNote: unkno
     if (!isDepartmentLead(access, ticket)) {
       throw new HttpError(403, "Only the department lead can approve this request.");
     }
+    if (isRequester(access, ticket)) throw new HttpError(403, "You can't approve your own request.");
     if (ticket.ticket_status !== "Pending approval") {
       throw new HttpError(409, `This ticket is ${ticket.ticket_status}, so there is nothing to approve.`);
     }
@@ -622,6 +627,9 @@ export const rejectTicket = async (ticketId: number, user: User, rawReason: unkn
     const { ticket, access } = await lockTicket(client, ticketId, user);
     if (!isDepartmentLead(access, ticket)) {
       throw new HttpError(403, "Only the department lead can reject this request.");
+    }
+    if (isRequester(access, ticket)) {
+      throw new HttpError(403, "You can't reject your own request. Cancel it instead.");
     }
     if (ticket.ticket_status !== "Pending approval") {
       throw new HttpError(409, `This ticket is ${ticket.ticket_status}, so there is nothing to reject.`);
