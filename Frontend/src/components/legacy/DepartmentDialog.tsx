@@ -164,7 +164,7 @@ export const DepartmentDialog: React.FC<DepartmentDialogProps> = ({
           <div>
             <label
               htmlFor="departmentName"
-              className="mb-1 block text-sm font-medium text-body-text"
+              className="mb-1 block text-sm font-medium text-foreground"
             >
               Department Name:
             </label>
@@ -184,7 +184,7 @@ export const DepartmentDialog: React.FC<DepartmentDialogProps> = ({
               placeholder="Enter department name"
               aria-invalid={Boolean(nameError)}
               aria-describedby={nameError ? "departmentNameError" : undefined}
-              className="h-10 w-full rounded-md border border-secondary/50 bg-background px-3 py-2 text-sm text-body-text focus:outline-none focus:ring-2 focus:ring-primary"
+              className="h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             />
 
             {nameError && (
@@ -202,7 +202,7 @@ export const DepartmentDialog: React.FC<DepartmentDialogProps> = ({
           <div>
             <label
               htmlFor="departmentDescription"
-              className="mb-1 block text-sm font-medium text-body-text"
+              className="mb-1 block text-sm font-medium text-foreground"
             >
               Description:
               <span className="ml-1 font-normal text-gray-500">(Optional)</span>
@@ -214,7 +214,7 @@ export const DepartmentDialog: React.FC<DepartmentDialogProps> = ({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Describe the department's responsibilities"
               rows={3}
-              className="w-full rounded-md border border-secondary/50 bg-background px-3 py-2 text-sm text-body-text focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </div>
 
@@ -223,7 +223,7 @@ export const DepartmentDialog: React.FC<DepartmentDialogProps> = ({
             <div className="flex items-center justify-between">
               <label
                 htmlFor="departmentLead"
-                className="text-sm font-medium text-body-text"
+                className="text-sm font-medium text-foreground"
               >
                 Department Lead:
               </label>
@@ -238,7 +238,7 @@ export const DepartmentDialog: React.FC<DepartmentDialogProps> = ({
               id="departmentLead"
               value={departmentLead}
               onChange={(e) => setDepartmentLead(e.target.value)}
-              className="h-10 w-full rounded-md border border-secondary/50 bg-background px-3 py-2 text-sm text-body-text focus:outline-none focus:ring-2 focus:ring-primary"
+              className="h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
             >
               <option value="">-- No Department Lead Assigned --</option>
 
@@ -277,7 +277,7 @@ export const DepartmentDialog: React.FC<DepartmentDialogProps> = ({
             <div className="flex w-full flex-col gap-1.5">
               <label
                 htmlFor="departmentStatus"
-                className="text-sm font-medium text-body-text"
+                className="text-sm font-medium text-foreground"
               >
                 Status:
               </label>
@@ -285,7 +285,7 @@ export const DepartmentDialog: React.FC<DepartmentDialogProps> = ({
                 id="departmentStatus"
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
-                className="h-10 w-full rounded-md border border-secondary/50 bg-background px-3 py-2 text-sm text-body-text focus:outline-none focus:ring-2 focus:ring-primary"
+                className="h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>

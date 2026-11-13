@@ -86,7 +86,7 @@ const AssignedTickets = () => {
 
       {/* Page Heading */}
       <div>
-        <h1 className="text-2xl font-bold text-body-text">
+        <h1 className="text-2xl font-bold text-foreground">
           Assigned Tickets
         </h1>
         <p className="mt-1 text-sm text-gray-500">
@@ -102,14 +102,14 @@ const AssignedTickets = () => {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by ID, title or reporter…"
-          className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-[#6A89A7] sm:max-w-md transition-colors"
+          className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-primary sm:max-w-md transition-colors"
         />
 
         <select
           id="assigned-sort"
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as SortOption)}
-          className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-[#6A89A7] transition-colors"
+          className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-primary transition-colors"
         >
           <option value="newest">Recently Updated</option>
           <option value="oldest">Oldest Updated</option>
@@ -130,7 +130,7 @@ const AssignedTickets = () => {
             filteredTickets.map((ticket: Ticket) => (
               <div
                 key={ticket.ticket_id}
-                className="flex flex-col gap-3 rounded-md border border-gray-300 bg-white p-4 transition hover:border-[#6A89A7] hover:shadow-sm sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-3 rounded-md border border-gray-300 bg-white p-4 transition hover:border-primary hover:shadow-sm sm:flex-row sm:items-center sm:justify-between"
               >
                 {/* Ticket Information */}
                 <div className="space-y-1">
@@ -168,7 +168,7 @@ const AssignedTickets = () => {
                   <span
                     className={`rounded-sm px-3 py-1 text-xs font-medium ${
                       ticket.ticket_status === "In progress"
-                        ? "bg-blue-50 text-[#6A89A7]"
+                        ? "bg-accent text-primary"
                         : ticket.ticket_status === "Pending approval"
                         ? "bg-yellow-50 text-yellow-700"
                         : "bg-gray-100 text-gray-700"

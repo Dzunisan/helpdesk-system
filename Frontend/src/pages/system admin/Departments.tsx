@@ -86,12 +86,12 @@ const Departments = () => {
   return (
     <div className="space-y-4">
       {/* Top Header */}
-      <div className="flex flex-col gap-4 border-b pb-4 border-secondary/20 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 border-b pb-4 border-border sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-body-text">Departments</h1>
+            <h1 className="text-xl font-bold text-foreground">Departments</h1>
           </div>
-          <p className="text-xs text-body-text/70 mt-1">
+          <p className="text-xs text-muted-foreground mt-1">
             Manage departments, configure department details, and assign department leads.
           </p>
         </div>
@@ -145,10 +145,10 @@ const Departments = () => {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search by department name, description, or lead..."
-            className="h-9 w-full rounded-md border border-secondary/40 bg-background pl-9 pr-3 text-xs text-body-text focus:outline-none focus:ring-2 focus:ring-primary"
+            className="h-9 w-full rounded-md border border-border bg-background pl-9 pr-3 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
           />
           <svg
-            className="absolute left-2.5 top-2.5 h-4 w-4 text-body-text/50"
+            className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -163,7 +163,7 @@ const Departments = () => {
           {searchTerm && (
             <button
               onClick={() => setSearchTerm("")}
-              className="absolute right-2.5 top-2.5 text-xs text-body-text/50 hover:text-body-text"
+              className="absolute right-2.5 top-2.5 text-xs text-muted-foreground hover:text-foreground"
             >
               &times;
             </button>
@@ -209,7 +209,7 @@ const Departments = () => {
           aria-modal="true"
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 animate-in fade-in"
         >
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl border border-secondary/20">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl border border-border">
             <div className="flex items-center gap-3">
           
               <div>
@@ -219,7 +219,7 @@ const Departments = () => {
               </div>
             </div>
 
-            <div className="mt-4 text-sm text-body-text/80">
+            <div className="mt-4 text-sm text-muted-foreground">
               Are you sure you want to delete{" "}
               <strong className="text-gray-900">
                 &quot;{deletingDepartment.department_name}&quot;
@@ -227,7 +227,7 @@ const Departments = () => {
               ? This department will be deactivated.
             </div>
 
-            <div className="mt-6 flex justify-end gap-2 border-t pt-4 border-secondary/20">
+            <div className="mt-6 flex justify-end gap-2 border-t pt-4 border-border">
               <Button
                 type="button"
                 variant="outline"

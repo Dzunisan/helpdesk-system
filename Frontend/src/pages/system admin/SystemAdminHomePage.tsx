@@ -24,17 +24,17 @@ const SystemAdminHomePage = () => {
   ];
 
   return (
-    <div className="flex h-screen bg-background text-sm font-medium text-body-text relative">
+    <div className="flex h-screen bg-background text-sm font-medium text-foreground relative">
       {/* Overlay for mobile */}
       {isSidebarOpen && (
         <div 
-          className="fixed inset-0 z-40 bg-body-text/20 md:hidden" 
+          className="fixed inset-0 z-40 bg-foreground/20 md:hidden" 
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar laslhs */}
-      <div className={`fixed inset-y-0 left-0 z-50 flex w-62 flex-col border-r border-secondary/20 bg-background transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+      <div className={`fixed inset-y-0 left-0 z-50 flex w-62 flex-col border-r border-border bg-background transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
         {/* Logo Area */}
         <LogoArea />
 
@@ -49,7 +49,7 @@ const SystemAdminHomePage = () => {
 
         {/* Dashboard Main Content */}
         <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8 bg-background">
-          <div className="h-full rounded-xl border-2 border-dashed border-secondary/30 bg-accent/5 p-4 overflow-y-auto">
+          <div className="h-full rounded-xl border-2 border-dashed border-border bg-muted/50 p-4 overflow-y-auto">
             <Outlet />
           </div>
         </main>

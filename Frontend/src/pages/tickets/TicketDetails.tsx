@@ -446,7 +446,7 @@ export default function TicketDetails() {
         </div>
       )}
       <div className="flex items-center gap-2">
-        <h1 className="text-xl font-bold text-body-text">Ticket Details</h1>
+        <h1 className="text-xl font-bold text-foreground">Ticket Details</h1>
       </div>
       {/* Back button */}
       <div>

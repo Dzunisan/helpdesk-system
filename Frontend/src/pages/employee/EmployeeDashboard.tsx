@@ -78,13 +78,13 @@ export default function EmployeeDashboard() {
           <input
             id="search-tickets"
             placeholder="Search by keyword or Ticket ID..."
-            className="border border-gray-300 rounded px-3 py-2 text-sm w-[380px] focus:border-[#6A89A7] outline-none transition-colors"
+            className="border border-gray-300 rounded px-3 py-2 text-sm w-[380px] focus:border-primary outline-none transition-colors"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           <select
             id="status-filter"
-            className="border border-gray-300 rounded px-3 py-2 text-sm bg-white focus:border-[#6A89A7] outline-none transition-colors"
+            className="border border-gray-300 rounded px-3 py-2 text-sm bg-white focus:border-primary outline-none transition-colors"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
           >

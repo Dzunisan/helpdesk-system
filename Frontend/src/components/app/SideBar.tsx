@@ -21,8 +21,8 @@ const SideBar = ({navigation, setSelectedPage, closeSidebar}: {navigation: Navig
                     to={item.href}
                     className={`group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold ${
                       item.current
-                        ? "bg-accent/30 text-primary"
-                        : "text-body-text/70 hover:bg-accent/20 hover:text-primary"
+                        ? "bg-accent text-primary"
+                        : "text-muted-foreground hover:bg-accent hover:text-primary"
                     }`}
                     onClick={() => {
                       if (setSelectedPage) setSelectedPage(item.name);
@@ -33,7 +33,7 @@ const SideBar = ({navigation, setSelectedPage, closeSidebar}: {navigation: Navig
                       className={`h-6 w-6 shrink-0 ${
                         item.current
                           ? "text-primary"
-                          : "text-body-text/60 group-hover:text-primary"
+                          : "text-muted-foreground group-hover:text-primary"
                       }`}
                     />
                     {item.name}

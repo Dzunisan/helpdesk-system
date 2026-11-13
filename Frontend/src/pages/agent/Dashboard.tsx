@@ -131,7 +131,7 @@ const AgentDashboard = () => {
             onClick={() => setActiveTab(tab.value)}
             className={`rounded-md px-5 py-2 text-sm font-medium transition ${
               activeTab === tab.value
-                ? "bg-[#6A89A7] text-white"
+                ? "bg-primary text-primary-foreground"
                 : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
           >
@@ -152,7 +152,7 @@ const AgentDashboard = () => {
                 key={ticket.ticket_id}
                 onClick={() => navigate(`/agent/tickets/${ticket.ticket_id}`)}
                 style={{ cursor: "pointer" }}
-                className="flex flex-col gap-3 rounded-md border border-gray-300 bg-white p-4 transition hover:border-[#6A89A7] hover:shadow-sm sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-3 rounded-md border border-gray-300 bg-white p-4 transition hover:border-primary hover:shadow-sm sm:flex-row sm:items-center sm:justify-between"
               >
                 {/* Ticket Information */}
                 <div className="space-y-1">
@@ -196,7 +196,7 @@ const AgentDashboard = () => {
                       ticket.ticket_status === "Open"
                         ? "bg-gray-100 text-gray-700"
                         : ticket.ticket_status === "In progress"
-                          ? "bg-blue-50 text-[#6A89A7]"
+                          ? "bg-accent text-primary"
                           : ticket.ticket_status === "Resolved" ||
                               ticket.ticket_status === "Closed"
                             ? "bg-green-50 text-green-700"
@@ -212,7 +212,7 @@ const AgentDashboard = () => {
                       id={`dashboard-claim-${ticket.ticket_id}`}
                       onClick={() => handleClaim(ticket.ticket_id)}
                       disabled={claimingId === ticket.ticket_id}
-                      className="ml-2 inline-flex items-center gap-1.5 rounded-md bg-[#6A89A7] px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-[#5a7a98] disabled:bg-gray-300 disabled:cursor-not-allowed"
+                      className="ml-2 inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-all hover:bg-primary/90 disabled:bg-gray-300 disabled:cursor-not-allowed"
                     >
                       {claimingId === ticket.ticket_id ? (
                         <>

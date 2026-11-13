@@ -120,8 +120,8 @@ const UserProfile: React.FC = () => {
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header section */}
       <div>
-        <h2 className="text-2xl font-bold text-body-text">Account Profile</h2>
-        <p className="text-xs text-body-text/70 mt-1">
+        <h2 className="text-2xl font-bold text-foreground">Account Profile</h2>
+        <p className="text-xs text-muted-foreground mt-1">
           Manage your personal information, role details, and security credentials.
         </p>
       </div>
@@ -145,16 +145,16 @@ const UserProfile: React.FC = () => {
       )}
 
       {/* Profile Overview Card */}
-      <div className="bg-background border border-secondary/20 rounded-xl p-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="bg-background border border-border rounded-xl p-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center text-primary font-bold text-xl select-none">
             {initials}
           </div>
           <div>
-            <h3 className="text-lg font-bold text-body-text">
+            <h3 className="text-lg font-bold text-foreground">
               {name || user?.name} {surname || user?.surname}
             </h3>
-            <p className="text-xs text-body-text/70 flex items-center gap-1.5 mt-0.5">
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
               <IoMailOutline className="w-3.5 h-3.5" />
               {email || user?.email || "No email on file"}
             </p>
@@ -172,11 +172,11 @@ const UserProfile: React.FC = () => {
       </div>
 
       {/* Edit Profile Form */}
-      <div className="bg-background border border-secondary/20 rounded-xl p-6 shadow-sm">
+      <div className="bg-background border border-border rounded-xl p-6 shadow-sm">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Personal Information Group */}
           <div>
-            <h3 className="text-base font-semibold text-body-text flex items-center gap-2 pb-2 border-b border-secondary/15">
+            <h3 className="text-base font-semibold text-foreground flex items-center gap-2 pb-2 border-b border-border">
               <IoPersonOutline className="w-4 h-4 text-primary" />
               Personal Information
             </h3>
@@ -214,9 +214,9 @@ const UserProfile: React.FC = () => {
                   readOnly
                   disabled
                   placeholder="email@example.com"
-                  className="bg-accent/10 cursor-not-allowed opacity-80"
+                  className="bg-muted cursor-not-allowed opacity-80"
                 />
-                <p className="text-xs text-body-text/50 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Email address is associated with your login credentials and managed by administrators.
                 </p>
               </div>
@@ -225,11 +225,11 @@ const UserProfile: React.FC = () => {
 
           {/* Change Password Group */}
           <div>
-            <h3 className="text-base font-semibold text-body-text flex items-center gap-2 pb-2 border-b border-secondary/15">
+            <h3 className="text-base font-semibold text-foreground flex items-center gap-2 pb-2 border-b border-border">
               <IoLockClosedOutline className="w-4 h-4 text-primary" />
               Security & Password
             </h3>
-            <p className="text-xs text-body-text/60 mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
               Leave these fields blank if you do not want to change your password.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
@@ -259,7 +259,7 @@ const UserProfile: React.FC = () => {
           </div>
 
           {/* Form Actions */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-secondary/15">
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
             <Button
               type="button"
               variant="outline"

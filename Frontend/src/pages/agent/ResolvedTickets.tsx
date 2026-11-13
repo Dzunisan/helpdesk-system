@@ -88,7 +88,7 @@ const ResolvedTickets = () => {
 
       {/* Page Heading */}
       <div>
-        <h1 className="text-2xl font-bold text-body-text">
+        <h1 className="text-2xl font-bold text-foreground">
           Resolved Tickets
         </h1>
         <p className="mt-1 text-sm text-gray-500">
@@ -109,7 +109,7 @@ const ResolvedTickets = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by ID, title or reporter…"
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-[#6A89A7] focus:ring-1 focus:ring-[#6A89A7] transition-colors"
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
           />
 
           {/* Date Filter */}
@@ -117,7 +117,7 @@ const ResolvedTickets = () => {
             id="resolved-date-filter"
             value={dateRange}
             onChange={(e) => setDateRange(e.target.value as DateRange)}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-[#6A89A7] transition-colors"
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-primary transition-colors"
           >
             <option value="all">All Dates</option>
             <option value="today">Today</option>
@@ -139,12 +139,12 @@ const ResolvedTickets = () => {
               filteredTickets.map((ticket: Ticket) => (
                 <div
                   key={ticket.ticket_id}
-                  className="rounded-xl border border-gray-200 p-4 transition hover:border-[#6A89A7] hover:shadow-sm"
+                  className="rounded-xl border border-gray-200 p-4 transition hover:border-primary hover:shadow-sm"
                 >
                   <div className="flex flex-col gap-3">
                     {/* Ticket ID and Status */}
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-sm font-bold text-[#6A89A7]">
+                      <span className="text-sm font-bold text-primary">
                         HD-{ticket.ticket_id}
                       </span>
 
@@ -160,7 +160,7 @@ const ResolvedTickets = () => {
                     </div>
 
                     {/* Ticket Title */}
-                    <h3 className="text-base font-semibold text-body-text">
+                    <h3 className="text-base font-semibold text-foreground">
                       {ticket.title}
                     </h3>
 

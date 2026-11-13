@@ -46,10 +46,10 @@ const DepartmentTable: React.FC<DepartmentTableProps> = ({
   };
 
   return (
-    <div className="mt-4 overflow-hidden rounded-xl border border-secondary/20 shadow-sm bg-background">
+    <div className="mt-4 overflow-hidden rounded-xl border border-border shadow-sm bg-background">
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm text-body-text">
-          <thead className="border-b border-secondary/20 bg-accent/15 text-xs font-semibold uppercase tracking-wider text-body-text">
+        <table className="w-full text-left text-sm text-foreground">
+          <thead className="border-b border-border bg-muted text-xs font-semibold uppercase tracking-wider text-foreground">
             <tr>
               <th scope="col" className="px-5 py-3.5">
                 Department Name
@@ -69,17 +69,17 @@ const DepartmentTable: React.FC<DepartmentTableProps> = ({
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-secondary/15 bg-background">
+          <tbody className="divide-y divide-border bg-background">
             {loading ? (
               <Loader/>
             ) : departments?.length === 0 ? (
               <tr>
                 <td
                   colSpan={5}
-                  className="px-5 py-10 text-center text-body-text/60"
+                  className="px-5 py-10 text-center text-muted-foreground"
                 >
                   <div className="flex flex-col items-center justify-center gap-1">
-                    <span className="font-medium text-body-text/80">
+                    <span className="font-medium text-muted-foreground">
                       No departments found
                     </span>
                     <span className="text-xs">
@@ -97,21 +97,21 @@ const DepartmentTable: React.FC<DepartmentTableProps> = ({
                 return (
                   <tr
                     key={deptId}
-                    className="transition-colors hover:bg-accent/5"
+                    className="transition-colors hover:bg-muted/50"
                   >
-                    <td className="whitespace-nowrap px-5 py-3.5 font-semibold text-body-text">
+                    <td className="whitespace-nowrap px-5 py-3.5 font-semibold text-foreground">
                       <div className="flex items-center gap-2">
                         <span>{department.department_name}</span>
                       </div>
                     </td>
 
-                    <td className="max-w-xs truncate px-5 py-3.5 text-body-text/80">
+                    <td className="max-w-xs truncate px-5 py-3.5 text-muted-foreground">
                       {department.description ? (
                         <span title={department.description}>
                           {department.description}
                         </span>
                       ) : (
-                        <span className="text-body-text/40 italic">
+                        <span className="text-muted-foreground italic">
                           No description
                         </span>
                       )}
@@ -119,7 +119,7 @@ const DepartmentTable: React.FC<DepartmentTableProps> = ({
 
                     <td className="whitespace-nowrap px-5 py-3.5">
                       {leadName ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-md bg-accent/20 px-2.5 py-1 text-xs font-medium text-primary">
+                        <span className="inline-flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-primary">
                           <svg
                             className="h-3.5 w-3.5"
                             fill="none"
@@ -136,7 +136,7 @@ const DepartmentTable: React.FC<DepartmentTableProps> = ({
                           {leadName}
                         </span>
                       ) : (
-                        <span className="text-xs text-body-text/50 italic">
+                        <span className="text-xs text-muted-foreground italic">
                           Not assigned
                         </span>
                       )}

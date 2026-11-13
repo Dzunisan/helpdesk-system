@@ -12,7 +12,7 @@ const LogoArea = () => {
               opacity="0.8"
             />
           </svg>
-          <span className="text-body-text text-sm font-semibold leading-6">
+          <span className="text-foreground text-sm font-semibold leading-6">
             Helpdesk System
           </span>
         </div>

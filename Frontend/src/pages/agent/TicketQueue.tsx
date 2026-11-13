@@ -116,7 +116,7 @@ const TicketQueue = () => {
       {/* Page Heading */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-body-text">
+          <h1 className="text-2xl font-bold text-foreground">
             Department Ticket Queue
           </h1>
           <p className="mt-1 text-sm text-gray-500">
@@ -127,7 +127,7 @@ const TicketQueue = () => {
         <button
           id="refresh-queue-btn"
           onClick={() => refetch()}
-          className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 hover:border-[#6A89A7]"
+          className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 hover:border-primary"
         >
           <svg
             className="h-4 w-4"
@@ -154,14 +154,14 @@ const TicketQueue = () => {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by ID, title or requester…"
-          className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-[#6A89A7] sm:max-w-md transition-colors"
+          className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-primary sm:max-w-md transition-colors"
         />
 
         <select
           id="queue-priority-filter"
           value={priorityFilter}
           onChange={(e) => setPriorityFilter(e.target.value)}
-          className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-[#6A89A7] transition-colors"
+          className="rounded-lg border border-gray-300 px-4 py-2 text-sm outline-none focus:border-primary transition-colors"
         >
           <option value="All">All Priorities</option>
           <option value="High">High</option>
@@ -185,12 +185,12 @@ const TicketQueue = () => {
                     `/${location.pathname.split("/")[1]}/tickets/${ticket.ticket_id}`,
                   )
                 }
-                className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 transition-all hover:border-[#6A89A7] hover:shadow-md sm:flex-row sm:items-center sm:justify-between"
+                className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 transition-all hover:border-primary hover:shadow-md sm:flex-row sm:items-center sm:justify-between"
               >
                 {/* Ticket Info */}
                 <div className="space-y-1 flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="text-xs font-semibold text-[#6A89A7]">
+                    <p className="text-xs font-semibold text-primary">
                       HD-{ticket.ticket_id}
                     </p>
                     <span className="text-[11px] text-gray-400">
@@ -238,7 +238,7 @@ const TicketQueue = () => {
                       handleClaim(ticket.ticket_id);
                     }}
                     disabled={claimingId === ticket.ticket_id}
-                    className="ml-2 inline-flex items-center gap-1.5 rounded-md bg-[#6A89A7] px-4 py-2 text-xs font-medium text-white transition-all hover:bg-[#5a7a98] disabled:bg-gray-300 disabled:cursor-not-allowed active:scale-[0.98]"
+                    className="ml-2 inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-all hover:bg-primary/90 disabled:bg-gray-300 disabled:cursor-not-allowed active:scale-[0.98]"
                   >
                     {claimingId === ticket.ticket_id ? (
                       <>

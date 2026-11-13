@@ -1,4 +1,4 @@
-import { IoChevronDownOutline, IoMenuOutline } from 'react-icons/io5'
+import { ChevronDown, Menu } from 'lucide-react'
 import { useState } from 'react'
 import ProfileDropDown from './ProfileDropDown'
 import { useAuth } from '../../context/AuthContext'
@@ -9,14 +9,14 @@ const TopHeader = ({ onMenuClick }: { onMenuClick?: () => void }) => {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-      <div className="flex h-16 position sticky top-0 z-1 shrink-0 items-center justify-between border-b border-secondary/20 bg-background px-4 sm:px-6 lg:px-8">
+      <div className="flex h-16 position sticky top-0 z-1 shrink-0 items-center justify-between border-b border-border bg-background px-4 sm:px-6 lg:px-8">
           <button
             type="button"
-            className="-m-2.5 p-2.5 text-body-text/60 hover:text-primary md:hidden mr-4"
+            className="-m-2.5 p-2.5 text-muted-foreground hover:text-primary md:hidden mr-4"
             onClick={onMenuClick}
           >
             <span className="sr-only">Open sidebar</span>
-            <IoMenuOutline className="h-6 w-6" />
+            <Menu className="h-6 w-6" />
           </button>
           {/* Search Bar */}
           <div className="flex flex-1 items-center gap-x-4 self-stretch lg:gap-x-6">
@@ -30,7 +30,7 @@ const TopHeader = ({ onMenuClick }: { onMenuClick?: () => void }) => {
            
 
               <div
-                className="hidden lg:block lg:h-6 lg:w-px lg:bg-secondary/20"
+                className="hidden lg:block lg:h-6 lg:w-px lg:bg-border"
                 aria-hidden="true"
               />
 
@@ -42,18 +42,18 @@ const TopHeader = ({ onMenuClick }: { onMenuClick?: () => void }) => {
                   onClick={() => setIsOpen(!isOpen)}
                 >
                   <img
-                    className="h-8 w-8 rounded-full bg-secondary/30"
+                    className="h-8 w-8 rounded-full bg-muted"
                     src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80"
                     alt="User Avatar"
                   />
                   <span className="hidden lg:flex lg:items-center">
                     <span
-                      className="text-sm font-semibold leading-6 text-body-text"
+                      className="text-sm font-semibold leading-6 text-foreground"
                       aria-hidden="true"
                     >
                       {user?.name || "User"}
                     </span>
-                    <IoChevronDownOutline className="ml-2 h-5 w-5 text-body-text/60" />
+                    <ChevronDown className="ml-2 h-5 w-5 text-muted-foreground" />
                   </span>
                 </button>
               </div>

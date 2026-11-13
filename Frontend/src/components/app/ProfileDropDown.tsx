@@ -39,19 +39,19 @@ const ProfileDropDown: React.FC<ProfileDropDownProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="absolute top-16 right-4 sm:right-6 lg:right-8 w-56 bg-background border border-secondary/20 rounded-md shadow-lg py-1 z-50">
-      <div className="px-4 py-2 border-b border-secondary/20">
-        <div className="text-sm font-semibold text-body-text truncate">
+    <div className="absolute top-16 right-4 sm:right-6 lg:right-8 w-56 bg-background border border-border rounded-md shadow-lg py-1 z-50">
+      <div className="px-4 py-2 border-b border-border">
+        <div className="text-sm font-semibold text-foreground truncate">
           {user?.name ? `${user.name} ${user.surname || ''}`.trim() : "User"}
         </div>
-        <div className="text-xs text-body-text/60">
+        <div className="text-xs text-muted-foreground">
           {user?.role || "Employee"}
         </div>
       </div>
       <div className="py-1">
         <button
           type="button"
-          className="w-full text-left px-4 py-2 text-sm text-body-text hover:bg-secondary/20 cursor-pointer transition-colors"
+          className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-accent cursor-pointer transition-colors"
           onClick={handleProfileClick}
         >
           Profile
@@ -59,7 +59,7 @@ const ProfileDropDown: React.FC<ProfileDropDownProps> = ({ onClose }) => {
         <button
           type="button"
           onClick={handleLogout}
-          className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 cursor-pointer transition-colors"
+          className="w-full text-left px-4 py-2 text-sm text-destructive hover:bg-destructive/10 cursor-pointer transition-colors"
         >
           Logout
         </button>

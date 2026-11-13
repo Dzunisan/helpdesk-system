@@ -156,7 +156,7 @@ const SignInPage = () => {
         Forgot your password?{" "}
         <Link
           to="/forgot-password"
-          style={{ color: "#2563eb", textDecoration: "none" }}
+          className="text-primary hover:underline"
         >
           Reset it here
         </Link>

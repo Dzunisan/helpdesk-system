@@ -112,7 +112,7 @@ export const Dialog = ({ ref }: DialogProps) => {
             />
           </div>
           <div className="w-full flex flex-col gap-1.5">
-            <label htmlFor="role" className="text-sm font-medium text-body-text">
+            <label htmlFor="role" className="text-sm font-medium text-foreground">
               Role:
             </label>
             <select
@@ -120,7 +120,7 @@ export const Dialog = ({ ref }: DialogProps) => {
               value={role}
               onChange={(e) => setRole(e.target.value as UserRole)}
               disabled={allowedRoles.length === 1}
-              className="flex h-10 w-full rounded-md border border-secondary/50 bg-background px-3 py-2 text-sm text-body-text focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              className="flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:bg-gray-100 disabled:cursor-not-allowed"
               required
             >
               {allowedRoles.map((r) => (

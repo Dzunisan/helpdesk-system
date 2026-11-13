@@ -21,10 +21,10 @@ const Users: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-secondary/20">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-border">
         <div>
-          <h3 className="text-xl font-bold text-body-text">{pageTitle}</h3>
-          <p className="text-xs text-body-text/70">
+          <h3 className="text-xl font-bold text-foreground">{pageTitle}</h3>
+          <p className="text-xs text-muted-foreground">
             {pageDescription}
           </p>
         </div>

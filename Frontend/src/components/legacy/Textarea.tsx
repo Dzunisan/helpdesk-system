@@ -12,7 +12,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
     return (
       <div className="w-full flex flex-col gap-1.5">
         {label && (
-          <label htmlFor={textareaId} className="text-sm font-medium text-body-text">
+          <label htmlFor={textareaId} className="text-sm font-medium text-foreground">
             {label}
           </label>
         )}
@@ -20,8 +20,8 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           id={textareaId}
           ref={ref}
           className={`flex min-h-[80px] w-full rounded-md border ${
-            error ? 'border-red-500 focus:ring-red-500' : 'border-secondary/50 focus:ring-primary'
-          } bg-background px-3 py-2 text-sm text-body-text placeholder:text-body-text/50 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+            error ? 'border-red-500 focus:ring-red-500' : 'border-border focus:ring-primary'
+          } bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
           {...props}
         />
         {typeof error === 'string' && (

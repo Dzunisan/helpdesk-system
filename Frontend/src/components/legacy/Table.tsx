@@ -25,16 +25,16 @@ const Table: React.FC = () => {
 
   if (users.length === 0) {
     return (
-      <div className="p-8 text-center text-body-text/60 border border-dashed border-secondary/30 rounded-lg">
+      <div className="p-8 text-center text-muted-foreground border border-dashed border-border rounded-lg">
         No {isPlatformAdmin ? 'system admins' : 'users'} found. Click &quot;{isPlatformAdmin ? 'Add System Admin' : 'Add User'}&quot; to create one.
       </div>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-secondary/20 shadow-sm mt-4">
-      <table className="w-full text-left text-sm text-body-text">
-        <thead className="bg-accent/15 text-xs uppercase text-body-text font-semibold border-b border-secondary/20">
+    <div className="overflow-x-auto rounded-lg border border-border shadow-sm mt-4">
+      <table className="w-full text-left text-sm text-foreground">
+        <thead className="bg-muted text-xs uppercase text-foreground font-semibold border-b border-border">
           <tr>
             <th scope="col" className="px-4 py-3">Name</th>
             <th scope="col" className="px-4 py-3">Email</th>
@@ -45,17 +45,17 @@ const Table: React.FC = () => {
           </tr>
         </thead>
 
-        <tbody className="divide-y divide-secondary/15 bg-background">
+        <tbody className="divide-y divide-border bg-background">
           {users.map((user) => {
             const userId = user.user_id || user.id || '';
             const fullName = `${user.name} ${user.surname}`.trim() || user.name;
 
             return (
-              <tr key={userId} className="hover:bg-accent/5 transition-colors">
-                <td className="px-4 py-3 font-medium text-body-text whitespace-nowrap">
+              <tr key={userId} className="hover:bg-muted/50 transition-colors">
+                <td className="px-4 py-3 font-medium text-foreground whitespace-nowrap">
                   {fullName}
                 </td>
-                <td className="px-4 py-3 text-body-text/80 whitespace-nowrap">
+                <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                   {user.email}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap">
