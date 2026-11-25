@@ -71,4 +71,7 @@ const startServer = async () => {
   });
 };
 
-startServer();
+// On Vercel the app runs as a serverless function (api/index.ts) and Vercel does the listening
+if (!process.env.VERCEL) startServer();
+
+export default app;

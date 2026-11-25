@@ -21,7 +21,8 @@ import bcrypt from "bcryptjs";
 import { Pool, PoolClient } from "pg";
 import { assertLocalDb, dbConfig } from "./db";
 
-export const DEMO_PASSWORD = "Demo2026!";
+// SEED_PASSWORD overrides it, e.g. for a hosted demo whose repo is public
+export const DEMO_PASSWORD = process.env.SEED_PASSWORD || "Demo2026!";
 
 // ---------- data ----------
 
@@ -655,7 +656,7 @@ export async function runSeed(): Promise<void> {
         `${slaPolicies.length} SLA policies, ${tickets.length} tickets, ${comments.length} comments, ${events} events, ` +
         `${feedback.length} ratings, ${macros.length} macros.`,
     );
-    console.log(`Every login uses the password ${DEMO_PASSWORD}`);
+    console.log(process.env.SEED_PASSWORD ? "Every login uses the password from SEED_PASSWORD" : `Every login uses the password ${DEMO_PASSWORD}`);
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
